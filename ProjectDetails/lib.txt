@@ -1,0 +1,7 @@
+Conda JARVIS_ENV
+│
+├── AI Vision Stack (dlib, face_recognition)
+├── Numerical Stack (numpy)
+├── Computer Vision (opencv)
+├── FastAPI (API controller)
+└── Uvicorn (server engine)

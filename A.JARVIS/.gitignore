@@ -1,0 +1,18 @@
+# .gitignore for A.JARVIS
+
+# Environment secrets — NEVER commit this
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Screenshots captured by JARVIS
+screenshot.png
+
+# Notes file (optional — remove if you want it tracked)
+notes.txt
+
+# Camera test output / captured frames
+test_frame.jpg

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>A.J.A.R.V.I.S Login</title>
+    <script>
+        setInterval(function(){
+            fetch('/check_access')
+            .then(response => {
+                if(response.redirected){
+                    window.location.href = response.url;
+                }
+            });
+        }, 2000);
+    </script> 
+</head>
+<body style="background:rgb(37, 84, 187);color:white;text-align:center;">
+    <h1>Face Authentication Required</h1>
+    <img src="{{ url_for('video_feed') }}" width="640" height="480">
+</body>
+</html>

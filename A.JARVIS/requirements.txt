@@ -1,0 +1,11 @@
+Flask
+python-dotenv
+mysql-connector-python
+opencv-python
+face-recognition
+psutil
+pyautogui
+requests
+google-genai
+numpy
+pyOpenSSL

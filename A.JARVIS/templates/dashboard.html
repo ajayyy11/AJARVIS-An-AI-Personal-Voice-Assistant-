@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AJARVIS Control Center</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', 'Orbitron', sans-serif;
+      /* Orbitron adds a tech feel */
+    }
+
+    body {
+      background: radial-gradient(circle at center, #08121d 20%, #02050a 80%);
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e0f7fa;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Background Grid HUD */
+    body::after {
+      content: "";
+      position: absolute;
+      width: 200%;
+      height: 200%;
+      background-image:
+        linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+      background-size: 50px 50px;
+      transform: perspective(500px) rotateX(60deg);
+      top: -50%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .frame {
+      width: 96%;
+      height: 92vh;
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 10px;
+      padding: 30px;
+      backdrop-filter: blur(25px);
+      background: rgba(0, 20, 30, 0.4);
+      box-shadow: 0 0 40px rgba(0, 188, 212, 0.2);
+      display: grid;
+      grid-template-columns: 320px 1fr 320px;
+      gap: 30px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Corner Brackets for Stark Look */
+    .frame::before,
+    .frame::after {
+      content: "";
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border: 3px solid #00f0ff;
+    }
+
+    .frame::before {
+      top: -2px;
+      left: -2px;
+      border-right: 0;
+      border-bottom: 0;
+    }
+
+    .frame::after {
+      bottom: -2px;
+      right: -2px;
+      border-left: 0;
+      border-top: 0;
+    }
+
+    .panel {
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      border-radius: 5px;
+      /* Sharper edges for military tech look */
+      padding: 25px;
+      background: rgba(0, 240, 255, 0.03);
+      box-shadow: inset 0 0 15px rgba(0, 240, 255, 0.05);
+      position: relative;
+    }
+
+    /* Little tech details on panels */
+    .panel::before {
+      content: "PROPERTY OF STARK IND.";
+      position: absolute;
+      top: -10px;
+      left: 20px;
+      background: #02050a;
+      padding: 0 10px;
+      font-size: 10px;
+      color: #00f0ff;
+      letter-spacing: 2px;
+    }
+
+    .panel h3 {
+      color: #00f0ff;
+      margin-bottom: 20px;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 14px;
+      letter-spacing: 3px;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+      padding-bottom: 5px;
+    }
+
+    .center {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      position: relative;
+    }
+
+    h2 {
+      font-weight: 300;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      color: #fff;
+      text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+    }
+
+    /* Updated Core - Arc Reactor Style */
+    .core {
+      width: 250px;
+      height: 250px;
+      border-radius: 50%;
+      border: 4px double #00f0ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: 10px;
+      position: relative;
+      background: radial-gradient(circle, rgba(0, 240, 255, 0.2) 0%, transparent 70%);
+      box-shadow: 0 0 50px rgba(0, 240, 255, 0.4);
+      transition: all 0.3s ease;
+    }
+
+    /* Rotating Outer Rings */
+    .core::before {
+      content: "";
+      position: absolute;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      border: 1px dashed rgba(0, 240, 255, 0.4);
+      border-top: 3px solid #00f0ff;
+      animation: rotate 10s linear infinite;
+    }
+
+    .core::after {
+      content: "";
+      position: absolute;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-left: 3px solid #00f0ff;
+      animation: rotate 15s linear reverse infinite;
+    }
+
+    @keyframes rotate {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Status Text Styling */
+    .status {
+      margin-bottom: 15px;
+      font-family: 'Courier New', monospace;
+      /* Code/Tech look */
+      font-size: 13px;
+      color: #b2ebf2;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .status a {
+      text-decoration: none;
+      border: 1px solid #00f0ff;
+      padding: 5px 15px;
+      border-radius: 3px;
+      font-size: 11px;
+      transition: 0.3s;
+    }
+
+    .status a:hover {
+      background: #00f0ff;
+      color: #000;
+    }
+
+    .clock {
+      font-size: 28px;
+      margin-bottom: 30px;
+      color: #00f0ff;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 4px;
+    }
+
+    /* Voice Bars - Stark Style */
+    .wave {
+      display: flex;
+      gap: 8px;
+      margin-top: 40px;
+      height: 60px;
+      align-items: center;
+    }
+
+    .bar {
+      width: 4px;
+      height: 10px;
+      background: #00f0ff;
+      box-shadow: 0 0 10px #00f0ff;
+      border-radius: 2px;
+    }
+
+    /* Activation Effect Override */
+    .activate-ring {
+      animation: pulseActivate 0.8s ease-in-out infinite;
+    }
+
+    @keyframes pulseActivate {
+      0% {
+        box-shadow: 0 0 20px #00f0ff;
+        transform: scale(1);
+      }
+
+      50% {
+        box-shadow: 0 0 100px #00f0ff;
+        transform: scale(1.05);
+      }
+
+      100% {
+        box-shadow: 0 0 20px #00f0ff;
+        transform: scale(1);
+      }
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 1024px) {
+      body {
+        overflow-y: auto;
+        align-items: flex-start;
+      }
+
+      .frame {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+        padding: 16px;
+        gap: 16px;
+        width: 100%;
+      }
+
+      .core {
+        width: 160px;
+        height: 160px;
+        font-size: 20px;
+      }
+
+      .core::before {
+        width: 210px;
+        height: 210px;
+      }
+
+      .core::after {
+        width: 185px;
+        height: 185px;
+      }
+
+      .clock {
+        font-size: 20px;
+      }
+
+      h2 {
+        font-size: 14px;
+        letter-spacing: 3px;
+      }
+
+      #history-log {
+        max-height: 200px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .frame {
+        padding: 10px;
+      }
+
+      .panel {
+        padding: 14px;
+      }
+
+      .core {
+        width: 120px;
+        height: 120px;
+        font-size: 16px;
+      }
+
+      .core::before {
+        width: 160px;
+        height: 160px;
+      }
+
+      .core::after {
+        width: 140px;
+        height: 140px;
+      }
+    }
+
+    /* ── TOAST NOTIFICATIONS ── */
+    #toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: rgba(0, 20, 30, 0.92);
+      border: 1px solid #00f0ff;
+      border-left: 4px solid #00f0ff;
+      color: #e0f7fa;
+      padding: 12px 18px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-width: 320px;
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+      animation: toastIn 0.3s ease forwards;
+      pointer-events: auto;
+    }
+
+    .toast.hide {
+      animation: toastOut 0.4s ease forwards;
+    }
+
+    .toast-label {
+      color: #00f0ff;
+      font-size: 10px;
+      letter-spacing: 2px;
+      margin-bottom: 4px;
+    }
+
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateX(40px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes toastOut {
+      from {
+        opacity: 1;
+        transform: translateX(0);
+      }
+
+      to {
+        opacity: 0;
+        transform: translateX(40px);
+      }
+    }
+  </style>
+
+<body>
+
+  <div id="toast-container"></div>
+
+  <div class="frame">
+
+    <!-- LEFT PANEL -->
+    <div class="panel">
+      <h3>SYSTEM STATUS</h3>
+      <div class="status cpu">CPU: --%</div>
+      <div class="status ram">RAM: --%</div>
+      <div class="status disk">Disk: --%</div>
+      <div class="status battery">Battery: --%</div>
+      <div class="status"><a href="/logout" style="color:#00ffff">Logout</a></div>
+
+      <br>
+
+      <h3>LAST HEARD</h3>
+      <div class="status transcript" id="transcript-box" style="color:#80deea;font-style:italic;word-break:break-word;">
+        Waiting for voice...</div>
+        
+      <br>
+      
+      <h3>USAGE ANALYTICS</h3>
+      <div style="height: 150px; width: 100%;">
+        <canvas id="usageChart"></canvas>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="center">
+      <div>
+        <h2>Welcome {{ user }}</h2>
+      </div>
+      <div class="clock" id="clock"></div>
+      <div class="core" id="ai-core" style="cursor: pointer;">AI</div>
+      <div id="mic-status" style="margin-top: 25px; color: #ffeb3b; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;">TAP CORE TO START MIC</div>
+
+      <div class="wave" style="margin-top: 15px;">
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
+      </div>
+
+      <!-- TEXT COMMAND INPUT -->
+      <div style="margin-top: 30px; width: 80%; display: flex; gap: 10px;">
+        <input type="text" id="text-command-input" 
+          placeholder="ENTER COMMAND..." 
+          style="flex: 1; background: rgba(0, 240, 255, 0.1); border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 4px; padding: 8px 12px; color: #00f0ff; font-family: 'Courier New', monospace; outline: none; font-size: 13px;">
+        <button id="send-command-btn" 
+          style="background: #00f0ff; color: #000; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 12px;">SEND</button>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="panel" style="display:flex;flex-direction:column;gap:0;">
+      <h3>AUTH STATUS</h3>
+      <div class="status">User: {{ user }}</div>
+      <div class="status">Security: Active</div>
+
+      <br>
+
+      <h3>AI STATUS</h3>
+      <div class="status ai-status">Listening...</div>
+
+      <br>
+
+      <h3>COMMAND HISTORY</h3>
+      <div id="history-log"
+        style="font-size:11px;color:#b2ebf2;font-family:'Courier New',monospace;overflow-y:auto;max-height:280px;display:flex;flex-direction:column;gap:8px;">
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+
+    /* CLOCK */
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("clock").textContent = now.toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    /* REAL SYSTEM STATS */
+    setInterval(() => {
+      fetch('/system_stats')
+        .then(res => res.json())
+        .then(data => {
+          document.querySelector(".cpu").textContent = "CPU: " + data.cpu + "%";
+          document.querySelector(".ram").textContent = "RAM: " + data.memory + "%";
+          document.querySelector(".disk").textContent = "Disk: " + data.disk + "%";
+        });
+    }, 2000);
+
+    /* VOICE SYSTEM - STARK PROTOCOL MODE */
+
+    const bars = document.querySelectorAll(".bar");
+    const commandBox = document.querySelector(".command");
+    const core = document.querySelector(".core");
+    const aiStatus = document.querySelector(".ai-status");
+    const transcriptBox = document.getElementById("transcript-box");
+
+    /* REAL SYSTEM STATS */
+    setInterval(() => {
+      fetch('/system_stats')
+        .then(res => res.json())
+        .then(data => {
+          document.querySelector(".cpu").textContent = "CPU: " + data.cpu + "%";
+          document.querySelector(".ram").textContent = "RAM: " + data.memory + "%";
+          document.querySelector(".disk").textContent = "Disk: " + data.disk + "%";
+        });
+    }, 2000);
+
+    /* BATTERY STATUS */
+    if (navigator.getBattery) {
+      navigator.getBattery().then(battery => {
+        const updateBattery = () => {
+          const pct = Math.round(battery.level * 100);
+          const plug = battery.charging ? "⚡" : "🔋";
+          document.querySelector(".battery").textContent = `Battery: ${plug} ${pct}%`;
+        };
+        updateBattery();
+        battery.addEventListener('levelchange', updateBattery);
+        battery.addEventListener('chargingchange', updateBattery);
+      });
+    }
+
+    /* COMMAND HISTORY - fetch every 5s */
+    function refreshHistory() {
+      fetch('/command_history')
+        .then(res => res.json())
+        .then(data => {
+          const log = document.getElementById("history-log");
+          log.innerHTML = "";
+          const history = data.history || [];
+          if (history.length === 0) {
+            log.innerHTML = '<span style="color:#546e7a">No commands yet.</span>';
+            return;
+          }
+          history.slice().reverse().forEach(entry => {
+            const item = document.createElement("div");
+            item.style.cssText = "border-left:2px solid #00f0ff;padding-left:8px;";
+            item.innerHTML = `<span style="color:#00f0ff">▶ ${entry.command}</span><br><span style="color:#b2ebf2">${entry.response}</span>`;
+            log.appendChild(item);
+          });
+        });
+    }
+    refreshHistory();
+    setInterval(refreshHistory, 5000);
+
+    /* USAGE ANALYTICS CHART */
+    let analyticsChart = null;
+    function updateAnalytics() {
+      fetch('/analytics')
+        .then(res => res.json())
+        .then(data => {
+          const ctx = document.getElementById('usageChart').getContext('2d');
+          
+          if (analyticsChart) {
+            analyticsChart.data.labels = data.labels;
+            analyticsChart.data.datasets[0].data = data.data;
+            analyticsChart.update();
+            return;
+          }
+
+          analyticsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: data.labels,
+              datasets: [{
+                label: 'Uses',
+                data: data.data,
+                backgroundColor: 'rgba(0, 240, 255, 0.4)',
+                borderColor: '#00f0ff',
+                borderWidth: 1
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { beginAtZero: true, grid: { color: 'rgba(0, 240, 255, 0.1)' }, ticks: { color: '#b2ebf2', stepSize: 1 } },
+                x: { grid: { display: false }, ticks: { color: '#00f0ff', font: {size: 10} } }
+              }
+            }
+          });
+        });
+    }
+    updateAnalytics();
+    setInterval(updateAnalytics, 15000);
+
+    const username = "{{ user }}";  // Passed from Flask
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+
+      const transcriptBox = document.getElementById("transcript-box");
+      const aiStatus = document.querySelector(".ai-status");
+      const commandBox = document.querySelector(".ai-status");
+      const core = document.querySelector(".ai-core") || document.getElementById("ai-core");
+
+      // Shared Command Processing Function
+      function processCommand(command) {
+        aiStatus.textContent = "Processing...";
+        fetch('/voice_command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: command })
+        })
+          .then(res => res.json())
+          .then(data => {
+            aiStatus.textContent = data.response.substring(0, 60) + (data.response.length > 60 ? '...' : '');
+            speak(data.response);
+            showToast(data.response);
+            refreshHistory();
+          });
+      }
+
+      // Logic for Text Commands
+      const textInput = document.getElementById("text-command-input");
+      const sendBtn = document.getElementById("send-command-btn");
+
+      function executeTextCommand() {
+        const command = textInput.value.trim();
+        if (!command) return;
+        
+        console.log("Text Command:", command);
+        transcriptBox.textContent = `"${command}" (Type)`;
+        textInput.value = "";
+        
+        // Text commands automatically trigger activation if not already active
+        if (state !== "activated") {
+          state = "activated";
+          core.style.boxShadow = "0 0 140px #00ffff";
+        }
+        
+        processCommand(command);
+      }
+
+      textInput.addEventListener("keypress", (e) => { if (e.key === "Enter") executeTextCommand(); });
+      sendBtn.addEventListener("click", executeTextCommand);
+
+      /* =========================
+         SPEECH RECOGNITION LOGIC
+      ==========================*/
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      let state = "idle";
+      // idle → greeted → activated
+
+      recognition.onstart = () => {
+        aiStatus.textContent = "Standby";
+        const statusText = document.getElementById('mic-status');
+        if(statusText) statusText.style.display = 'none';
+        
+        // Prevent WebRTC visualizer from locking the mic on mobile devices
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if(!isMobile) {
+            startMicReactiveSystem().catch(e => console.log(e));
+        }
+      };
+
+      recognition.onend = () => {
+        recognition.start(); // auto restart
+      };
+
+      recognition.onresult = (event) => {
+
+        const transcript =
+          event.results[event.results.length - 1][0].transcript.toLowerCase();
+
+        console.log("Heard:", transcript);
+        transcriptBox.textContent = `"${transcript}"`;
+
+        /* =========================
+           STATE 1 — IDLE
+        ==========================*/
+        if (state === "idle") {
+
+          if (transcript.includes("hey jarvis")) {
+
+            state = "greeted";
+            aiStatus.textContent = "Awaiting Activation";
+
+            const reply = "Hello " + username;
+
+            speak(reply);
+            commandBox.textContent = reply;
+
+            core.style.boxShadow = "0 0 100px #00ffff";
+          }
+
+          return;
+        }
+
+        /* =========================
+           STATE 2 — GREETED
+        ==========================*/
+        if (state === "greeted") {
+
+          if (transcript.includes("system activate")) {
+
+            state = "activated";
+            core.classList.add("activate-ring");
+            setTimeout(() => core.classList.remove("activate-ring"), 3600);
+            aiStatus.textContent = "System Active";
+
+            const reply = "Activating system";
+
+            speak(reply);
+            commandBox.textContent = reply;
+
+            core.style.boxShadow = "0 0 140px #00ffff";
+          }
+
+          return;
+        }
+
+        /* =========================
+           STATE 3 — ACTIVATED
+        ==========================*/
+        if (state === "activated") {
+
+          // 🔴 Shutdown
+          if (transcript.includes("system deactivate") ||
+            transcript.includes("system shutdown")) {
+            core.classList.add("shutdown-effect");
+            setTimeout(() => {
+              core.classList.remove("shutdown-effect");
+            }, 1000);
+            const reply = "Until next time " + username + ", system deactivating.";
+
+            speak(reply);
+            commandBox.textContent = reply;
+
+            state = "idle";
+            aiStatus.textContent = "Standby";
+            core.style.boxShadow = "0 0 40px #00ffff";
+
+            return;
+          }
+
+          // 🔵 Normal Commands
+          processCommand(transcript);
+
+        }
+
+      };
+
+      // Handle mobile browsers requiring a physical tap to start audio
+      document.getElementById('ai-core').addEventListener('click', () => {
+        try {
+          recognition.start();
+          const statusText = document.getElementById('mic-status');
+          if(statusText) statusText.textContent = 'INITIALIZING...';
+        } catch(e) {
+          console.log("Mic already listening");
+        }
+        
+        // Also resume AudioContext for the visualizer if suspended
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+      });
+    }
+
+    /* Text to Speech Helper */
+    function speak(text) {
+      const speech = new SpeechSynthesisUtterance(text);
+      speech.lang = "en-US";
+      window.speechSynthesis.speak(speech);
+    }
+
+    /* Toast Notification */
+    function showToast(message) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `<div class="toast-label">A.JARVIS</div>${message}`;
+      container.appendChild(toast);
+
+      // Auto dismiss after 4s
+      setTimeout(() => {
+        toast.classList.add('hide');
+        setTimeout(() => toast.remove(), 400);
+      }, 4000);
+    }
+
+    /* MIC REACTIVE EFFECT */
+    let audioContext;
+    let analyser;
+    let microphone;
+    let dataArray;
+
+    async function startMicReactiveSystem() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      microphone = audioContext.createMediaStreamSource(stream);
+
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+
+      microphone.connect(analyser);
+
+      animateVoice();
+    }
+
+    function animateVoice() {
+      requestAnimationFrame(animateVoice);
+      analyser.getByteFrequencyData(dataArray);
+
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+
+      const volume = sum / dataArray.length;
+
+      const glowStrength = 40 + volume * 0.8;
+      core.style.boxShadow = `0 0 ${glowStrength}px #00ffff`;
+
+      const scale = 1 + volume / 600;
+      core.style.transform = `scale(${scale})`;
+
+      bars.forEach((bar, i) => {
+        const height = 15 + (dataArray[i] / 255) * 60;
+        bar.style.height = height + "px";
+      });
+    }
+
+  </script>
+
+</body>
+
+</html>

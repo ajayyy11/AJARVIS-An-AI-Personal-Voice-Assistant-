@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A.J.A.R.V.I.S Register</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: 
+                radial-gradient(circle at center, #0a0f1f 20%, #05080f 80%),
+                linear-gradient(45deg, rgba(255, 87, 34, 0.15) 0%, rgba(255, 193, 7, 0.1) 50%, rgba(0, 188, 212, 0.15) 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Floating particles */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(2px 2px at 20px 30px, #ff5722, transparent),
+                radial-gradient(2px 2px at 40px 70px, #ffc107, transparent),
+                radial-gradient(1px 1px at 90px 40px, #00bcd4, transparent),
+                radial-gradient(1px 1px at 130px 80px, #ff5722, transparent),
+                radial-gradient(3px 3px at 200px 150px, #00bcd4, transparent);
+            background-repeat: repeat;
+            background-size: 250px 150px;
+            animation: float 25s infinite linear;
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px) rotate(0deg); }
+            100% { transform: translateY(-120px) rotate(360deg); }
+        }
+
+        /* HUD scanning lines */
+        .hud-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                repeating-linear-gradient(90deg, transparent 0, transparent 49%, rgba(0, 255, 255, 0.04) 50%, transparent 51%, transparent 100%),
+                repeating-linear-gradient(0deg, transparent 0, transparent 49%, rgba(255, 255, 255, 0.04) 50%, transparent 51%, transparent 100%);
+            background-size: 50px 50px;
+            animation: hudScan 4s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes hudScan {
+            0% { transform: translateX(-50%) translateY(-50%); }
+            100% { transform: translateX(50%) translateY(50%); }
+        }
+
+        .container {
+            text-align: center;
+            z-index: 10;
+            padding: 50px 40px;
+            background: rgba(10, 15, 31, 0.85);
+            border-radius: 25px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            box-shadow: 
+                0 0 60px rgba(255, 87, 34, 0.6),
+                inset 0 0 25px rgba(0, 188, 212, 0.15);
+            backdrop-filter: blur(15px);
+            max-width: 500px;
+            width: 90%;
+        }
+
+        /* Dual arc reactors */
+        .arc-reactors {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .arc-reactor {
+            width: 70px;
+            height: 70px;
+            background: conic-gradient(#00f0ff, #0099cc, #004466, #00f0ff);
+            border-radius: 50%;
+            position: relative;
+            animation: pulse 2s infinite ease-in-out;
+            box-shadow: 
+                0 0 25px #00f0ff,
+                inset 0 0 15px rgba(0, 255, 255, 0.6);
+        }
+
+        .arc-reactor::before {
+            content: '';
+            position: absolute;
+            top: 20%;
+            left: 20%;
+            width: 60%;
+            height: 60%;
+            background: radial-gradient(circle, #fff 0%, #00f0ff 50%, transparent 70%);
+            border-radius: 50%;
+            animation: inner-glow 1.8s infinite ease-in-out reverse;
+        }
+
+        .arc-reactor:nth-child(2) {
+            animation-delay: 0.5s;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 25px #00f0ff; }
+            50% { transform: scale(1.08); box-shadow: 0 0 40px #00f0ff; }
+        }
+
+        @keyframes inner-glow {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.7; }
+        }
+
+        h2 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #ff5722 0%, #ffc107 50%, #00bcd4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 87, 34, 0.7);
+            font-weight: 800;
+            letter-spacing: 3px;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 16px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .video-container {
+            position: relative;
+            display: inline-block;
+            margin: 20px auto;
+            border-radius: 20px;
+        }
+
+        /* Enhanced scanning effect on video */
+        .video-container::before {
+            content: '';
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            right: -4px;
+            bottom: -4px;
+            background: conic-gradient(#ff5722, #ffc107, #00bcd4, #ff5722);
+            border-radius: 20px;
+            z-index: 1;
+            animation: borderRotate 4s linear infinite;
+        }
+
+        .video-container::after {
+            content: 'SCANNING...';
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 255, 255, 0.9);
+            color: #000;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            z-index: 2;
+            animation: scanPulse 2s infinite;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+        }
+
+        @keyframes borderRotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes scanPulse {
+            0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+            50% { opacity: 0.7; transform: translateX(-50%) scale(1.05); }
+        }
+
+        #username {
+            width: 100%;
+            max-width: 350px;
+            padding: 18px 25px;
+            margin: 25px 0;
+            border: none;
+            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            color: #fff;
+            font-size: 1.2em;
+            text-align: center;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 87, 34, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        #username::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        #username:focus {
+            outline: none;
+            border-color: #00bcd4;
+            box-shadow: 
+                0 0 30px rgba(0, 188, 212, 0.6),
+                inset 0 0 20px rgba(0, 188, 212, 0.2);
+            transform: scale(1.02);
+        }
+
+        button {
+            background: linear-gradient(45deg, #ff5722, #ffc107);
+            color: #000;
+            border: none;
+            padding: 20px 50px;
+            font-size: 1.3em;
+            font-weight: 700;
+            border-radius: 50px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 
+                0 10px 30px rgba(255, 87, 34, 0.6),
+                inset 0 0 20px rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transition: left 0.5s;
+        }
+
+        button:hover::before {
+            left: 100%;
+        }
+
+        button:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 
+                0 15px 40px rgba(255, 87, 34, 0.8),
+                inset 0 0 25px rgba(255, 255, 255, 0.4);
+        }
+
+        button:active {
+            transform: translateY(-1px);
+        }
+
+        canvas {
+            display: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .arc-reactors {
+                gap: 20px;
+            }
+            .arc-reactor {
+                width: 55px;
+                height: 55px;
+            }
+            h2 {
+                font-size: 2em;
+            }
+            button {
+                padding: 18px 40px;
+                font-size: 1.1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="hud-overlay"></div>
+    
+    <div class="container">
+        <div class="arc-reactors">
+            <div class="arc-reactor"></div>
+            <div class="arc-reactor"></div>
+        </div>
+        <h2>A.J.A.R.V.I.S Register</h2>
+        
+        <div class="video-container">
+            <img src="{{ url_for('video_feed') }}" width="640" height="480" alt="Face Scan" style="width: 100%; height: auto; display: block; filter: brightness(1.1) contrast(1.1) saturate(1.2);">
+        </div>
+        
+        <input type="text" id="username" placeholder="Enter Username">
+        
+        <br><br>
+        <button onclick="capture()">Capture & Register</button>
+    </div>
+
+    <script>
+        function capture() {
+            const username = document.getElementById('username').value.trim();
+
+            if (!username) {
+                alert('Please enter a username.');
+                return;
+            }
+
+            // Visual feedback
+            const button = event.target;
+            const originalText = button.innerHTML;
+            button.innerHTML = 'REGISTERING...';
+            button.style.background = 'linear-gradient(45deg, #00bcd4, #0099cc)';
+
+            fetch('/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username: username })
+            })
+            .then(res => res.text())
+            .then(data => {
+                alert(data);
+                button.innerHTML = originalText;
+                button.style.background = 'linear-gradient(45deg, #ff5722, #ffc107)';
+            })
+            .catch(err => {
+                console.error('Registration error:', err);
+                alert('Registration failed. Please try again.');
+                button.innerHTML = originalText;
+                button.style.background = 'linear-gradient(45deg, #ff5722, #ffc107)';
+            });
+        }
+    </script>
+</body>
+</html>

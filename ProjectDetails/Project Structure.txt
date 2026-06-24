@@ -1,0 +1,21 @@
+A_J_A_R_V_I_S/
+│
+├── main.py
+├── config.py
+│
+├── voice/
+│   ├── voice_engine.py
+│
+├── vision/
+│   ├── face_engine.py
+│   ├── faces/
+│
+├── brain/
+│   ├── command_processor.py
+│
+├── interface/
+│   ├── app.py
+│   ├── templates/
+│   ├── static/
+│
+└── requirements.txt
