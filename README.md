@@ -1,5 +1,7 @@
 # A.J.A.R.V.I.S. — AI Personal Assistant
 
+![Python CI](https://github.com/ajayyy11/AJARVIS-An-AI-Personal-Voice-Assistant-/actions/workflows/ci.yml/badge.svg)
+
 A local assistant project for Windows built with Flask, Google Gemini integration, MySQL support, and face-authentication components. The application source is located in the `A.JARVIS/` directory.
 
 ## Project Highlights
