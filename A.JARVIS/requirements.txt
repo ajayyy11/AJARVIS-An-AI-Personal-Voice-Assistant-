@@ -9,3 +9,4 @@ requests
 google-genai
 numpy
 pyOpenSSL
+pytest
