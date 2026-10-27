@@ -14,9 +14,18 @@ def _env_bool(name, default=False):
 class Config:
     # No hard-coded fallback: set a unique random value in the local .env file.
     SECRET_KEY = os.getenv("SECRET_KEY")
-    if not SECRET_KEY:
+    if (
+        not isinstance(SECRET_KEY, str)
+        or len(SECRET_KEY) < 32
+        or SECRET_KEY.strip().lower() in {
+            "your_super_secret_key_here",
+            "replace-with-a-unique-random-secret",
+            "change-me",
+        }
+    ):
         raise RuntimeError(
-            "SECRET_KEY is required. Copy .env.example to .env and set a strong random secret."
+            "SECRET_KEY must be a unique random value of at least 32 characters. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
         )
 
     MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
