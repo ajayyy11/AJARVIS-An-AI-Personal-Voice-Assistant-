@@ -17,7 +17,13 @@ import os
 
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = app.config.get("SECRET_KEY")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower()
+        in {"1", "true", "yes", "on"},
+)
+
 
 # ==========================================
 # HOME
@@ -44,53 +50,55 @@ def login():
 # ==========================================
 @app.route("/register", methods=["GET", "POST"])
 def register():
-
     if request.method == "GET":
         return render_template("register.html")
 
-    # -----------------------------
-    # POST → Face Registration
-    # -----------------------------
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     username = data.get("username")
-
-    if not username:
+    if not isinstance(username, str) or not username.strip():
         return jsonify({"status": "error", "message": "Missing username"}), 400
+    username = username.strip()
+    if len(username) > 100:
+        return jsonify({"status": "error", "message": "Username must be 100 characters or fewer"}), 400
 
     latest = camera.get_latest_frame()
     if latest is None:
         return jsonify({"status": "error", "message": "Camera not ready, please wait a moment."}), 400
 
     rgb_frame = cv2.cvtColor(latest, cv2.COLOR_BGR2RGB)
-
     face_locations = face_recognition.face_locations(rgb_frame)
-
     if len(face_locations) != 1:
         return jsonify({"status": "error", "message": "Ensure exactly one face visible"}), 400
 
     face_encoding = face_recognition.face_encodings(rgb_frame, face_locations)[0]
     encoding_bytes = face_encoding.tobytes()
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+        if cursor.fetchone():
+            return jsonify({"status": "error", "message": "Username already exists"}), 400
 
-    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-    if cursor.fetchone():
-        cursor.close()
-        conn.close()
-        return jsonify({"status": "error", "message": "Username already exists"}), 400
-
-    cursor.execute(
-        "INSERT INTO users (username, face_encoding) VALUES (%s, %s)",
-        (username, encoding_bytes)
-    )
-
-    conn.commit()
-    cursor.close()
-    conn.close()
+        cursor.execute(
+            "INSERT INTO users (username, face_encoding) VALUES (%s, %s)",
+            (username, encoding_bytes),
+        )
+        conn.commit()
+    except Exception:
+        app.logger.exception("Face registration failed")
+        if conn is not None:
+            conn.rollback()
+        return jsonify({"status": "error", "message": "Registration failed. Check server logs."}), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
 
     load_known_faces()
-
     return jsonify({"status": "success"})
 
 
@@ -99,8 +107,7 @@ def register():
 # ==========================================
 @app.route("/video_feed")
 def video_feed():
-    return Response(generate_frames(),
-                    mimetype="multipart/x-mixed-replace; boundary=frame")
+    return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
 # ==========================================
@@ -113,7 +120,6 @@ def check_access():
         grant_access(detected)
         camera.reset_detected_user()
         return jsonify({"access": True})
-
     return jsonify({"access": is_authenticated()})
 
 
@@ -124,7 +130,6 @@ def check_access():
 def dashboard():
     if not is_authenticated():
         return redirect(url_for("home"))
-
     return render_template("dashboard.html", user=session["user"])
 
 
@@ -134,7 +139,7 @@ def dashboard():
 @app.route("/system_stats")
 def system_stats():
     if not is_authenticated():
-        return jsonify({"error": "Unauthorized"}), 403
+        return jsonify({"error": "Unauthorized"}), 401
     return jsonify(get_stats())
 
 
@@ -144,7 +149,7 @@ def system_stats():
 @app.route("/command_history")
 def command_history():
     if not is_authenticated():
-        return jsonify({"error": "Unauthorized"}), 403
+        return jsonify({"error": "Unauthorized"}), 401
     return jsonify({"history": get_all_recent(20)})
 
 
@@ -154,28 +159,30 @@ def command_history():
 @app.route("/analytics")
 def analytics():
     if not is_authenticated():
-        return jsonify({"error": "Unauthorized"}), 403
-        
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = None
+    cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT command, COUNT(*) as count 
-            FROM command_history 
-            GROUP BY command 
-            ORDER BY count DESC 
+        cursor.execute("""
+            SELECT command, COUNT(*) as count
+            FROM command_history
+            GROUP BY command
+            ORDER BY count DESC
             LIMIT 5
-        ''')
+        """)
         rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        labels = [r[0] for r in rows]
-        data = [r[1] for r in rows]
-        return jsonify({"labels": labels, "data": data})
-    except Exception as e:
-        print("Analytics error:", e)
-        return jsonify({"labels": [], "data": []})
+        return jsonify({"labels": [row[0] for row in rows], "data": [row[1] for row in rows]})
+    except Exception:
+        app.logger.exception("Analytics query failed")
+        return jsonify({"error": "Analytics temporarily unavailable"}), 503
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
 
 
 # ==========================================
@@ -183,18 +190,18 @@ def analytics():
 # ==========================================
 @app.route("/voice_command", methods=["POST"])
 def voice_command():
-
     if not is_authenticated():
-        return jsonify({"response": "Unauthorized access."})
+        return jsonify({"response": "Unauthorized access."}), 401
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     command = data.get("command")
+    if not isinstance(command, str) or not command.strip():
+        return jsonify({"response": "A non-empty command is required."}), 400
+    if len(command) > 2000:
+        return jsonify({"response": "Command is too long."}), 400
 
     username = session.get("user", "User")
-
-    response = process_command(command, username)
-
-    return jsonify({"response": response})
+    return jsonify({"response": process_command(command.strip(), username)})
 
 
 # ==========================================
@@ -211,4 +218,4 @@ def logout():
 # ==========================================
 if __name__ == "__main__":
     load_known_faces()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=False)
