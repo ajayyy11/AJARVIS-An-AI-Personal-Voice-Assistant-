@@ -1,51 +1,53 @@
-# A.JARVIS
+# A.J.A.R.V.I.S. — AI Personal Assistant
 
-A.JARVIS is an advanced, local AI System tailored to operate as a central assistant on Windows, utilizing the Google Generative AI (Gemini 2.5 Flash), built on Flask with Biometric authentication (Face Recognition).
+A local Windows-focused assistant application using Flask, Google Gemini integration, MySQL, and face-authentication components.
 
-## Project Structure
+## Features
 
-```text
-A.JARVIS/
-├── .env                # Environment keys (DO NOT COMMIT)
-├── .env.example        # Template for fresh installations
-├── .gitignore          # Excludes __pycache__, .env, and local artifacts
-├── app.py              # Main Flask router and application launch point
-├── config.py           # Configuration object builder mapped to .env
-├── notes.txt           # Artifact file: Local notes saved by Jarvis via voice
-├── requirements.txt    # Python module dependencies for pip installation
-├── run_hidden.vbs      # VBScript to launch JARVIS in the background
-├── start_jarvis.bat    # Application bootstrapper batch file
-├── README.md           # This file
-|
-├── database/
-│   └── db.py                 # MySQL Setup & connection wrappers
-|
-├── intelligence/
-│   ├── command_router.py     # NLP logic, hardcoded triggers & Gemini API Hub
-│   └── memory.py             # Memory persistence logic for AI context
-|
-├── scripts/
-│   └── test_camera.py        # Development utilities and hardware tests
-|
-├── security/
-│   ├── camera.py             # Handlers for OpenCV video streaming
-│   ├── face_auth.py          # Biometric logic utilizing face_recognition
-│   └── session_manager.py    # Login/logout authentication states
-|
-├── system/
-│   └── stats.py              # Harware monitoring module (CPU/RAM wrapper)
-|
-├── static/                   # Static web assets (CSS/JS/Images if decoupled)
-└── templates/
-    ├── dashboard.html        # Primary authenticated control hub UI
-    ├── home.html             # Landing page
-    ├── index.html            # Core routing template
-    ├── login.html            # Session login interface
-    └── register.html         # On-boarding Interface & Facial capture
-```
+- Flask web interface with login, registration, and dashboard pages
+- Gemini-backed assistant/command integration
+- Face-authentication and camera-streaming components
+- MySQL persistence and command/memory-related modules
+- System resource statistics
 
-## Quick Start
-1. Create your database outlined in `database/db.py`.
-2. Apply your configuration into `.env`.
-3. Install dependencies: `pip install -r requirements.txt`.
-4. Boot the system: `python app.py` or double-click `start_jarvis.bat`.
+## Tech Stack
+
+Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL · python-dotenv
+
+## Setup
+
+1. Install a supported Python version and the system prerequisites required by `face-recognition` and its dependencies.
+2. Create and activate a virtual environment.
+3. Install packages:
+
+   ```bash
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+4. Copy `.env.example` to `.env` and set the required database credentials, API key, and a strong random Flask secret key.
+5. Create/configure the MySQL database using `database/db.py`.
+6. Start the app:
+
+   ```bash
+   python app.py
+   ```
+
+## Security and Privacy
+
+- Keep `.env` out of version control; never publish API keys or database credentials.
+- Do not use a predictable fallback secret key in a deployed environment.
+- Disable Flask debug mode outside local development and configure secure session-cookie settings.
+- Face recognition may produce false matches or rejections. Use informed consent and do not treat it as infallible authentication.
+
+## Main Components
+
+- `app.py` — Flask routes and application entry point
+- `config.py` — environment-based configuration
+- `database/` — database access
+- `intelligence/` — command routing and assistant memory
+- `security/` — camera, face-authentication, and session modules
+- `system/` — system statistics
+- `templates/` and `static/` — web interface
+
+See the repository-level README for the full project overview and setup.
