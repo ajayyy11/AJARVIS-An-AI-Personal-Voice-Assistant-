@@ -71,6 +71,15 @@ A GitHub Actions workflow runs the session-management security tests on pushes a
 ```bash
 cd A.JARVIS
 python -m pip install Flask python-dotenv pytest
+# Linux/macOS:
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+pytest -q tests/test_session_manager.py
+```
+
+On Windows PowerShell, set the test secret before running pytest:
+
+```powershell
+$env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
 pytest -q tests/test_session_manager.py
 ```
 
