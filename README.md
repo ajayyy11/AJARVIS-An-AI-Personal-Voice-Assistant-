@@ -64,6 +64,18 @@ Follow any application-specific setup instructions in [the application README](A
 
 This project handles camera input, face-related data, sessions, and API credentials. Use it only with informed consent, protect credentials, and review access controls before exposing it to a network. Face recognition can make mistakes and should not be treated as infallible identity verification.
 
+## Automated Tests
+
+A GitHub Actions workflow runs the session-management security tests on pushes and pull requests. To run those tests locally from the application directory:
+
+```bash
+cd A.JARVIS
+python -m pip install Flask python-dotenv pytest
+pytest -q tests/test_session_manager.py
+```
+
+These tests cover session creation, revocation, expiry, and malformed timestamps. They do not replace full integration testing of the camera, database, or external AI services.
+
 ## Repository Layout
 
 ```text
