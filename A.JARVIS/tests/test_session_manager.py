@@ -8,7 +8,7 @@ from flask import Flask, session
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, ROOT)
 
-os.environ.setdefault("SECRET_KEY", "test-only-secret-key-not-for-production")
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-for-automated-tests-123456")
 
 from security.session_manager import grant_access, is_authenticated, revoke_access
 
@@ -41,7 +41,9 @@ def test_revoke_access_clears_session(app):
 def test_expired_session_is_rejected(app):
     with app.test_request_context("/"):
         session["user"] = "tester"
-        session["login_time"] = (datetime.now(timezone.utc) - timedelta(minutes=ConfigTimeout())).isoformat()
+        session["login_time"] = (
+            datetime.now(timezone.utc) - timedelta(minutes=ConfigTimeout())
+        ).isoformat()
         assert not is_authenticated()
         assert "user" not in session
 
