@@ -1,0 +1,32 @@
+# Zero-cost starter Blueprint for AJARVIS Cloud.
+# Web service uses Render Free and DATABASE_URL points to an external free
+# PostgreSQL provider (for example Neon). Create that database first and set
+# DATABASE_URL in Render. Free services may sleep and are not production SLAs.
+services:
+  - type: web
+    name: ajarvis-cloud
+    runtime: python
+    rootDir: A.JARVIS
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements-web.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 cloud_app:app
+    healthCheckPath: /readyz
+    autoDeployTrigger: commit
+    envVars:
+      - key: CLOUD_MODE
+        value: "true"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_TIMEOUT_MINUTES
+        value: "60"
+      - key: MAX_CONTENT_LENGTH_BYTES
+        value: "10485760"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_WEB_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false

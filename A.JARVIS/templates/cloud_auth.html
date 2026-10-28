@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AJARVIS Cloud · {{ mode|capitalize }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css') }}">
+</head>
+<body class="auth-body">
+  <div class="auth-grid"></div>
+  <main class="auth-shell">
+    <a class="brand brand-large" href="{{ url_for('index') }}">
+      <span class="brand-mark">A</span>
+      <span><strong>A.J.A.R.V.I.S</strong><small>PERSONAL INTELLIGENCE · CLOUD</small></span>
+    </a>
+    <section class="auth-card">
+      <span class="eyebrow">SECURE CLOUD ACCESS</span>
+      <h1 id="authTitle">{{ 'Welcome back' if mode == 'login' else 'Create your account' }}</h1>
+      <p class="muted">Your notes, documents, reminders, and AI workspace in one place.</p>
+      <form id="authForm" class="stack-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" minlength="3" maxlength="32"
+          pattern="[A-Za-z][A-Za-z0-9_]{2,31}" required placeholder="e.g. ajay_jarvis">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+          autocomplete="{{ 'current-password' if mode == 'login' else 'new-password' }}"
+          minlength="{{ 1 if mode == 'login' else 12 }}" maxlength="256" required
+          placeholder="{{ 'Enter your password' if mode == 'login' else 'At least 12 characters' }}">
+        <button class="primary-button" type="submit" id="submitButton">{{ 'Sign in' if mode == 'login' else 'Create account' }}</button>
+      </form>
+      <p id="authError" class="form-message" role="status" aria-live="polite"></p>
+      <p class="auth-switch">
+        {% if mode == 'login' %}
+          New to AJARVIS? <a href="{{ url_for('register_page') }}">Create an account</a>
+        {% else %}
+          Already registered? <a href="{{ url_for('login_page') }}">Sign in</a>
+        {% endif %}
+      </p>
+    </section>
+    <p class="privacy-note"><span class="dot"></span> Cloud workspace · Passwords are hashed · Each account has its own data</p>
+    <p class="cloud-notice">Cloud mode cannot access your personal webcam or control applications on your Windows computer.</p>
+  </main>
+  <script>
+    const authMode = {{ mode|tojson }};
+    const form = document.getElementById("authForm");
+    const errorNode = document.getElementById("authError");
+    const submitButton = document.getElementById("submitButton");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorNode.textContent = "";
+      submitButton.disabled = true;
+      submitButton.textContent = authMode === "login" ? "Signing in…" : "Creating account…";
+      const payload = {
+        username: document.getElementById("username").value.trim(),
+        password: document.getElementById("password").value
+      };
+      try {
+        const response = await fetch(authMode === "login" ? "/api/auth/login" : "/api/auth/register", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          credentials: "same-origin",
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Authentication failed.");
+        window.location.assign("/dashboard");
+      } catch (error) {
+        errorNode.textContent = error.message || "Could not connect to AJARVIS.";
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = authMode === "login" ? "Sign in" : "Create account";
+      }
+    });
+  </script>
+</body>
+</html>

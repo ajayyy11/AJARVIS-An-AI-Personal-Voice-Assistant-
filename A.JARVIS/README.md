@@ -63,3 +63,28 @@ Command history, AI context, analytics, notes, and activation state are scoped t
 - `templates/` and `static/` — web interface
 
 See the repository-level README for the full project overview and setup.
+
+
+## Tool-Enabled Agent Foundation
+
+The AI fallback now uses manual Gemini function calling through an explicit allow-list in `intelligence/tool_registry.py` and `intelligence/agent.py`.
+
+The initial agent can read the current date/time, CPU and memory usage, home-disk usage, battery status, and the signed-in user's saved notes (recent notes or phrase search). Calls are validated against registered argument schemas, and the agent limits the number of tool calls and the amount of returned data. Automatic SDK function execution is disabled so the application, not the model, decides whether a requested tool can run.
+
+Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. When the note tools are used, matching note content is sent to the configured Gemini model for an answer; do not store passwords, API keys, or other secrets in notes or personalization preferences. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
+
+Requests containing wording such as `search the web`, `latest`, `current`, or `recent` are routed through `intelligence/web_research.py`, a separate Google Search-grounded Gemini request. The response includes up to five validated HTTP(S) source links when grounding metadata is available. This requires `GEMINI_API_KEY`; the default model is `gemini-2.5-flash`, and `GEMINI_WEB_MODEL` can override it. Gemini API usage charges may apply. When no source metadata is returned, AJARVIS says it could not verify source links.
+
+Run the focused unit tests with:
+
+```bash
+pytest -q tests/test_tool_registry.py tests/test_agent.py tests/test_notes.py tests/test_web_research.py
+```
+
+
+
+## Hosted Cloud Mode
+
+Use cloud_app.py and requirements-web.txt for the Render-hosted workspace. The cloud version uses password accounts and PostgreSQL storage for notes, editable user preferences, tasks, reminders, document text, and history. Personal preferences are visible and removable from the dashboard. The Agent Activity panel records executed tool names, outcome and duration without recording tool arguments or private note/document contents. It does not import the camera or Windows desktop-control entry points used by app.py. Deployment is configured by the repository-root render.yaml file.
+
+See [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) before applying the Blueprint, especially its current cost, ephemeral service, Gemini API, and data-retention notes.

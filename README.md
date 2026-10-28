@@ -7,7 +7,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 ## Project Highlights
 
 - Flask-based web interface and dashboard
-- Gemini-powered command/assistant integration
+- Gemini-powered assistant with bounded, allow-listed read-only tools and grounded web research
 - Face-authentication workflow using computer-vision libraries
 - MySQL database connection layer
 - User-scoped command history, AI context, notes, and activation state
@@ -16,6 +16,14 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 ## Tech Stack
 
 Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL
+
+## Hosted Cloud Workspace
+
+A separate cloud entry point is available at A.JARVIS/cloud_app.py. The zero-cost starter deployment uses Render Free plus an external free PostgreSQL provider (such as Neon) and a free-eligible Gemini API key; see A.JARVIS/CLOUD_DEPLOYMENT.md for setup and limits.
+
+Deployment configuration and exact setup steps are in [the cloud deployment guide](A.JARVIS/CLOUD_DEPLOYMENT.md). The root [Render Blueprint](render.yaml) defines the hosted web service and managed PostgreSQL. Review its database plan and current cost before applying; the database uses a paid persistent plan, and Gemini API use may incur separate charges.
+
+The cloud app depends on the Render-provided DATABASE_URL, a generated SECRET_KEY, and a manually configured GEMINI_API_KEY for AI features. Never commit live secrets.
 
 ## Quick Start
 
@@ -49,7 +57,7 @@ pip install -r requirements.txt
 
 ### 4. Configure the application
 
-Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` enables Gemini responses; without it, local commands can still run but free-form AI answers are unavailable. `WEATHER_API_KEY` is optional and enables weather lookups. For a new database, create tables from `database/schema.sql`. For an existing installation, follow the step-by-step [database upgrade runbook](A.JARVIS/database/migrations/README.md); don't run the fresh-install schema over an existing database.
+Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` enables Gemini responses and grounded Google Search research; without it, local commands can still run but AI answers and web research are unavailable. `GEMINI_WEB_MODEL` optionally selects the model used for grounded web research (default: `gemini-2.5-flash`). `WEATHER_API_KEY` is optional and enables weather lookups. For a new database, create tables from `database/schema.sql`. For an existing installation, follow the step-by-step [database upgrade runbook](A.JARVIS/database/migrations/README.md); don't run the fresh-install schema over an existing database.
 
 Never commit `.env`, API keys, database passwords, or real biometric data. Use a unique random secret key and disable debug mode in any deployment.
 
@@ -64,6 +72,10 @@ Follow any application-specific setup instructions in [the application README](A
 ## Security and Privacy
 
 This project handles camera input, face-related data, sessions, and API credentials. Use it only with informed consent, protect credentials, and review access controls before exposing it to a network. Face recognition can make mistakes and should not be treated as infallible identity verification.
+
+## Agent Tool Safety
+
+Gemini tool calls are handled manually through a local allow-list. The current agent tools provide read-only date/time, system/battery status, and user-scoped saved-note lookup. Commands containing explicit web-search or current-information wording use a separate Gemini Google Search-grounded request and display the available source URLs. Web research requires `GEMINI_API_KEY` and may incur API usage charges. Note content may be sent to the configured Gemini model when the notes tools are used, so do not store secrets in notes. Arbitrary shell execution is not exposed, and side-effecting tool requests are rejected until a trusted approval workflow exists. See [the application agent notes](A.JARVIS/README.md#tool-enabled-agent-foundation).
 
 ## Safer Desktop Controls
 
