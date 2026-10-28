@@ -13,7 +13,8 @@ from google import genai
 from google.genai import types
 
 from intelligence.memory import add_memory, get_recent
-from intelligence.power_actions import handle_power_command
+from intelligence.power_actions import clear_pending_power_action, handle_power_command
+from intelligence.user_state import activate_user, deactivate_user, is_user_active
 
 logger = logging.getLogger(__name__)
 client = None
@@ -32,7 +33,6 @@ def _get_genai_client():
     client = genai.Client(api_key=api_key)
     return client
 
-active_users = set()
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "London")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 
@@ -64,7 +64,7 @@ def process_command(command, username):
     # ACTIVATE
     # ──────────────────────────────────────────────
     if "system activate" in command:
-        active_users.add(username)
+        activate_user(username)
         reply = "Activating system. All functions online."
         add_memory(command, reply, username)
         return reply
@@ -73,7 +73,8 @@ def process_command(command, username):
     # DEACTIVATE
     # ──────────────────────────────────────────────
     if "system deactivate" in command or "system shut down" in command:
-        active_users.discard(username)
+        deactivate_user(username)
+        clear_pending_power_action(username)
         reply = f"System deactivating. Until next time, {username}."
         add_memory(command, reply, username)
         return reply
@@ -81,7 +82,7 @@ def process_command(command, username):
     # ──────────────────────────────────────────────
     # SYSTEM OFFLINE GUARD
     # ──────────────────────────────────────────────
-    if username not in active_users:
+    if not is_user_active(username):
         return "System is offline for this user. Say 'system activate' to begin."
 
     # Destructive power commands require a second, exact confirmation phrase.
