@@ -163,7 +163,7 @@ def system_stats():
 def command_history():
     if not is_authenticated():
         return jsonify({"error": "Unauthorized"}), 401
-    return jsonify({"history": get_all_recent(20)})
+    return jsonify({"history": get_all_recent(20, username=session["user"])})
 
 
 # ==========================================
@@ -182,10 +182,22 @@ def analytics():
         cursor.execute("""
             SELECT command, COUNT(*) as count
             FROM command_history
+            WHERE username = %s
             GROUP BY command
             ORDER BY count DESC
             LIMIT 5
         """)
+        cursor.execute(
+            """
+            SELECT command, COUNT(*) as count
+            FROM command_history
+            WHERE username = %s
+            GROUP BY command
+            ORDER BY count DESC
+            LIMIT 5
+            """,
+            (session["user"],),
+        )
         rows = cursor.fetchall()
         return jsonify({"labels": [row[0] for row in rows], "data": [row[1] for row in rows]})
     except Exception:
