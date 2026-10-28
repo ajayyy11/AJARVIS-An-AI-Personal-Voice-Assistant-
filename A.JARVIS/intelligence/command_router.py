@@ -1,10 +1,8 @@
 import datetime
-import hashlib
 import logging
 import os
 import re
 import subprocess
-from pathlib import Path
 
 import psutil
 import pyautogui
@@ -12,6 +10,7 @@ import requests
 from google import genai
 
 from intelligence.memory import add_memory, get_recent
+from intelligence.notes import notes_path, read_recent_notes
 from intelligence.agent import generate_agent_response
 from intelligence.power_actions import clear_pending_power_action, handle_power_command
 from intelligence.user_state import activate_user, deactivate_user, is_user_active
@@ -35,18 +34,6 @@ def _get_genai_client():
 
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "London")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
-
-
-def _notes_path(username):
-    """Return a stable, user-specific notes path without using raw usernames."""
-    app_dir = Path(__file__).resolve().parents[1]
-    notes_dir = app_dir / "user_data" / "notes"
-    notes_dir.mkdir(parents=True, exist_ok=True)
-
-    username_text = str(username)
-    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", username_text).strip("_")[:32] or "user"
-    suffix = hashlib.sha256(username_text.encode("utf-8")).hexdigest()[:12]
-    return notes_dir / f"{safe_name}-{suffix}.txt"
 
 
 def process_command(command, username):
@@ -286,8 +273,8 @@ def process_command(command, username):
         if note_text:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             try:
-                notes_path = _notes_path(username)
-                with notes_path.open("a", encoding="utf-8") as notes_file:
+                note_file_path = notes_path(username)
+                with note_file_path.open("a", encoding="utf-8") as notes_file:
                     notes_file.write(f"[{timestamp}] {note_text}\n")
                 reply = "Note saved to your personal notes."
             except OSError:
@@ -300,11 +287,9 @@ def process_command(command, username):
 
     if "read my notes" in command or "read notes" in command:
         try:
-            notes_path = _notes_path(username)
-            with notes_path.open("r", encoding="utf-8") as notes_file:
-                lines = notes_file.readlines()
+            lines = read_recent_notes(username, limit=5)
             if lines:
-                notes = " | ".join(line.strip() for line in lines[-5:])
+                notes = " | ".join(lines)
                 reply = f"Your recent notes: {notes}"
             else:
                 reply = "You have no saved notes."
