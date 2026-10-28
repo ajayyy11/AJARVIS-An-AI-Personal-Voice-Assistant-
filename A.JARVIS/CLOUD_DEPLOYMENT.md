@@ -5,7 +5,7 @@ This guide deploys the separate hosted workspace entry point. It deliberately do
 ## Cloud features
 
 - Password-based account creation and login with hashed passwords, session timeout, CSRF tokens, and login-attempt throttling
-- User-scoped PostgreSQL notes, assistant history, tasks, reminders, and uploaded-document text
+- User-scoped PostgreSQL notes, editable long-term personalization preferences, assistant history, tasks, reminders, and uploaded-document text
 - Gemini assistant with an explicit read-only tool allow-list
 - Separate Google Search-grounded research responses with source links when available
 - PDF, DOCX, XLSX, CSV, and TXT extraction with bounded size/row/page/text limits and document Q&A
@@ -57,6 +57,6 @@ pytest -q tests
 - Browser reminders are checked while the dashboard is open; there is no delivery to a closed browser or offline device. Browser notification permission is optional.
 - Document text extracted from uploads is stored in the database so it survives redeploys. Deleting a document removes the extracted text from AJARVIS's database. The original file bytes are not retained.
 - Scanned PDFs without a text layer report that no readable text was found. OCR is not part of this cloud build.
-- Note content or document extracts may be sent to Gemini when you ask the assistant to search or analyze them. Do not upload confidential company documents or store secrets unless your organization's policies and the configured provider account permit that processing.
+- Note content, saved preference values, or document extracts may be sent to Gemini when you ask the assistant to personalize, search, or analyze them. Do not upload confidential company documents or store secrets unless your organization's policies and the configured provider account permit that processing.
 - The hosted app can use the Gemini API and Google Search grounding; API usage is subject to the provider's terms and billing.
 - This is a hobby deployment starting point, not a security certification. Before public/enterprise use, add a production-grade distributed rate limiter, email verification and account recovery, backups/restore drills, dependency scanning, and further abuse/rate controls. Review data-retention, privacy and biometric policies before enabling any biometric feature in a separate local deployment.
