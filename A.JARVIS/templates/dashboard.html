@@ -532,7 +532,10 @@
           log.replaceChildren();
           const history = data.history || [];
           if (history.length === 0) {
-            log.innerHTML = '<span style="color:#546e7a">No commands yet.</span>';
+            const emptyState = document.createElement("span");
+            emptyState.style.color = "#546e7a";
+            emptyState.textContent = "No commands yet.";
+            log.appendChild(emptyState);
             return;
           }
           history.slice().reverse().forEach(entry => {
@@ -798,7 +801,15 @@
       const container = document.getElementById('toast-container');
       const toast = document.createElement('div');
       toast.className = 'toast';
-      toast.innerHTML = `<div class="toast-label">A.JARVIS</div>${message}`;
+
+      const label = document.createElement('div');
+      label.className = 'toast-label';
+      label.textContent = 'A.JARVIS';
+
+      const body = document.createElement('div');
+      body.textContent = String(message ?? '');
+
+      toast.append(label, body);
       container.appendChild(toast);
 
       // Auto dismiss after 4s
