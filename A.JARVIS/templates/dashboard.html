@@ -492,11 +492,7 @@
 
     /* VOICE SYSTEM - STARK PROTOCOL MODE */
 
-    const bars = document.querySelectorAll(".bar");
-    const commandBox = document.querySelector(".command");
     const core = document.querySelector(".core");
-    const aiStatus = document.querySelector(".ai-status");
-    const transcriptBox = document.getElementById("transcript-box");
 
 
 
@@ -592,8 +588,6 @@
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const bars = document.querySelectorAll(".bar");
-    const commandBox = document.querySelector(".command");
-    const core = document.querySelector(".core") || document.getElementById("ai-core");
     const aiStatus = document.querySelector(".ai-status");
     const transcriptBox = document.getElementById("transcript-box");
     const textInput = document.getElementById("text-command-input");
@@ -731,7 +725,6 @@
             const reply = "Hello " + username;
 
             speak(reply);
-            commandBox.textContent = reply;
 
             core.style.boxShadow = "0 0 100px #00ffff";
           }
