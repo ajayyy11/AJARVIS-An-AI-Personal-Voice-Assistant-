@@ -1,4 +1,4 @@
-"""Database-backed command history with a bounded local fallback cache."""
+"""User-scoped command history with a bounded local fallback cache."""
 
 import logging
 from threading import RLock
@@ -27,46 +27,65 @@ def _close_resources(cursor, conn):
         try:
             cursor.close()
         except Exception:
-            logger.debug("Unable to close memory cursor", exc_info=True)
+            logger.debug("Unable to close history cursor", exc_info=True)
     if conn is not None:
         try:
             conn.close()
         except Exception:
-            logger.debug("Unable to close memory connection", exc_info=True)
+            logger.debug("Unable to close history connection", exc_info=True)
 
 
-def _cache_snapshot(n, newest_first=False):
+def _cache_snapshot(n, username, newest_first=False):
+    """Copy only this user's entries, with no shared-history fallback."""
     with _cache_lock:
-        entries = list(_cache[-n:]) if n else []
+        entries = [
+            {"command": entry["command"], "response": entry["response"]}
+            for entry in _cache
+            if entry["username"] == username
+        ][-n:] if n else []
+
     return list(reversed(entries)) if newest_first else entries
 
 
-def add_memory(command, response):
-    """Persist a command/response pair and retain it in the fallback cache."""
+def add_memory(command, response, username):
+    """Persist a command/response pair under the authenticated username."""
+    if not isinstance(username, str) or not username.strip():
+        raise ValueError("A username is required to store command history.")
+    username = username.strip()
+
     conn = None
     cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO command_history (command, response) VALUES (%s, %s)",
-            (command, response),
+            "INSERT INTO command_history (username, command, response) "
+            "VALUES (%s, %s, %s)",
+            (username, command, response),
         )
         conn.commit()
     except Exception:
         # Do not log command contents, which may contain personal information.
-        logger.warning("Memory database write failed; using local cache", exc_info=True)
+        # Existing databases must apply the user-scoping migration to persist rows.
+        logger.warning("History database write failed; using user-scoped local cache", exc_info=True)
     finally:
         _close_resources(cursor, conn)
 
     with _cache_lock:
-        _cache.append({"command": command, "response": response})
+        _cache.append({
+            "username": username,
+            "command": command,
+            "response": response,
+        })
         if len(_cache) > MAX_MEMORY:
             del _cache[:-MAX_MEMORY]
 
 
-def get_recent(n=5):
-    """Return recent history oldest-first for chronological AI context."""
+def get_recent(n=5, username=None):
+    """Return this user's recent history oldest-first for AI context."""
+    if not isinstance(username, str) or not username.strip():
+        return []
+    username = username.strip()
     limit = _normalise_limit(n, 5)
     if limit == 0:
         return []
@@ -77,20 +96,24 @@ def get_recent(n=5):
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT command, response FROM command_history ORDER BY id DESC LIMIT %s",
-            (limit,),
+            "SELECT command, response FROM command_history "
+            "WHERE username = %s ORDER BY id DESC LIMIT %s",
+            (username, limit),
         )
         rows = cursor.fetchall()
         return [{"command": row[0], "response": row[1]} for row in reversed(rows)]
     except Exception:
-        logger.warning("Memory database read failed; using local cache", exc_info=True)
-        return _cache_snapshot(limit)
+        logger.warning("History database read failed; using user-scoped local cache", exc_info=True)
+        return _cache_snapshot(limit, username)
     finally:
         _close_resources(cursor, conn)
 
 
-def get_all_recent(n=20):
-    """Return recent dashboard history newest-first."""
+def get_all_recent(n=20, username=None):
+    """Return this user's recent dashboard history newest-first."""
+    if not isinstance(username, str) or not username.strip():
+        return []
+    username = username.strip()
     limit = _normalise_limit(n, 20)
     if limit == 0:
         return []
@@ -101,13 +124,14 @@ def get_all_recent(n=20):
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT command, response FROM command_history ORDER BY id DESC LIMIT %s",
-            (limit,),
+            "SELECT command, response FROM command_history "
+            "WHERE username = %s ORDER BY id DESC LIMIT %s",
+            (username, limit),
         )
         rows = cursor.fetchall()
         return [{"command": row[0], "response": row[1]} for row in rows]
     except Exception:
-        logger.warning("Dashboard history read failed; using local cache", exc_info=True)
-        return _cache_snapshot(limit, newest_first=True)
+        logger.warning("Dashboard history read failed; using user-scoped local cache", exc_info=True)
+        return _cache_snapshot(limit, username, newest_first=True)
     finally:
         _close_resources(cursor, conn)
