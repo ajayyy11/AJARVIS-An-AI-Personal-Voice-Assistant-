@@ -255,6 +255,7 @@
       toast("I'm still working on the previous request. One moment.", false, "AJARVIS");
       return;
     }
+    if (isSpeaking) stopSpokenReply();
     if (isListening && recognitionInstance) {
       manualStop = true;
       try { recognitionInstance.stop(); } catch (_error) {}
