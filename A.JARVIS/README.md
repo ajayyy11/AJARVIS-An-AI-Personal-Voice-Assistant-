@@ -25,20 +25,28 @@ Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL · python
    pip install -r requirements.txt
    ```
 
-4. Copy `.env.example` to `.env` and set the required database credentials, API key, and a strong random Flask secret key.
-5. Create/configure the MySQL database using `database/db.py`.
+4. Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` is needed for free-form Gemini answers but is no longer required just to start local commands; `WEATHER_API_KEY` is optional.
+5. Create the MySQL database and tables using `database/schema.sql`.
 6. Start the app:
 
    ```bash
    python app.py
    ```
 
+## Safer Desktop Controls
+
+Shutdown and restart requests need an exact confirmation within 30 seconds: say `shutdown system`, then `confirm shutdown`. Say `cancel` to cancel. The initial request alone does not execute the action.
+
+## Automated Tests
+
+From this directory, set `SECRET_KEY` and run `python -m pip install Flask python-dotenv pytest mysql-connector-python`, followed by `pytest -q tests`.
+
 ## Security and Privacy
 
 - Keep `.env` out of version control; never publish API keys or database credentials.
 - Do not use a predictable fallback secret key in a deployed environment.
 - Disable Flask debug mode outside local development and configure secure session-cookie settings.
-- Face recognition may produce false matches or rejections. Use informed consent and do not treat it as infallible authentication.
+- Face recognition may produce false matches or rejections. Use informed consent and do not treat it as infallible authentication. The matching threshold has been made stricter and should be validated on the target camera and lighting conditions.
 
 ## Main Components
 
