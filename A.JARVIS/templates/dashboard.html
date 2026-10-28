@@ -649,7 +649,58 @@
     const transcriptBox = document.getElementById("transcript-box");
     const textInput = document.getElementById("text-command-input");
     const sendBtn = document.getElementById("send-command-btn");
+    const voiceLanguageSelect = document.getElementById("local-voice-language");
+    const voiceOutputToggle = document.getElementById("local-voice-output");
+    const stopSpeechButton = document.getElementById("local-stop-speech");
+    let recognition = null;
+    let shouldListen = true;
+    let recognitionBlocked = false;
+    let speechHold = false;
+    let speechGeneration = 0;
     let state = "idle";
+
+    try {
+      const savedLanguage = window.localStorage.getItem("ajarvis.local.voice.language");
+      if (savedLanguage && Array.from(voiceLanguageSelect.options).some((option) => option.value === savedLanguage)) {
+        voiceLanguageSelect.value = savedLanguage;
+      }
+      voiceOutputToggle.checked = window.localStorage.getItem("ajarvis.local.voice.output") !== "false";
+    } catch (_error) {
+      // The voice controls still work if browser storage is restricted.
+    }
+
+    voiceLanguageSelect.addEventListener("change", () => {
+      if (recognition) recognition.lang = voiceLanguageSelect.value;
+      try { window.localStorage.setItem("ajarvis.local.voice.language", voiceLanguageSelect.value); } catch (_error) {}
+      showToast("Voice language set to " + voiceLanguageSelect.options[voiceLanguageSelect.selectedIndex].text + ".");
+    });
+    voiceOutputToggle.addEventListener("change", () => {
+      try { window.localStorage.setItem("ajarvis.local.voice.output", voiceOutputToggle.checked ? "true" : "false"); } catch (_error) {}
+      if (!voiceOutputToggle.checked) stopSpokenReply();
+      showToast(voiceOutputToggle.checked ? "Spoken replies enabled." : "Spoken replies muted.");
+    });
+
+    function stripWakePhrase(value) {
+      return String(value || "").replace(
+        /^(?:(?:hey|hi|hello|okay|ok)[,]?\\s+)?(?:a\\.?\\s*j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|ajarvis|jarvis)\\b[\\s,.:;!?-]*/i,
+        ""
+      ).trim();
+    }
+
+    function stopSpokenReply() {
+      speechGeneration += 1;
+      speechHold = false;
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (stopSpeechButton) stopSpeechButton.disabled = true;
+      if (recognition && shouldListen && !recognitionBlocked) {
+        window.setTimeout(() => {
+          if (!shouldListen || recognitionBlocked || speechHold) return;
+          try { recognition.start(); } catch (_error) {}
+        }, 350);
+      }
+    }
+
+    stopSpeechButton.addEventListener("click", stopSpokenReply);
 
     // Shared command handler. Returning the server reply lets callers wait
     // for activation/deactivation to finish before updating the UI state.
