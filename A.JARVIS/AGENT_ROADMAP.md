@@ -7,7 +7,7 @@ This roadmap keeps the existing Windows assistant working while adding broader c
 - Manual Gemini function calling through a local allow-list
 - Runtime argument validation for registered tools
 - Explicit risk levels and confirmation metadata
-- Read-only starter tools for date/time, system usage, battery status, and per-user note search
+- Read-only starter tools for date/time, system usage, battery status, per-user note search, saved-document search, and personalization preferences
 - Separate Google Search-grounded Gemini research responses with validated source links
 - Bounded tool-call rounds and output length
 - Automated tests for unknown tools, invalid arguments, and side-effect blocking
