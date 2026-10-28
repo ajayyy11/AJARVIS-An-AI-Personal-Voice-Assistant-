@@ -67,7 +67,7 @@ This project handles camera input, face-related data, sessions, and API credenti
 
 ## Agent Tool Safety
 
-Gemini tool calls are handled manually through a local allow-list. The current agent tools provide read-only date/time and system/battery status. Arbitrary shell execution is not exposed, and side-effecting tool requests are rejected until a trusted approval workflow exists. See [the application agent notes](A.JARVIS/README.md#tool-enabled-agent-foundation).
+Gemini tool calls are handled manually through a local allow-list. The current agent tools provide read-only date/time, system/battery status, and user-scoped saved-note lookup. Note content may be sent to the configured Gemini model when the notes tools are used, so do not store secrets in notes. Arbitrary shell execution is not exposed, and side-effecting tool requests are rejected until a trusted approval workflow exists. See [the application agent notes](A.JARVIS/README.md#tool-enabled-agent-foundation).
 
 ## Safer Desktop Controls
 
