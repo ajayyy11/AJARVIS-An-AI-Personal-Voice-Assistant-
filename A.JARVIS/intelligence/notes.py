@@ -43,7 +43,7 @@ def search_personal_notes(username: str, query: str, limit: int = 5) -> list[str
         raise ValueError("limit must be between 1 and 10.")
     matches: list[str] = []
     # Scan a bounded tail to avoid loading a very large notes file into memory.
-    for line in read_recent_notes(username, limit=MAX_NOTE_LINES_TO_SCAN):
+    for line in reversed(read_recent_notes(username, limit=MAX_NOTE_LINES_TO_SCAN)):
         if query.casefold() in line.casefold():
             matches.append(line)
             if len(matches) >= limit:
