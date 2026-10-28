@@ -12,6 +12,15 @@ _cache = []
 _cache_lock = RLock()
 
 
+def clear_user_memory(username):
+    """Remove cached history for a user after account deletion or privacy cleanup."""
+    if not isinstance(username, str) or not username.strip():
+        return
+    normalized = username.strip()
+    with _cache_lock:
+        _cache[:] = [entry for entry in _cache if entry.get("username") != normalized]
+
+
 def _normalise_limit(value, default):
     """Return a safe query/cache limit bounded by the local cache size."""
     try:
