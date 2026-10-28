@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AJARVIS Cloud · Workspace</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css') }}">
+</head>
+<body class="workspace-body" data-user="{{ user }}" data-csrf="{{ csrf_token }}">
+  <div class="app-glow"></div>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <span class="brand-mark">A</span>
+      <span><strong>A.J.A.R.V.I.S</strong><small>CLOUD WORKSPACE</small></span>
+    </a>
+    <div class="topbar-right">
+      <span class="connection"><span class="dot"></span> CLOUD ONLINE</span>
+      <span class="user-pill"><span class="avatar">{{ user[:1]|upper }}</span><span>{{ user }}</span></span>
+      <button id="logoutButton" class="quiet-button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="welcome-row">
+      <div>
+        <div class="eyebrow">PERSONAL INTELLIGENCE SYSTEM · V2</div>
+        <h1>Good to see you, <span>{{ user }}</span>.</h1>
+        <p class="muted">Ask questions, organize your day, and work with your documents.</p>
+      </div>
+      <div class="server-card">
+        <span class="server-icon">◈</span>
+        <div><small>SERVER STATUS</small><strong id="serverStatus">Checking…</strong><em id="serverStats">Cloud host metrics</em></div>
+      </div>
+    </section>
+
+    <section class="workspace-grid">
+      <div class="panel assistant-panel">
+        <div class="panel-heading">
+          <div class="panel-symbol">✳</div>
+          <div><h2>Ask AJARVIS</h2><p>AI assistant · web research · personal memory</p></div>
+          <span class="panel-status">READY</span>
+        </div>
+        <div id="chatLog" class="chat-log" aria-live="polite">
+          <div class="chat-message assistant-message">
+            <span class="message-orb">A</span>
+            <div><small>AJARVIS</small><p>Hello {{ user }}. Ask me a question, search your saved notes, research a current topic, or look inside an uploaded document.</p></div>
+          </div>
+        </div>
+        <form id="chatForm" class="chat-composer">
+          <textarea id="commandInput" rows="2" maxlength="2000" placeholder="Ask anything… Try “search the web for the latest Python release”" required></textarea>
+          <div class="composer-actions">
+            <span class="hint">Enter to send · Shift+Enter for a new line</span>
+            <div class="button-row">
+              <button type="button" id="micButton" class="icon-button" aria-label="Speak command" title="Speak command">🎙</button>
+              <button type="submit" id="sendButton" class="primary-button send-button">Send <span>↗</span></button>
+            </div>
+          </div>
+        </form>
+        <p class="capability-note">Web research and document Q&amp;A use Gemini. Cloud mode does not control your personal computer.</p>
+      </div>
+
+      <div class="panel tasks-panel">
+        <div class="panel-heading">
+          <div class="panel-symbol">◷</div>
+          <div><h2>Tasks & reminders</h2><p>Reminders notify while this workspace is open</p></div>
+          <button id="refreshTasks" class="subtle-button" type="button" aria-label="Refresh tasks">↻</button>
+        </div>
+        <form id="taskForm" class="task-form">
+          <label for="taskTitle">New task</label>
+          <input id="taskTitle" maxlength="160" placeholder="What do you need to do?" required>
+          <input id="taskDetails" maxlength="2000" placeholder="Details (optional)">
+          <label for="taskDue">Reminder time (optional)</label>
+          <input id="taskDue" type="datetime-local">
+          <button type="submit" class="secondary-button">＋ Add task</button>
+        </form>
+        <div id="taskList" class="task-list"><p class="empty-state">Loading tasks…</p></div>
+        <button id="enableNotifications" type="button" class="text-button">Enable browser notifications</button>
+      </div>
+
+      <div class="panel notes-panel">
+        <div class="panel-heading">
+          <div class="panel-symbol">▤</div>
+          <div><h2>Personal notes</h2><p>Private to your signed-in account</p></div>
+        </div>
+        <form id="noteForm" class="note-form">
+          <textarea id="noteText" rows="3" maxlength="4000" placeholder="Save an idea, checklist, or reminder…" required></textarea>
+          <button type="submit" class="secondary-button">Save note</button>
+        </form>
+        <form id="noteSearchForm" class="inline-search">
+          <input id="noteQuery" maxlength="120" placeholder="Search your notes">
+          <button type="submit" class="subtle-button">Search</button>
+        </form>
+        <div id="noteList" class="note-list"><p class="empty-state">Loading notes…</p></div>
+      </div>
+
+      <div class="panel documents-panel">
+        <div class="panel-heading">
+          <div class="panel-symbol">▧</div>
+          <div><h2>Document intelligence</h2><p>PDF · Word · Excel · CSV · text</p></div>
+        </div>
+        <form id="documentForm" class="document-form">
+          <label class="upload-drop" for="documentFile">
+            <span class="upload-icon">⇧</span>
+            <strong>Choose a document</strong>
+            <small>Maximum 8 MB · extracted text is stored in your account</small>
+            <input id="documentFile" type="file" accept=".pdf,.docx,.xlsx,.csv,.txt" required>
+          </label>
+          <button type="submit" id="uploadButton" class="secondary-button">Upload & analyse</button>
+        </form>
+        <div id="documentResult" class="document-result" aria-live="polite"></div>
+        <div id="documentList" class="document-list"><p class="empty-state">Loading documents…</p></div>
+      </div>
+    </section>
+
+    <section class="bottom-strip">
+      <span><span class="dot"></span> Your workspace is user-scoped</span>
+      <span>Voice input depends on your browser. Reminder notifications require this page to remain open.</span>
+      <a href="{{ url_for('healthz') }}" target="_blank" rel="noreferrer">Service health ↗</a>
+    </section>
+  </main>
+  <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='cloud.js') }}" defer></script>
+</body>
+</html>
