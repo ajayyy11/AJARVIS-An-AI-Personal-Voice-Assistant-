@@ -192,3 +192,78 @@ def test_cloud_agent_registry_exposes_no_desktop_control():
         "search_saved_documents",
     }
     assert not any("shutdown" in name or "shell" in name or "open_app" in name for name in names)
+
+
+
+def test_account_deletion_requires_exact_confirmation_and_password(client, monkeypatch):
+    login_session(client, username="alice", csrf="test-token")
+    monkeypatch.setattr(cloud_app, "_database", lambda: pytest.fail("No DB access before explicit confirmation"))
+
+    response = client.post(
+        "/api/account/delete",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"confirmation": "DELETE"},
+    )
+    assert response.status_code == 400
+    assert "password" in response.get_json()["error"].lower()
+
+
+def test_account_deletion_removes_user_scoped_data_and_session(client, monkeypatch):
+    login_session(client, username="alice", csrf="test-token")
+    password_hash = generate_password_hash("strong-password-123")
+    cursor = FakeCursor(fetchone_value=(password_hash,))
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+
+    from intelligence.memory import _cache, _cache_lock
+    with _cache_lock:
+        _cache.append({"username": "alice", "command": "private", "response": "private response"})
+        _cache.append({"username": "bob", "command": "other", "response": "other response"})
+
+    response = client.post(
+        "/api/account/delete",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"confirmation": "DELETE", "password": "strong-password-123"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+    assert connection.committed is True
+    deleted_tables = [
+        sql.split("DELETE FROM ", 1)[1].split(" ", 1)[0]
+        for sql, _params in cursor.executed
+        if "DELETE FROM " in sql
+    ]
+    assert deleted_tables == [
+        "cloud_notes", "ajarvis_tasks", "ajarvis_documents",
+        "command_history", "cloud_users",
+    ]
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+    with _cache_lock:
+        assert all(entry["username"] != "alice" for entry in _cache)
+        _cache[:] = [entry for entry in _cache if entry["username"] != "bob"]
+
+
+def test_note_delete_is_owner_scoped(client, monkeypatch):
+    login_session(client, username="alice", csrf="test-token")
+    cursor = FakeCursor()
+    cursor.rowcount = 0
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+
+    response = client.delete("/api/notes/18", headers={"X-CSRF-Token": "test-token"})
+    assert response.status_code == 404
+    assert cursor.executed[0][1] == (18, "alice")
+
+
+def test_document_delete_is_owner_scoped(client, monkeypatch):
+    login_session(client, username="alice", csrf="test-token")
+    cursor = FakeCursor()
+    cursor.rowcount = 0
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+
+    response = client.delete("/api/documents/7", headers={"X-CSRF-Token": "test-token"})
+    assert response.status_code == 404
+    assert cursor.executed[0][1] == (7, "alice")
