@@ -183,3 +183,11 @@ input::placeholder, textarea::placeholder { color: #60798d; }
 .preference-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 13px 18px; border-top: 1px solid rgba(111,170,205,.08); }
 .preference-item strong { display: block; font-size: 11px; color: var(--cyan); overflow-wrap: anywhere; }
 .preference-item p { margin: 5px 0 0; font-size: 11px; color: #bdcfdd; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.activity-list { border-top: 1px solid rgba(111,170,205,.1); }
+.activity-item { display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 10px; align-items: center; padding: 12px 18px; border-bottom: 1px solid rgba(111,170,205,.08); }
+.activity-status { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; font-size: 12px; font-weight: 800; }
+.activity-status.success { color: var(--green); background: rgba(116,230,190,.08); border: 1px solid rgba(116,230,190,.15); }
+.activity-status.failure { color: var(--danger); background: rgba(255,143,157,.08); border: 1px solid rgba(255,143,157,.15); }
+.activity-copy strong { display: block; font-size: 11px; overflow-wrap: anywhere; }
+.activity-copy small { display: block; color: var(--muted); font-size: 9px; margin-top: 5px; }
