@@ -45,7 +45,7 @@ def process_command(command, username):
     # ──────────────────────────────────────────────
     if "hey jarvis" in command:
         reply = f"Hello {username}. Awaiting system activation."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ──────────────────────────────────────────────
@@ -54,7 +54,7 @@ def process_command(command, username):
     if "system activate" in command:
         system_active = True
         reply = "Activating system. All functions online."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ──────────────────────────────────────────────
@@ -63,7 +63,7 @@ def process_command(command, username):
     if "system deactivate" in command or "system shut down" in command:
         system_active = False
         reply = f"System deactivating. Until next time, {username}."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ──────────────────────────────────────────────
@@ -110,7 +110,7 @@ def process_command(command, username):
                     logger.warning("Could not schedule Windows %s", action, exc_info=True)
                     reply = f"Could not schedule the {action}. Please check Windows permissions."
 
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ──────────────────────────────────────────────
@@ -121,45 +121,45 @@ def process_command(command, username):
     if "time" in command and "date" not in command:
         now = datetime.datetime.now().strftime("%I:%M %p")
         reply = f"The current time is {now}."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # DATE
     if "date" in command or "what day" in command or "today" in command:
         today = datetime.datetime.now().strftime("%A, %B %d, %Y")
         reply = f"Today is {today}."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── OPEN APPS ──
     if "open youtube" in command:
         os.system("start https://youtube.com")
         reply = "Opening YouTube."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     if "open google" in command:
         os.system("start https://google.com")
         reply = "Opening Google."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     if "open chrome" in command:
         os.system("start chrome")
         reply = "Opening Chrome."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     if "open visual studio" in command or "open vs code" in command or "open visualstudio" in command:
         os.system("start code")
         reply = "Opening Visual Studio Code."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     if "open file explorer" in command:
         os.system("start explorer")
         reply = "Opening File Explorer."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── SYSTEM CONTROLS ──
@@ -167,7 +167,7 @@ def process_command(command, username):
     if "lock system" in command:
         os.system("rundll32.exe user32.dll,LockWorkStation")
         reply = "System locked."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── SCREENSHOT ──
@@ -175,7 +175,7 @@ def process_command(command, username):
         screenshot = pyautogui.screenshot()
         screenshot.save("screenshot.png")
         reply = "Screenshot captured and saved."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── SYSTEM STATS ──
@@ -183,7 +183,7 @@ def process_command(command, username):
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
         reply = f"CPU usage is {cpu}%. RAM usage is {ram}%."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── BATTERY STATUS ──
@@ -195,7 +195,7 @@ def process_command(command, username):
             reply = f"Battery is at {percent}% and is currently {plugged}."
         else:
             reply = "Battery information is not available on this device."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── FILE SEARCH ──
@@ -205,7 +205,7 @@ def process_command(command, username):
             reply = "Please specify a file name to find."
         else:
             reply = f"Searching for {target}. This might take a moment."
-            add_memory(command, reply)
+            add_memory(command, reply, username)
             
             # Start search from user's home directory
             home_dir = os.path.expanduser("~")
@@ -236,7 +236,7 @@ def process_command(command, username):
                 reply = f"Could not find {target} in your home directory."
             
             # Since we already added the 'searching' memory, we can add the result too
-            add_memory("System Note", reply)
+            add_memory("System Note", reply, username)
             return reply
 
     # ── VOLUME CONTROL ──
@@ -244,20 +244,20 @@ def process_command(command, username):
         for _ in range(5):
             pyautogui.press("volumeup")
         reply = "Volume increased."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     if "volume down" in command:
         for _ in range(5):
             pyautogui.press("volumedown")
         reply = "Volume decreased."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     if "mute" in command or "unmute" in command:
         pyautogui.press("volumemute")
         reply = "Volume toggled."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── NOTES ──
@@ -273,7 +273,7 @@ def process_command(command, username):
             reply = f"Note saved: {note_text}"
         else:
             reply = "What would you like me to note? Please repeat with the note content."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     if "read my notes" in command or "read notes" in command:
@@ -287,7 +287,7 @@ def process_command(command, username):
                 reply = "You have no saved notes."
         except FileNotFoundError:
             reply = "You have no saved notes yet."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ── WEATHER ──
@@ -326,7 +326,7 @@ def process_command(command, username):
                 print("Weather error:", e)
                 reply = "Could not fetch weather data. Check your internet connection."
 
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     # ──────────────────────────────────────────────
@@ -336,7 +336,7 @@ def process_command(command, username):
         ai_client = _get_genai_client()
         if ai_client is None:
             reply = "AI responses are not configured. Add GEMINI_API_KEY to your .env file."
-            add_memory(command, reply)
+            add_memory(command, reply, username)
             return reply
 
         system_prompt = (
@@ -346,7 +346,7 @@ def process_command(command, username):
         )
 
         # Build conversation history for context
-        history = get_recent(5)
+        history = get_recent(5, username=username)
         messages = []
         for entry in history:
             messages.append({"role": "user", "parts": [{"text": entry["command"]}]})
@@ -367,7 +367,7 @@ def process_command(command, username):
         reply = (response.text or "").strip()
         if not reply:
             reply = "I couldn't generate a response. Please try asking another way."
-        add_memory(command, reply)
+        add_memory(command, reply, username)
         return reply
 
     except Exception:
