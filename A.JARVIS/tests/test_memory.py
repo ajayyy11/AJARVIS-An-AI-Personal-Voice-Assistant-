@@ -51,7 +51,7 @@ def test_add_memory_commits_and_closes_resources(monkeypatch):
     assert conn.committed
     assert cursor.closed and conn.closed
     assert cursor.executed[1] == ("hello", "hello there")
-    assert memory.get_recent(1) == [{"command": "hello", "response": "hello there"}]
+    assert memory._cache == [{"command": "hello", "response": "hello there"}]
 
 
 def test_failed_write_still_updates_fallback_cache_and_closes(monkeypatch):
