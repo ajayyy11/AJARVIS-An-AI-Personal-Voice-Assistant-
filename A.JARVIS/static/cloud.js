@@ -93,6 +93,7 @@
   async function sendCommand(command) {
     const trimmed = String(command || "").trim();
     if (!trimmed) return;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     addChatMessage("user", trimmed);
     const placeholder = addChatMessage("assistant", "Thinking…");
     $("sendButton").disabled = true;
@@ -289,7 +290,7 @@
       list.appendChild(make("p", "empty-state", query ? "No matching notes found." : "No saved notes yet."));
       return;
     }
-    notes.slice().reverse().forEach((note) => {
+    notes.forEach((note) => {
       const item = make("article", "note-item");
       const value = typeof note === "string" ? note : ("[" + friendlyDate(note.created_at) + "] " + note.text);
       item.appendChild(make("p", "", value));
