@@ -20,7 +20,7 @@ def get_connection():
 
         database_url = Config.DATABASE_URL
         if database_url.startswith("postgres://"):
-            database_url = "postgresql://" + database_url[len("postgres://"): ]
+            database_url = "postgresql://" + database_url[len("postgres://"):]
         return psycopg.connect(
             database_url,
             connect_timeout=Config.MYSQL_CONNECT_TIMEOUT_SECONDS,
