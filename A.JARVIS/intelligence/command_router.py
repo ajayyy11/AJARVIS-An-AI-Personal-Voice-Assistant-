@@ -275,14 +275,14 @@ def process_command(command, username):
         return reply
 
     # ── NOTES ──
-    if command.startswith("take a note") or command.startswith("make a note"):
+    if re.match(r"^(?:take a note|make a note)\\b", command):
         note_text = re.sub(
             r"^(?:take a note|make a note)\b",
             "",
             original_command,
             count=1,
             flags=re.IGNORECASE,
-        ).strip()
+        ).strip().lstrip(" :,-").strip()
         if note_text:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             try:
