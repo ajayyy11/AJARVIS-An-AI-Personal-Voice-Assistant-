@@ -321,39 +321,47 @@
     </div>
 
     <script>
-        function capture() {
-            const username = document.getElementById('username').value.trim();
+        async function capture() {
+            const usernameInput = document.getElementById('username');
+            const username = usernameInput.value.trim();
+            const button = document.querySelector('button[onclick="capture()"]');
 
             if (!username) {
                 alert('Please enter a username.');
+                usernameInput.focus();
                 return;
             }
 
-            // Visual feedback
-            const button = event.target;
-            const originalText = button.innerHTML;
-            button.innerHTML = 'REGISTERING...';
-            button.style.background = 'linear-gradient(45deg, #00bcd4, #0099cc)';
+            if (button.disabled) return;
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = 'REGISTERING...';
+            button.setAttribute('aria-busy', 'true');
 
-            fetch('/register', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username: username })
-            })
-            .then(res => res.text())
-            .then(data => {
-                alert(data);
-                button.innerHTML = originalText;
-                button.style.background = 'linear-gradient(45deg, #ff5722, #ffc107)';
-            })
-            .catch(err => {
-                console.error('Registration error:', err);
-                alert('Registration failed. Please try again.');
-                button.innerHTML = originalText;
-                button.style.background = 'linear-gradient(45deg, #ff5722, #ffc107)';
-            });
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(data.message || 'Registration failed. Please try again.');
+                }
+                if (data.status !== 'success') {
+                    throw new Error(data.message || 'Registration was not completed.');
+                }
+
+                alert(data.message || 'Face registered successfully.');
+            } catch (error) {
+                console.error('Registration error:', error);
+                alert(error.message || 'Registration failed. Please check the camera and try again.');
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+                button.removeAttribute('aria-busy');
+            }
         }
     </script>
 </body>
