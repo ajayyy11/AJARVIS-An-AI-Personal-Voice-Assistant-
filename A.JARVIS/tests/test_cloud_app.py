@@ -237,7 +237,7 @@ def test_account_deletion_removes_user_scoped_data_and_session(client, monkeypat
     ]
     assert deleted_tables == [
         "cloud_notes", "user_preferences", "ajarvis_tasks", "ajarvis_documents",
-        "command_history", "cloud_users",
+        "command_history", "ajarvis_tool_audit", "cloud_users",
     ]
     with client.session_transaction() as sess:
         assert "user" not in sess
@@ -354,3 +354,63 @@ def test_preference_delete_is_scoped_to_current_user(client, monkeypatch):
     )
     assert response.status_code == 200
     assert cursor.executed[0][1] == ("alice", "answer_style")
+
+
+
+def test_tool_audit_records_metadata_without_arguments_or_results(monkeypatch):
+    audit_entries = []
+    monkeypatch.setattr(
+        cloud_app,
+        "_record_tool_audit",
+        lambda username, tool_name, outcome, duration_ms: audit_entries.append(
+            (username, tool_name, outcome, duration_ms)
+        ),
+    )
+    handler = cloud_app._audited_tool(
+        "search_personal_notes",
+        lambda *, username, query: {"private_result": query},
+    )
+
+    result = handler(username="alice", query="confidential phrase")
+
+    assert result == {"private_result": "confidential phrase"}
+    assert len(audit_entries) == 1
+    assert audit_entries[0][0:3] == ("alice", "search_personal_notes", "success")
+    assert isinstance(audit_entries[0][3], int)
+    assert "confidential phrase" not in repr(audit_entries)
+
+
+def test_tool_audit_marks_failed_tool_without_storing_exception_details(monkeypatch):
+    audit_entries = []
+    monkeypatch.setattr(
+        cloud_app,
+        "_record_tool_audit",
+        lambda username, tool_name, outcome, duration_ms: audit_entries.append(
+            (username, tool_name, outcome, duration_ms)
+        ),
+    )
+
+    def raises(*, username):
+        raise RuntimeError("private failure text")
+
+    handler = cloud_app._audited_tool("read_user_preferences", raises)
+    with pytest.raises(RuntimeError, match="private failure"):
+        handler(username="alice")
+
+    assert audit_entries[0][0:3] == ("alice", "read_user_preferences", "error")
+    assert "private failure text" not in repr(audit_entries)
+
+
+def test_activity_api_filters_by_current_username(client, monkeypatch):
+    login_session(client, username="alice")
+    cursor = FakeCursor(fetchall_value=[
+        ("read_user_preferences", "success", 12, datetime.now(timezone.utc)),
+    ])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+
+    response = client.get("/api/activity")
+
+    assert response.status_code == 200
+    assert response.get_json()["activity"][0]["tool_name"] == "read_user_preferences"
+    assert cursor.executed[0][1] == ("alice", 30)
