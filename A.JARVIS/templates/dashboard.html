@@ -670,7 +670,18 @@
     }
 
     voiceLanguageSelect.addEventListener("change", () => {
-      if (recognition) recognition.lang = voiceLanguageSelect.value;
+      if (recognition) {
+        recognition.lang = voiceLanguageSelect.value;
+        // Re-arm after a permission/language failure or restart with the new locale.
+        const shouldRestart = recognitionBlocked;
+        recognitionBlocked = false;
+        shouldListen = true;
+        if (shouldRestart) {
+          try { recognition.start(); } catch (_error) {}
+        } else if (!speechHold) {
+          try { recognition.stop(); } catch (_error) {}
+        }
+      }
       try { window.localStorage.setItem("ajarvis.local.voice.language", voiceLanguageSelect.value); } catch (_error) {}
       showToast("Voice language set to " + voiceLanguageSelect.options[voiceLanguageSelect.selectedIndex].text + ".");
     });
@@ -809,12 +820,35 @@
       };
 
       recognition.onerror = (event) => {
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        const errorCode = String(event.error || "unknown");
+        const statusText = document.getElementById("mic-status");
+        if (errorCode === "not-allowed" || errorCode === "service-not-allowed") {
           recognitionBlocked = true;
           shouldListen = false;
           aiStatus.textContent = "Microphone permission required";
-          const statusText = document.getElementById("mic-status");
           if (statusText) statusText.textContent = "ALLOW MICROPHONE ACCESS TO USE VOICE";
+          showToast("Microphone access is blocked. Allow it in your browser's site settings, then tap the core to retry.");
+        } else if (errorCode === "audio-capture") {
+          aiStatus.textContent = "Microphone not found";
+          if (statusText) statusText.textContent = "CHECK MICROPHONE OR HEADSET";
+          showToast("No microphone was found. Check your input device and try again.");
+        } else if (errorCode === "language-not-supported") {
+          recognitionBlocked = true;
+          shouldListen = false;
+          aiStatus.textContent = "Speech language unavailable";
+          if (statusText) statusText.textContent = "SELECT ANOTHER VOICE LANGUAGE";
+          showToast("This browser cannot recognize speech in the selected language. Choose another language below.");
+        } else if (errorCode === "network") {
+          recognitionBlocked = true;
+          shouldListen = false;
+          aiStatus.textContent = "Speech service unavailable";
+          if (statusText) statusText.textContent = "CHECK CONNECTION AND TAP CORE TO RETRY";
+          showToast("The browser speech service could not be reached. Check connectivity and tap the core to retry.");
+        } else if (errorCode === "no-speech") {
+          aiStatus.textContent = state === "activated" ? "System Active" : "No speech detected";
+        } else if (errorCode !== "aborted") {
+          aiStatus.textContent = "Voice input error";
+          showToast("Voice input failed (" + errorCode + "). You can change the voice language or use the text command box.");
         }
       };
 
