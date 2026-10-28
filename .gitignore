@@ -30,3 +30,8 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# AJARVIS local personal data and generated files
+A.JARVIS/user_data/
+A.JARVIS/notes.txt
+A.JARVIS/screenshot.png
