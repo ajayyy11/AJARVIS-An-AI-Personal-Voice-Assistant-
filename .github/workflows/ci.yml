@@ -25,7 +25,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install Flask python-dotenv pytest mysql-connector-python
+          pip install -r requirements-web.txt mysql-connector-python
       - name: Validate dashboard JavaScript syntax
         shell: bash
         run: |
@@ -47,6 +47,26 @@ jobs:
           Path("/tmp/ajarvis-dashboard-check.js").write_text(javascript, encoding="utf-8")
           PY
           node --check /tmp/ajarvis-dashboard-check.js
+      - name: Validate cloud dashboard JavaScript syntax
+        shell: bash
+        run: |
+          node --check static/cloud.js
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          html = Path("templates/cloud_auth.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script\\s*>", html, flags=re.IGNORECASE | re.DOTALL)
+          inline_scripts = [script for script in scripts if script.strip()]
+          if not inline_scripts:
+              raise SystemExit("No inline cloud authentication script was found.")
+          javascript = "\\n;\\n".join(inline_scripts)
+          javascript = javascript.replace("{{ mode|tojson }}", '"login"')
+          if "{{" in javascript or "{%" in javascript:
+              raise SystemExit("Unrendered Jinja syntax remains in cloud authentication JavaScript.")
+          Path("/tmp/ajarvis-cloud-auth-check.js").write_text(javascript, encoding="utf-8")
+          PY
+          node --check /tmp/ajarvis-cloud-auth-check.js
       - name: Compile application modules
         run: python -m compileall -q .
       - name: Run automated tests
