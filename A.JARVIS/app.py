@@ -179,14 +179,6 @@ def analytics():
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT command, COUNT(*) as count
-            FROM command_history
-            WHERE username = %s
-            GROUP BY command
-            ORDER BY count DESC
-            LIMIT 5
-        """)
         cursor.execute(
             """
             SELECT command, COUNT(*) as count
