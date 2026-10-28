@@ -50,7 +50,8 @@ def _notes_path(username):
 
 
 def process_command(command, username):
-    command = command.lower().strip()
+    original_command = str(command).strip()
+    command = original_command.lower()
 
     # ──────────────────────────────────────────────
     # WAKE WORD
@@ -279,12 +280,23 @@ def process_command(command, username):
                      .replace("take a note", "")
                      .replace("make a note", "")
                      .strip())
+        note_text = re.sub(
+            r"^(?:take a note|make a note)\\b",
+            "",
+            original_command,
+            count=1,
+            flags=re.IGNORECASE,
+        ).strip()
         if note_text:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-            notes_path = _notes_path(username)
-            with notes_path.open("a", encoding="utf-8") as notes_file:
-                notes_file.write(f"[{timestamp}] {note_text}\n")
-            reply = "Note saved to your personal notes."
+            try:
+                notes_path = _notes_path(username)
+                with notes_path.open("a", encoding="utf-8") as notes_file:
+                    notes_file.write(f"[{timestamp}] {note_text}\\n")
+                reply = "Note saved to your personal notes."
+            except OSError:
+                logger.warning("Could not write personal notes", exc_info=True)
+                reply = "Could not save your note. Check folder permissions and try again."
         else:
             reply = "What would you like me to note? Please repeat with the note content."
         add_memory(command, reply, username)
