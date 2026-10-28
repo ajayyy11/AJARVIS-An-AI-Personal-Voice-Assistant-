@@ -11,8 +11,9 @@ This guide deploys the separate hosted workspace entry point. It deliberately do
 - PDF, DOCX, XLSX, CSV, and TXT extraction with bounded size/row/page/text limits and document Q&A
 - In-page/browser reminders while the user has the workspace open
 - Responsive dashboard, text chat, browser speech input and optional speech output
+- Privacy-minimal activity panel recording executed tool name/outcome/duration but not tool arguments
 - /healthz process health and /readyz database readiness endpoints
-- Per-user deletion for notes/tasks/documents and a password-confirmed account/data deletion endpoint
+- Per-user deletion for notes, preferences, tasks/documents, activity audit rows, and a password-confirmed account/data deletion endpoint
 
 Cloud computer access is intentionally disabled. Running the app on a cloud host cannot give it access to a visitor's personal webcam, files, applications, or Windows power controls. Those capabilities need a separately installed local agent and an explicit approval/secure pairing design.
 
@@ -57,6 +58,6 @@ pytest -q tests
 - Browser reminders are checked while the dashboard is open; there is no delivery to a closed browser or offline device. Browser notification permission is optional.
 - Document text extracted from uploads is stored in the database so it survives redeploys. Deleting a document removes the extracted text from AJARVIS's database. The original file bytes are not retained.
 - Scanned PDFs without a text layer report that no readable text was found. OCR is not part of this cloud build.
-- Note content, saved preference values, or document extracts may be sent to Gemini when you ask the assistant to personalize, search, or analyze them. Do not upload confidential company documents or store secrets unless your organization's policies and the configured provider account permit that processing.
+- Note content, saved preference values, or document extracts may be sent to Gemini when you ask the assistant to personalize, search, or analyze them. Do not upload confidential company documents or store secrets in notes or preferences unless your organization's policies and the configured provider account permit that processing.
 - The hosted app can use the Gemini API and Google Search grounding; API usage is subject to the provider's terms and billing.
 - This is a hobby deployment starting point, not a security certification. Before public/enterprise use, add a production-grade distributed rate limiter, email verification and account recovery, backups/restore drills, dependency scanning, and further abuse/rate controls. Review data-retention, privacy and biometric policies before enabling any biometric feature in a separate local deployment.
