@@ -56,11 +56,11 @@ jobs:
           from pathlib import Path
 
           html = Path("templates/cloud_auth.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script\\s*>", html, flags=re.IGNORECASE | re.DOTALL)
+          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script\s*>", html, flags=re.IGNORECASE | re.DOTALL)
           inline_scripts = [script for script in scripts if script.strip()]
           if not inline_scripts:
               raise SystemExit("No inline cloud authentication script was found.")
-          javascript = "\\n;\\n".join(inline_scripts)
+          javascript = "\n;\n".join(inline_scripts)
           javascript = javascript.replace("{{ mode|tojson }}", '"login"')
           if "{{" in javascript or "{%" in javascript:
               raise SystemExit("Unrendered Jinja syntax remains in cloud authentication JavaScript.")
