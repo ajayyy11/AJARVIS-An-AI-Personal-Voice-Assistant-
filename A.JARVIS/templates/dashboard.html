@@ -682,7 +682,7 @@
 
     function stripWakePhrase(value) {
       return String(value || "").replace(
-        /^(?:(?:hey|hi|hello|okay|ok)[,]?\\s+)?(?:a\\.?\\s*j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|ajarvis|jarvis)\\b[\\s,.:;!?-]*/i,
+        /^(?:(?:hey|hi|hello|okay|ok)[,]?\s+)?(?:a\.?\s*j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|ajarvis|jarvis)\b[\s,.:;!?-]*/i,
         ""
       ).trim();
     }
