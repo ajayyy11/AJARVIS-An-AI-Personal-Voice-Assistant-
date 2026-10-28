@@ -56,6 +56,23 @@ def test_malformed_session_timestamp_is_rejected(app):
         assert "user" not in session
 
 
+def test_missing_login_timestamp_is_rejected(app):
+    with app.test_request_context("/"):
+        session["user"] = "tester"
+        assert not is_authenticated()
+        assert not session
+
+
+def test_future_login_timestamp_is_rejected(app):
+    with app.test_request_context("/"):
+        session["user"] = "tester"
+        session["login_time"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        ).isoformat()
+        assert not is_authenticated()
+        assert not session
+
+
 def ConfigTimeout():
     from config import Config
     return Config.SESSION_TIMEOUT_MINUTES + 1
