@@ -53,7 +53,10 @@ def register():
     if request.method == "GET":
         return render_template("register.html")
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "error", "message": "A JSON object is required."}), 400
+
     username = data.get("username")
     if not isinstance(username, str) or not username.strip():
         return jsonify({"status": "error", "message": "Missing username"}), 400
@@ -98,8 +101,18 @@ def register():
         if conn is not None:
             conn.close()
 
-    load_known_faces()
-    return jsonify({"status": "success"})
+    try:
+        load_known_faces()
+    except Exception:
+        # The new record is committed already; don't report it as an insertion
+        # failure. Explain that recognition needs a successful cache refresh.
+        app.logger.exception("Face registration saved but cache refresh failed")
+        return jsonify({
+            "status": "success",
+            "message": "Registration saved. Restart AJARVIS before attempting face login.",
+        }), 201
+
+    return jsonify({"status": "success", "message": "Face registered successfully."})
 
 
 # ==========================================
