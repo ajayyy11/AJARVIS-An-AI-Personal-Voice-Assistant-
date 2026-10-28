@@ -694,7 +694,7 @@
       if (stopSpeechButton) stopSpeechButton.disabled = true;
       if (recognition && shouldListen && !recognitionBlocked) {
         window.setTimeout(() => {
-          if (!shouldListen || recognitionBlocked || speechHold) return;
+          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
           try { recognition.start(); } catch (_error) {}
         }, 350);
       }
@@ -702,10 +702,20 @@
 
     stopSpeechButton.addEventListener("click", stopSpokenReply);
 
-    // Shared command handler. Returning the server reply lets callers wait
-    // for activation/deactivation to finish before updating the UI state.
+    // Serialize voice requests so recognition cannot dispatch overlapping commands.
+    let commandInProgress = false;
     async function processCommand(command) {
+      if (commandInProgress) return null;
+      commandInProgress = true;
       aiStatus.textContent = "Processing...";
+      if ("speechSynthesis" in window && window.speechSynthesis.speaking) {
+        speechGeneration += 1;
+        window.speechSynthesis.cancel();
+      }
+      if (recognition && shouldListen && !recognitionBlocked && !speechHold) {
+        try { recognition.stop(); } catch (_error) {}
+      }
+
       try {
         const res = await fetch('/voice_command', {
           method: 'POST',
@@ -729,6 +739,14 @@
         aiStatus.textContent = "Command failed";
         showToast(error.message || "Could not reach AJARVIS. Check the connection and try again.");
         return null;
+      } finally {
+        commandInProgress = false;
+        if (!speechHold && recognition && shouldListen && !recognitionBlocked) {
+          window.setTimeout(() => {
+            if (commandInProgress || speechHold || !shouldListen || recognitionBlocked) return;
+            try { recognition.start(); } catch (_error) {}
+          }, 450);
+        }
       }
     }
 
@@ -801,7 +819,7 @@
       recognition.onend = () => {
         if (!shouldListen || recognitionBlocked || speechHold) return;
         window.setTimeout(() => {
-          if (!shouldListen || recognitionBlocked || speechHold) return;
+          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
           try {
             recognition.start();
           } catch (_error) {
