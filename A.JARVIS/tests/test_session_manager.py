@@ -76,3 +76,22 @@ def test_future_login_timestamp_is_rejected(app):
 def ConfigTimeout():
     from config import Config
     return Config.SESSION_TIMEOUT_MINUTES + 1
+
+
+def test_revoke_access_clears_activation_and_pending_power_action(app):
+    from intelligence.power_actions import handle_power_command
+    from intelligence.user_state import activate_user, is_user_active
+
+    with app.test_request_context("/"):
+        grant_access("tester")
+        activate_user("tester", now=100)
+        handle_power_command("shutdown system", "tester", now=100)
+        assert is_user_active("tester", now=101)
+
+        revoke_access()
+
+        assert not is_user_active("tester", now=101)
+        assert handle_power_command("confirm shutdown", "tester", now=102) == {
+            "status": "no_pending",
+            "action": "shutdown",
+        }
