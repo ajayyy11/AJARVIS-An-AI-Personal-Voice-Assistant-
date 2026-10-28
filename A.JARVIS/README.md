@@ -85,6 +85,6 @@ pytest -q tests/test_tool_registry.py tests/test_agent.py tests/test_notes.py te
 
 ## Hosted Cloud Mode
 
-Use cloud_app.py and requirements-web.txt for the Render-hosted workspace. The cloud version uses password accounts and PostgreSQL storage for notes, tasks, reminders, document text, and history. It does not import the camera or Windows desktop-control entry points used by app.py. Deployment is configured by the repository-root render.yaml file.
+Use cloud_app.py and requirements-web.txt for the Render-hosted workspace. The cloud version uses password accounts and PostgreSQL storage for notes, editable user preferences, tasks, reminders, document text, and history. Personal preferences are visible and removable from the dashboard. It does not import the camera or Windows desktop-control entry points used by app.py. Deployment is configured by the repository-root render.yaml file.
 
 See [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) before applying the Blueprint, especially its current cost, ephemeral service, Gemini API, and data-retention notes.
