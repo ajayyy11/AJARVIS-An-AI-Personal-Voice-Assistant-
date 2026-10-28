@@ -69,7 +69,8 @@ def test_default_registry_exposes_only_read_only_tools():
     tools = registry.list_tools()
 
     assert {tool["name"] for tool in tools} == {
-        "get_current_datetime", "get_system_status", "get_battery_status"
+        "get_current_datetime", "get_system_status", "get_battery_status",
+        "read_recent_notes", "search_personal_notes"
     }
     assert all(tool["risk_level"] == "read_only" for tool in tools)
 
