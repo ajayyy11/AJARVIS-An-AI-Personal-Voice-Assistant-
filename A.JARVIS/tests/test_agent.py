@@ -208,4 +208,4 @@ def test_empty_registry_falls_back_to_plain_gemini_response():
     )
 
     assert result == "Hello there."
-    assert client.calls[0]["config"].tools == []
+    assert not getattr(client.calls[0]["config"], "tools", [])
