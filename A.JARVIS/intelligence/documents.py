@@ -7,6 +7,7 @@ import csv
 import logging
 from pathlib import Path
 from typing import Any
+import zipfile
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +15,41 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 50_000
 MAX_PDF_PAGES = 80
 MAX_WORKSHEET_ROWS = 2000
+MAX_OFFICE_UNCOMPRESSED_BYTES = 32 * 1024 * 1024
+MAX_OFFICE_ARCHIVE_ENTRIES = 1000
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".csv", ".txt"}
 
 class DocumentError(ValueError):
     """Raised when a document cannot be safely extracted."""
+
+
+def _validate_office_archive(data: bytes) -> None:
+    """Reject oversized ZIP expansion before parsing DOCX/XLSX XML.
+
+    Office documents are ZIP containers. A small compressed upload can expand
+    dramatically during parsing, so bound the declared expanded size and member
+    count before handing bytes to python-docx or openpyxl.
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as archive:
+            members = archive.infolist()
+            if len(members) > MAX_OFFICE_ARCHIVE_ENTRIES:
+                raise DocumentError("Office documents contain too many archive entries.")
+            expanded_bytes = 0
+            for member in members:
+                if member.is_dir():
+                    continue
+                if member.file_size < 0:
+                    raise DocumentError("Office document archive metadata is invalid.")
+                expanded_bytes += member.file_size
+                if expanded_bytes > MAX_OFFICE_UNCOMPRESSED_BYTES:
+                    raise DocumentError(
+                        "Office documents must not expand beyond the 32 MB unpacked-size limit."
+                    )
+    except DocumentError:
+        raise
+    except (zipfile.BadZipFile, OSError, EOFError):
+        raise DocumentError("The Office document is not a valid ZIP archive.") from None
 
 
 def extract_document_text(filename: str, data: bytes) -> tuple[str, int | None]:
@@ -70,6 +102,7 @@ def extract_document_text(filename: str, data: bytes) -> tuple[str, int | None]:
             extracted = "\n\n".join(pages)
             page_count = len(reader.pages)
         elif suffix == ".docx":
+            _validate_office_archive(data)
             from docx import Document
 
             document = Document(BytesIO(data))
@@ -86,6 +119,7 @@ def extract_document_text(filename: str, data: bytes) -> tuple[str, int | None]:
             extracted = "\n".join(chunks)
             page_count = None
         else:
+            _validate_office_archive(data)
             from openpyxl import load_workbook
 
             workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
