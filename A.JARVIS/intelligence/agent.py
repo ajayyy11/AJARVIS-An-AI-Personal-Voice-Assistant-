@@ -12,7 +12,6 @@ import logging
 import os
 from typing import Any, Mapping
 
-import psutil
 
 from intelligence.tool_registry import (
     ToolArgumentError,
@@ -33,6 +32,8 @@ def _current_datetime(*, username: str) -> str:
 
 def _system_status(*, username: str) -> dict[str, Any]:
     """Return a small, read-only snapshot of the current computer."""
+    import psutil
+
     memory = psutil.virtual_memory()
     home = os.path.expanduser("~")
     try:
@@ -48,6 +49,8 @@ def _system_status(*, username: str) -> dict[str, Any]:
 
 def _battery_status(*, username: str) -> dict[str, Any]:
     """Report battery values without changing machine state."""
+    import psutil
+
     battery = psutil.sensors_battery()
     if battery is None:
         return {"available": False, "message": "Battery information is not available."}
