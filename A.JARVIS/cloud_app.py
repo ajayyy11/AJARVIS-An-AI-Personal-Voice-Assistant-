@@ -1312,8 +1312,6 @@ def upload_document_api():
     filename = secure_filename(upload.filename)[:255] or "document"
     raw = upload.read(8 * 1024 * 1024 + 1)
     client = _genai()
-    if client is not None and _assistant_rate_limited(session["user"]):
-        return _ai_quota_response()
     try:
         extracted, page_count = extract_document_text(filename, raw)
     except DocumentError as exc:
@@ -1344,7 +1342,9 @@ def upload_document_api():
             conn.close()
 
     summary = "Document saved. Add GEMINI_API_KEY in hosting settings to enable AI summaries and questions."
-    if client is not None:
+    if client is not None and _assistant_rate_limited(session["user"]):
+        summary = "Document saved successfully. The AI request limit has been reached, so the summary was skipped; try again after the limit resets."
+    elif client is not None:
         try:
             summary = answer_document_question(
                 client=client,
