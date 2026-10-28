@@ -769,15 +769,15 @@
     sendBtn.addEventListener("click", executeTextCommand);
 
     if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
+      recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = false;
-      recognition.lang = "en-US";
+      recognition.lang = voiceLanguageSelect.value || "en-IN";
 
       // idle → greeted → activated
 
       recognition.onstart = () => {
-        aiStatus.textContent = "Standby";
+        aiStatus.textContent = state === "activated" ? "System Active" : (state === "greeted" ? "Awaiting Activation" : "Standby");
         const statusText = document.getElementById('mic-status');
         if(statusText) statusText.style.display = 'none';
         
@@ -787,9 +787,6 @@
             startMicReactiveSystem().catch(e => console.log(e));
         }
       };
-
-      let shouldListen = true;
-      let recognitionBlocked = false;
 
       recognition.onerror = (event) => {
         if (event.error === "not-allowed" || event.error === "service-not-allowed") {
@@ -802,14 +799,15 @@
       };
 
       recognition.onend = () => {
-        if (!shouldListen || recognitionBlocked) return;
+        if (!shouldListen || recognitionBlocked || speechHold) return;
         window.setTimeout(() => {
+          if (!shouldListen || recognitionBlocked || speechHold) return;
           try {
             recognition.start();
-          } catch (error) {
+          } catch (_error) {
             // The browser can still be transitioning between listening states.
           }
-        }, 500);
+        }, 450);
       };
 
       recognition.onresult = async (event) => {
