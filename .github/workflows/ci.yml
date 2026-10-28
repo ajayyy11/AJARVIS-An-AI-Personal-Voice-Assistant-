@@ -28,7 +28,7 @@ jobs:
           pip install Flask python-dotenv pytest mysql-connector-python
       - name: Compile application modules
         run: python -m compileall -q .
-      - name: Run session security tests
+      - name: Run automated tests
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789
-        run: pytest -q tests/test_session_manager.py
+        run: pytest -q tests
