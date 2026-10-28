@@ -78,9 +78,10 @@ jobs:
           services = blueprint.get("services", [])
           databases = blueprint.get("databases", [])
           cloud = next((item for item in services if item.get("name") == "ajarvis-cloud"), None)
-          database = next((item for item in databases if item.get("name") == "ajarvis-cloud-db"), None)
-          if cloud is None or database is None:
-              raise SystemExit("Blueprint must define the AJARVIS cloud service and persistent database.")
+          if cloud is None:
+              raise SystemExit("Blueprint must define the AJARVIS cloud service.")
+          if databases:
+              raise SystemExit("Zero-cost Blueprint must not provision a paid or expiring Render database.")
           if cloud.get("rootDir") != "A.JARVIS":
               raise SystemExit("Cloud service rootDir must be A.JARVIS.")
           if cloud.get("healthCheckPath") != "/readyz":
@@ -89,14 +90,16 @@ jobs:
               raise SystemExit("Cloud build must install the focused web dependencies.")
           if "cloud_app:app" not in cloud.get("startCommand", ""):
               raise SystemExit("Cloud service must run cloud_app:app, not the local webcam app.")
-          if database.get("plan") == "free":
-              raise SystemExit("Production persistence must not use expiring Free Postgres.")
           if not any(
-              item.get("key") == "DATABASE_URL"
-              and item.get("fromDatabase", {}).get("name") == "ajarvis-cloud-db"
+              item.get("key") == "DATABASE_URL" and item.get("sync") is False
               for item in cloud.get("envVars", [])
           ):
-              raise SystemExit("Cloud DATABASE_URL must be bound to the managed PostgreSQL database.")
+              raise SystemExit("Cloud DATABASE_URL must be a manual secret for the external free PostgreSQL provider.")
+          if not any(
+              item.get("key") == "GEMINI_API_KEY" and item.get("sync") is False
+              for item in cloud.get("envVars", [])
+          ):
+              raise SystemExit("Gemini API key must be configured as a secret.")
           PY
       - name: Compile application modules
         run: python -m compileall -q .
