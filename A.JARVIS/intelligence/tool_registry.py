@@ -98,13 +98,15 @@ class ToolRegistry:
             raise ToolRegistryError("Tool description must not be empty.")
         if not callable(handler):
             raise ToolRegistryError("Tool handler must be callable.")
-        if risk_level not in _ALLOWED_RISKS:
+        if not isinstance(risk_level, str) or risk_level not in _ALLOWED_RISKS:
             raise ToolRegistryError(
                 f"risk_level must be one of: {', '.join(sorted(_ALLOWED_RISKS))}."
             )
         if not isinstance(requires_confirmation, bool) or not isinstance(enabled, bool):
             raise ToolRegistryError("Confirmation and enabled flags must be booleans.")
 
+        if parameters is not None and not isinstance(parameters, Mapping):
+            raise ToolRegistryError("Tool parameters must be an object schema.")
         schema = deepcopy(dict(parameters) if parameters is not None else {
             "type": "object",
             "properties": {},
@@ -129,10 +131,19 @@ class ToolRegistry:
 
     def get(self, name: str) -> ToolSpec:
         with self._lock:
-            spec = self._tools.get(name)
-        if spec is None or not spec.enabled:
+            registered = self._tools.get(name)
+        if registered is None or not registered.enabled:
             raise ToolNotFoundError(f"Tool '{name}' is not available.")
-        return spec
+        # Do not expose the registry's nested schema objects to external mutation.
+        return ToolSpec(
+            name=registered.name,
+            description=registered.description,
+            handler=registered.handler,
+            parameters=deepcopy(dict(registered.parameters)),
+            risk_level=registered.risk_level,
+            requires_confirmation=registered.requires_confirmation,
+            enabled=registered.enabled,
+        )
 
     def list_tools(self, *, include_disabled: bool = False) -> list[dict[str, Any]]:
         with self._lock:
@@ -202,7 +213,7 @@ class ToolRegistry:
             if not isinstance(property_schema, Mapping):
                 raise ToolRegistryError(f"Schema for '{key}' must be an object.")
             value_type = property_schema.get("type")
-            if value_type not in _ALLOWED_TYPES:
+            if not isinstance(value_type, str) or value_type not in _ALLOWED_TYPES:
                 raise ToolRegistryError(f"Schema for '{key}' uses an unsupported type.")
             if "enum" in property_schema and not isinstance(property_schema["enum"], list):
                 raise ToolRegistryError(f"Schema enum for '{key}' must be a list.")
