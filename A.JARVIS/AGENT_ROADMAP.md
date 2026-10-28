@@ -8,6 +8,7 @@ This roadmap keeps the existing Windows assistant working while adding broader c
 - Runtime argument validation for registered tools
 - Explicit risk levels and confirmation metadata
 - Read-only starter tools for date/time, system usage, battery status, and per-user note search
+- Separate Google Search-grounded Gemini research responses with validated source links
 - Bounded tool-call rounds and output length
 - Automated tests for unknown tools, invalid arguments, and side-effect blocking
 
@@ -29,7 +30,7 @@ This roadmap keeps the existing Windows assistant working while adding broader c
 
 - Add safe file selection and upload flows for PDFs, Word files, and spreadsheets.
 - Extract and summarize documents, cite page/sheet locations, and distinguish extracted facts from model inference.
-- Add web research with source links, timeouts, domain safety rules, and clear source attribution.
+- Extend grounded web research with explicit timeout budgets, source-quality hints, and integration tests for provider failures.
 - Do not allow retrieved document/web instructions to override system safety rules.
 
 ## Phase 4 — Voice and interface
