@@ -529,7 +529,7 @@
         .then(res => res.json())
         .then(data => {
           const log = document.getElementById("history-log");
-          log.innerHTML = "";
+          log.replaceChildren();
           const history = data.history || [];
           if (history.length === 0) {
             log.innerHTML = '<span style="color:#546e7a">No commands yet.</span>';
@@ -538,7 +538,13 @@
           history.slice().reverse().forEach(entry => {
             const item = document.createElement("div");
             item.style.cssText = "border-left:2px solid #00f0ff;padding-left:8px;";
-            item.innerHTML = `<span style="color:#00f0ff">▶ ${entry.command}</span><br><span style="color:#b2ebf2">${entry.response}</span>`;
+            const commandText = document.createElement("span");
+            commandText.style.color = "#00f0ff";
+            commandText.textContent = "▶ " + String(entry.command ?? "");
+            const responseText = document.createElement("span");
+            responseText.style.color = "#b2ebf2";
+            responseText.textContent = String(entry.response ?? "");
+            item.append(commandText, document.createElement("br"), responseText);
             log.appendChild(item);
           });
         });
@@ -588,7 +594,7 @@
     updateAnalytics();
     setInterval(updateAnalytics, 15000);
 
-    const username = "{{ user }}";  // Passed from Flask
+    const username = {{ user | tojson }};  // Safely serialize the username for JavaScript
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -607,12 +613,25 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ command: command })
         })
-          .then(res => res.json())
+          .then(async res => {
+            const data = await res.json();
+            if (!res.ok) {
+              throw new Error(data.response || data.error || "The command could not be processed.");
+            }
+            if (typeof data.response !== "string") {
+              throw new Error("The server returned an invalid response.");
+            }
+            return data;
+          })
           .then(data => {
             aiStatus.textContent = data.response.substring(0, 60) + (data.response.length > 60 ? '...' : '');
             speak(data.response);
             showToast(data.response);
             refreshHistory();
+          })
+          .catch(error => {
+            aiStatus.textContent = "Command failed";
+            showToast(error.message || "Could not reach AJARVIS. Check the connection and try again.");
           });
       }
 
