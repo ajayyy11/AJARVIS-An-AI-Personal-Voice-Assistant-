@@ -126,6 +126,8 @@ def test_declarations_do_not_expose_handlers_and_are_defensive_copies():
     assert len(declarations) == 1
     assert "handler" not in declarations[0]
     declarations[0]["parameters"]["properties"]["query"]["maxLength"] = 1
+    exposed_spec = registry.get("search_notes")
+    exposed_spec.parameters["properties"]["query"]["maxLength"] = 2
     assert registry.get("search_notes").parameters["properties"]["query"]["maxLength"] == 80
 
 
@@ -137,3 +139,20 @@ def test_list_is_sorted_and_disabled_tools_are_hidden_by_default():
     assert [item["name"] for item in registry.list_tools(include_disabled=True)] == [
         "a_tool", "z_tool"
     ]
+
+
+
+def test_invalid_schema_shapes_are_rejected_cleanly():
+    registry = ToolRegistry()
+    with pytest.raises(ToolRegistryError, match="object schema"):
+        registry.register("bad_schema", "Bad.", lambda **_: None, parameters=["nope"])
+    with pytest.raises(ToolRegistryError, match="unsupported type"):
+        registry.register(
+            "bad_type", "Bad.", lambda **_: None,
+            parameters={
+                "type": "object",
+                "properties": {"field": {"type": ["string", "number"]}},
+                "required": [],
+                "additionalProperties": False,
+            },
+        )
