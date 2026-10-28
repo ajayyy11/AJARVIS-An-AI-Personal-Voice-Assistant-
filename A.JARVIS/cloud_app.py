@@ -56,10 +56,14 @@ _genai_client = None
 _genai_lock = Lock()
 _auth_attempts: dict[str, list[float]] = {}
 _auth_lock = Lock()
+_assistant_requests: dict[str, list[float]] = {}
+_assistant_lock = Lock()
 
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,31}$")
 MAX_LOGIN_ATTEMPTS = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
+MAX_ASSISTANT_REQUESTS = 20
+ASSISTANT_WINDOW_SECONDS = 60
 MAX_NOTE_CHARS = 4000
 MAX_DOCUMENT_QUESTION_CHARS = 1500
 
@@ -267,6 +271,38 @@ def _record_auth_failure() -> None:
         attempts = [stamp for stamp in _auth_attempts.get(ip_address, []) if now - stamp < LOGIN_WINDOW_SECONDS]
         attempts.append(now)
         _auth_attempts[ip_address] = attempts
+
+
+def _assistant_rate_limited(username: str) -> bool:
+    """Bound assistant traffic per signed-in user to protect free API quota."""
+    now = time.monotonic()
+    with _assistant_lock:
+        attempts = [
+            stamp for stamp in _assistant_requests.get(username, [])
+            if now - stamp < ASSISTANT_WINDOW_SECONDS
+        ]
+        limited = len(attempts) >= MAX_ASSISTANT_REQUESTS
+        if not limited:
+            attempts.append(now)
+        _assistant_requests[username] = attempts
+        if len(_assistant_requests) > 2000:
+            expired = [
+                key for key, stamps in _assistant_requests.items()
+                if not stamps or now - stamps[-1] >= ASSISTANT_WINDOW_SECONDS
+            ]
+            for key in expired:
+                _assistant_requests.pop(key, None)
+        return limited
+
+
+@app.after_request
+def add_security_headers(response):
+    """Set baseline browser security headers without disabling same-origin voice."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
+    return response
 
 
 def _genai():
@@ -1382,6 +1418,11 @@ def assistant_api():
     if len(command) > 2000:
         return jsonify({"error": "Command must be 2,000 characters or fewer."}), 400
     username = session["user"]
+    if _assistant_rate_limited(username):
+        response = jsonify({"error": "You've reached the assistant request limit. Wait up to 60 seconds, then try again."})
+        response.status_code = 429
+        response.headers["Retry-After"] = str(ASSISTANT_WINDOW_SECONDS)
+        return response
     try:
         reply = process_cloud_command(username, command)
         _save_history(username, command, reply)
