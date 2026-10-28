@@ -608,55 +608,69 @@
       const commandBox = document.querySelector(".ai-status");
       const core = document.querySelector(".ai-core") || document.getElementById("ai-core");
 
-      // Shared Command Processing Function
-      function processCommand(command) {
+      // Shared command handler. Returning the server reply lets callers wait
+      // for activation/deactivation to finish before updating the UI state.
+      async function processCommand(command) {
         aiStatus.textContent = "Processing...";
-        fetch('/voice_command', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command: command })
-        })
-          .then(async res => {
-            const data = await res.json();
-            if (!res.ok) {
-              throw new Error(data.response || data.error || "The command could not be processed.");
-            }
-            if (typeof data.response !== "string") {
-              throw new Error("The server returned an invalid response.");
-            }
-            return data;
-          })
-          .then(data => {
-            aiStatus.textContent = data.response.substring(0, 60) + (data.response.length > 60 ? '...' : '');
-            speak(data.response);
-            showToast(data.response);
-            refreshHistory();
-          })
-          .catch(error => {
-            aiStatus.textContent = "Command failed";
-            showToast(error.message || "Could not reach AJARVIS. Check the connection and try again.");
+        try {
+          const res = await fetch('/voice_command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command })
           });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.response || data.error || "The command could not be processed.");
+          }
+          if (typeof data.response !== "string") {
+            throw new Error("The server returned an invalid response.");
+          }
+
+          aiStatus.textContent = data.response.substring(0, 60) + (data.response.length > 60 ? '...' : '');
+          speak(data.response);
+          showToast(data.response);
+          refreshHistory();
+          return data.response;
+        } catch (error) {
+          aiStatus.textContent = "Command failed";
+          showToast(error.message || "Could not reach AJARVIS. Check the connection and try again.");
+          return null;
+        }
       }
 
       // Logic for Text Commands
       const textInput = document.getElementById("text-command-input");
       const sendBtn = document.getElementById("send-command-btn");
 
-      function executeTextCommand() {
+      async function executeTextCommand() {
         const command = textInput.value.trim();
-        if (!command) return;
-        
-        console.log("Text Command:", command);
+        if (!command || sendBtn.disabled) return;
+
         transcriptBox.textContent = `"${command}" (Type)`;
         textInput.value = "";
-        
-        // Text commands automatically trigger activation if not already active
-        if (state !== "activated") {
-          state = "activated";
-          core.style.boxShadow = "0 0 140px #00ffff";
+        sendBtn.disabled = true;
+
+        try {
+          // Text commands auto-activate on the server as well as in the UI.
+          if (state !== "activated") {
+            const activationReply = await processCommand("system activate");
+            if (!activationReply || !activationReply.toLowerCase().includes("activating system")) {
+              return;
+            }
+            state = "activated";
+            core.style.boxShadow = "0 0 140px #00ffff";
+            if (command.toLowerCase() === "system activate") return;
+          }
+
+          await processCommand(command);
+          if (["system deactivate", "system shutdown", "system shut down"].includes(command.toLowerCase())) {
+            state = "idle";
+            aiStatus.textContent = "Standby";
+            core.style.boxShadow = "0 0 40px #00ffff";
+          }
+        } finally {
+          sendBtn.disabled = false;
         }
-        
-        processCommand(command);
       }
 
       textInput.addEventListener("keypress", (e) => { if (e.key === "Enter") executeTextCommand(); });
@@ -689,7 +703,7 @@
         recognition.start(); // auto restart
       };
 
-      recognition.onresult = (event) => {
+      recognition.onresult = async (event) => {
 
         const transcript =
           event.results[event.results.length - 1][0].transcript.toLowerCase();
@@ -724,18 +738,14 @@
         if (state === "greeted") {
 
           if (transcript.includes("system activate")) {
-
-            state = "activated";
-            core.classList.add("activate-ring");
-            setTimeout(() => core.classList.remove("activate-ring"), 3600);
-            aiStatus.textContent = "System Active";
-
-            const reply = "Activating system";
-
-            speak(reply);
-            commandBox.textContent = reply;
-
-            core.style.boxShadow = "0 0 140px #00ffff";
+            const activationReply = await processCommand("system activate");
+            if (activationReply && activationReply.toLowerCase().includes("activating system")) {
+              state = "activated";
+              core.classList.add("activate-ring");
+              setTimeout(() => core.classList.remove("activate-ring"), 3600);
+              aiStatus.textContent = "System Active";
+              core.style.boxShadow = "0 0 140px #00ffff";
+            }
           }
 
           return;
@@ -748,20 +758,18 @@
 
           // 🔴 Shutdown
           if (transcript.includes("system deactivate") ||
-            transcript.includes("system shutdown")) {
+            transcript.includes("system shutdown") ||
+            transcript.includes("system shut down")) {
             core.classList.add("shutdown-effect");
             setTimeout(() => {
               core.classList.remove("shutdown-effect");
             }, 1000);
-            const reply = "Until next time " + username + ", system deactivating.";
 
-            speak(reply);
-            commandBox.textContent = reply;
-
+            // Keep the browser state and server authorization in sync.
+            await processCommand("system deactivate");
             state = "idle";
             aiStatus.textContent = "Standby";
             core.style.boxShadow = "0 0 40px #00ffff";
-
             return;
           }
 
