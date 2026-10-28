@@ -94,6 +94,21 @@
         <div id="noteList" class="note-list"><p class="empty-state">Loading notes…</p></div>
       </div>
 
+      <div class="panel preferences-panel">
+        <div class="panel-heading">
+          <div class="panel-symbol">✦</div>
+          <div><h2>Personal memory</h2><p>Preferences AJARVIS can use to personalize replies</p></div>
+        </div>
+        <form id="preferenceForm" class="preference-form">
+          <label for="preferenceKey">Preference key</label>
+          <input id="preferenceKey" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,79}" placeholder="e.g. answer_style" required>
+          <label for="preferenceValue">Preference value</label>
+          <textarea id="preferenceValue" rows="2" maxlength="1000" placeholder="e.g. Keep answers concise and use examples" required></textarea>
+          <button type="submit" class="secondary-button">Save preference</button>
+        </form>
+        <div id="preferenceList" class="preference-list"><p class="empty-state">Loading personal memory…</p></div>
+      </div>
+
       <div class="panel documents-panel">
         <div class="panel-heading">
           <div class="panel-symbol">▧</div>
