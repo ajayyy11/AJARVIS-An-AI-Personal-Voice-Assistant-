@@ -88,6 +88,43 @@ def test_private_api_rejects_unauthenticated_requests(client):
     assert response.status_code == 401
 
 
+def test_security_headers_are_set(client):
+    response = client.get("/healthz")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "microphone=(self)" in response.headers["Permissions-Policy"]
+
+
+def test_assistant_route_limits_request_bursts_per_user(client, monkeypatch):
+    login_session(client, username="voice_tester", csrf="test-token")
+    monkeypatch.setattr(cloud_app, "process_cloud_command", lambda username, command: "test reply")
+    monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
+    with cloud_app._assistant_lock:
+        cloud_app._assistant_requests.pop("voice_tester", None)
+
+    try:
+        for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
+            response = client.post(
+                "/api/assistant",
+                headers={"X-CSRF-Token": "test-token"},
+                json={"command": "Hello AJARVIS"},
+            )
+            assert response.status_code == 200
+
+        limited = client.post(
+            "/api/assistant",
+            headers={"X-CSRF-Token": "test-token"},
+            json={"command": "Hello again"},
+        )
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
+        assert "request limit" in limited.get_json()["error"].lower()
+    finally:
+        with cloud_app._assistant_lock:
+            cloud_app._assistant_requests.pop("voice_tester", None)
+
+
 def test_post_request_requires_csrf_token(client, monkeypatch):
     login_session(client)
     saved = []
@@ -174,6 +211,59 @@ def test_cloud_note_reads_are_scoped_to_current_user(monkeypatch):
     result = cloud_app.process_cloud_command("alice", "read my notes")
     assert "alice's note" in result
     assert "bob's note" not in result
+
+
+@pytest.mark.parametrize(
+    "spoken_command",
+    [
+        "Hey Jarvis, take a note: call the college tomorrow",
+        "Hey, Jarvis, take a note: call the college tomorrow",
+        "Jarvis, take a note: call the college tomorrow",
+    ],
+)
+def test_wake_word_is_stripped_for_spoken_note_command(monkeypatch, spoken_command):
+    calls = []
+    monkeypatch.setattr(cloud_app, "_save_note", lambda username, text: calls.append((username, text)))
+
+    result = cloud_app.process_cloud_command("alice", spoken_command)
+
+    assert result == "Note saved to your cloud account."
+    assert calls == [("alice", "call the college tomorrow")]
+
+
+def test_wake_word_only_gives_ready_prompt(monkeypatch):
+    monkeypatch.setattr(cloud_app, "_genai", lambda: pytest.fail("No model call expected for a wake phrase"))
+    assert "What can I help" in cloud_app.process_cloud_command("alice", "Hey Jarvis")
+
+
+def test_voice_task_command_creates_user_scoped_task(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        cloud_app,
+        "create_user_task",
+        lambda username, title: calls.append((username, title)) or {"title": title},
+    )
+
+    result = cloud_app.process_cloud_command("alice", "Jarvis, add task to renew my passport")
+
+    assert result == "Task added: renew my passport."
+    assert calls == [("alice", "renew my passport")]
+
+
+def test_voice_task_listing_is_owner_scoped(monkeypatch):
+    monkeypatch.setattr(
+        cloud_app,
+        "list_user_tasks",
+        lambda username: [
+            {"title": "Renew passport", "done": False, "due_at": None},
+            {"title": "Buy groceries", "done": True, "due_at": None},
+        ] if username == "alice" else [],
+    )
+
+    result = cloud_app.process_cloud_command("alice", "Hey Jarvis, list my tasks")
+
+    assert "Renew passport" in result
+    assert "Buy groceries" not in result
 
 
 def test_current_time_is_answered_without_api_key(monkeypatch):

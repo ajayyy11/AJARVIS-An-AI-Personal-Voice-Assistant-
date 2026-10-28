@@ -90,32 +90,130 @@
     return message;
   }
 
+  const assistantPanel = document.querySelector(".assistant-panel");
+  const voiceLanguageSelect = $("voiceLanguage");
+  const voiceOutputToggle = $("voiceOutput");
+  const stopSpeakingButton = $("stopSpeakingButton");
+  let recognitionInstance = null;
+  let isListening = false;
+  let isProcessing = false;
+  let isSpeaking = false;
+  let manualStop = false;
+  let voiceErrorShown = false;
+  let submittedTranscript = false;
+
+  function readSetting(key) {
+    try { return window.localStorage.getItem(key); }
+    catch (_error) { return null; }
+  }
+
+  function writeSetting(key, value) {
+    try { window.localStorage.setItem(key, value); }
+    catch (_error) { /* Private browsing or storage policies may block local settings. */ }
+  }
+
+  const storedLanguage = readSetting("ajarvis.voice.language");
+  if (storedLanguage && Array.from(voiceLanguageSelect.options).some((option) => option.value === storedLanguage)) {
+    voiceLanguageSelect.value = storedLanguage;
+  }
+  voiceOutputToggle.checked = readSetting("ajarvis.voice.output") !== "false";
+
+  function setAssistantStatus(state, label) {
+    const badge = $("assistantStatus");
+    if (badge) {
+      badge.dataset.state = state;
+      badge.textContent = label;
+    }
+    if (assistantPanel) {
+      assistantPanel.classList.toggle("voice-listening", state === "listening");
+      assistantPanel.classList.toggle("voice-speaking", state === "speaking");
+      assistantPanel.classList.toggle("assistant-thinking", state === "thinking");
+    }
+  }
+
+  function syncVoiceControls() {
+    const micButton = $("micButton");
+    if (micButton) {
+      micButton.textContent = isListening ? "■" : "🎙";
+      micButton.disabled = isProcessing;
+      micButton.classList.toggle("is-active", isListening);
+      micButton.setAttribute("aria-label", isListening ? "Stop listening" : "Start voice command");
+      micButton.title = isListening ? "Stop listening" : "Start voice command";
+    }
+    $("sendButton").disabled = isProcessing;
+    if (stopSpeakingButton) stopSpeakingButton.disabled = !isSpeaking;
+  }
+
+  function stopSpokenReply() {
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    isSpeaking = false;
+    syncVoiceControls();
+    if (!isProcessing && !isListening) setAssistantStatus("ready", "READY");
+  }
+
+  function speakReply(value) {
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)
+        || !voiceOutputToggle.checked || !String(value || "").trim()) return;
+    const utterance = new SpeechSynthesisUtterance(String(value).trim().slice(0, 1800));
+    const language = voiceLanguageSelect.value || "en-IN";
+    utterance.lang = language;
+    utterance.rate = 0.98;
+    utterance.pitch = 0.92;
+    utterance.volume = 1;
+    const voices = window.speechSynthesis.getVoices();
+    const exactVoice = voices.find((voice) => voice.lang.toLowerCase() === language.toLowerCase());
+    const languageVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(language.split("-")[0].toLowerCase()));
+    if (exactVoice || languageVoice) utterance.voice = exactVoice || languageVoice;
+    utterance.onstart = () => {
+      isSpeaking = true;
+      syncVoiceControls();
+      setAssistantStatus("speaking", "SPEAKING");
+    };
+    utterance.onend = () => {
+      isSpeaking = false;
+      syncVoiceControls();
+      if (!isProcessing && !isListening) setAssistantStatus("ready", "READY");
+    };
+    utterance.onerror = () => {
+      isSpeaking = false;
+      syncVoiceControls();
+      if (!isProcessing && !isListening) setAssistantStatus("ready", "READY");
+      toast("The browser could not play the spoken reply. The written answer is still available.", true, "VOICE OUTPUT");
+    };
+    window.speechSynthesis.cancel();
+    isSpeaking = true;
+    syncVoiceControls();
+    setAssistantStatus("speaking", "SPEAKING");
+    window.speechSynthesis.speak(utterance);
+  }
+
   async function sendCommand(command) {
     const trimmed = String(command || "").trim();
-    if (!trimmed) return;
+    if (!trimmed || isProcessing) return;
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    isSpeaking = false;
+    isProcessing = true;
+    syncVoiceControls();
+    setAssistantStatus("thinking", "ANALYZING");
     addChatMessage("user", trimmed);
-    const placeholder = addChatMessage("assistant", "Thinking…");
-    $("sendButton").disabled = true;
-    $("micButton").disabled = true;
+    const placeholder = addChatMessage("assistant", "One moment — I'm on it…");
+    let requestFailed = false;
     try {
       const result = await api("/api/assistant", {
         method: "POST",
         body: JSON.stringify({ command: trimmed })
       });
       renderAnswer(placeholder, result.response);
-      if ("speechSynthesis" in window && result.response) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(result.response.slice(0, 1800));
-        utterance.rate = 1.02;
-        window.speechSynthesis.speak(utterance);
-      }
+      speakReply(result.response);
     } catch (error) {
+      requestFailed = true;
       placeholder.textContent = error.message || "AJARVIS could not answer that.";
+      setAssistantStatus("error", "ATTENTION");
       toast(error.message, true, "REQUEST FAILED");
     } finally {
-      $("sendButton").disabled = false;
-      $("micButton").disabled = false;
+      isProcessing = false;
+      syncVoiceControls();
+      if (!isListening && !isSpeaking && !requestFailed) setAssistantStatus("ready", "READY");
       $("commandInput").focus();
       refreshHistory().catch(() => {});
       loadActivity().catch(() => {});
@@ -136,29 +234,123 @@
     }
   });
 
+  document.querySelectorAll(".quick-command").forEach((button) => {
+    button.addEventListener("click", () => sendCommand(button.dataset.command || ""));
+  });
+
+  voiceLanguageSelect.addEventListener("change", () => {
+    writeSetting("ajarvis.voice.language", voiceLanguageSelect.value);
+    const selected = voiceLanguageSelect.options[voiceLanguageSelect.selectedIndex];
+    toast("Voice language set to " + (selected ? selected.textContent : voiceLanguageSelect.value) + ".", false, "VOICE SETTINGS");
+  });
+  voiceOutputToggle.addEventListener("change", () => {
+    writeSetting("ajarvis.voice.output", voiceOutputToggle.checked ? "true" : "false");
+    if (!voiceOutputToggle.checked) stopSpokenReply();
+    toast(voiceOutputToggle.checked ? "Spoken replies enabled." : "Spoken replies muted.", false, "VOICE SETTINGS");
+  });
+  stopSpeakingButton.addEventListener("click", stopSpokenReply);
+
   $("micButton").addEventListener("click", () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      toast("Voice input is not available in this browser. You can still type your request.", true, "VOICE UNAVAILABLE");
+    if (isProcessing) {
+      toast("I'm still working on the previous request. One moment.", false, "AJARVIS");
       return;
     }
+    if (isSpeaking) stopSpokenReply();
+    if (isListening && recognitionInstance) {
+      manualStop = true;
+      try { recognitionInstance.stop(); } catch (_error) {}
+      isListening = false;
+      syncVoiceControls();
+      setAssistantStatus("ready", "READY");
+      toast("Listening stopped.", false, "MICROPHONE");
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setAssistantStatus("error", "VOICE UNAVAILABLE");
+      toast("This browser does not support speech recognition. Try Chrome on HTTPS, or type your command instead.", true, "VOICE UNAVAILABLE");
+      return;
+    }
+
     const recognition = new SpeechRecognition();
-    recognition.lang = navigator.language || "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    $("micButton").disabled = true;
-    toast("Listening. Speak your request now.", false, "MICROPHONE");
-    recognition.onresult = (event) => {
-      const transcript = event.results && event.results[0] && event.results[0][0]
-        ? event.results[0][0].transcript : "";
-      $("commandInput").value = transcript;
-      $("chatForm").requestSubmit();
+    recognitionInstance = recognition;
+    recognition.lang = voiceLanguageSelect.value || "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 3;
+    manualStop = false;
+    voiceErrorShown = false;
+    submittedTranscript = false;
+    isListening = true;
+    syncVoiceControls();
+    setAssistantStatus("listening", "LISTENING");
+    toast("Listening. Speak naturally — you can say “Hey Jarvis” first.", false, "MICROPHONE");
+
+    recognition.onstart = () => {
+      if (isListening) setAssistantStatus("listening", "LISTENING");
     };
-    recognition.onerror = () => toast("Voice input failed or microphone access was denied.", true, "VOICE INPUT");
-    recognition.onend = () => { $("micButton").disabled = false; };
-    try { recognition.start(); } catch (_error) {
-      $("micButton").disabled = false;
-      toast("Could not start voice input.", true, "VOICE INPUT");
+    recognition.onresult = (event) => {
+      const finalParts = [];
+      const interimParts = [];
+      for (let i = 0; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const spoken = result && result[0] ? String(result[0].transcript || "").trim() : "";
+        if (!spoken) continue;
+        if (result.isFinal) finalParts.push(spoken);
+        else interimParts.push(spoken);
+      }
+      const finalText = finalParts.join(" ").trim();
+      const preview = [finalText, interimParts.join(" ").trim()].filter(Boolean).join(" ").trim();
+      if (preview) $("commandInput").value = preview;
+      if (finalText && !submittedTranscript) {
+        submittedTranscript = true;
+        $("commandInput").value = finalText;
+        isListening = false;
+        syncVoiceControls();
+        try { recognition.stop(); } catch (_error) {}
+        $("chatForm").requestSubmit();
+      }
+    };
+    recognition.onerror = (event) => {
+      if (manualStop && event.error === "aborted") return;
+      voiceErrorShown = true;
+      isListening = false;
+      const messages = {
+        "not-allowed": "Microphone permission is blocked. Allow microphone access in your browser's site settings.",
+        "service-not-allowed": "This browser or device policy blocked speech recognition. Try another supported browser.",
+        "no-speech": "I didn't hear speech. Try again a little closer to the microphone.",
+        "audio-capture": "No microphone was found. Check your microphone or headset.",
+        "network": "Speech recognition could not reach the browser's speech service. Check connectivity and try again.",
+        "language-not-supported": "Speech recognition isn't available for this language in this browser. Select another voice language.",
+        "aborted": "Voice input was interrupted."
+      };
+      const message = messages[event.error] || "Voice input failed (" + String(event.error || "unknown error") + "). You can still type your request.";
+      syncVoiceControls();
+      setAssistantStatus("error", "MIC ISSUE");
+      toast(message, true, "VOICE INPUT");
+    };
+    recognition.onend = () => {
+      if (recognitionInstance === recognition) recognitionInstance = null;
+      isListening = false;
+      syncVoiceControls();
+      if (!isProcessing && !isSpeaking && !voiceErrorShown) setAssistantStatus("ready", "READY");
+      if (!submittedTranscript && !manualStop && !voiceErrorShown) {
+        if ($("commandInput").value.trim()) {
+          toast("I caught only part of that. Review the text and tap Send, or try speaking again.", true, "VOICE INPUT");
+        } else {
+          toast("I didn't catch anything that time. Check microphone permission and try again.", true, "VOICE INPUT");
+        }
+      }
+    };
+    try {
+      recognition.start();
+    } catch (_error) {
+      recognitionInstance = null;
+      isListening = false;
+      syncVoiceControls();
+      setAssistantStatus("error", "MIC ISSUE");
+      toast("Could not start the microphone. Close other speech sessions and try again.", true, "VOICE INPUT");
     }
   });
 

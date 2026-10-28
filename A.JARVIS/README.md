@@ -83,8 +83,20 @@ pytest -q tests/test_tool_registry.py tests/test_agent.py tests/test_notes.py te
 
 
 
+## Local Voice Command Flow
+
+The local Windows dashboard follows a guarded activation flow: say "Hey Jarvis" to wake it, then say "system activate" before desktop commands. You can also say "Hey Jarvis, system activate" in one utterance. Once activated, leading wake phrases are removed before command routing so "Hey Jarvis, what time is it?" and "Hey Jarvis, take a note: ..." still reach the intended command handler.
+
+The local dashboard offers voice-language selection for English (India), English (US), Tamil, and Hindi, plus a spoken-replies toggle and a stop-voice control. Availability depends on the browser's SpeechRecognition support, microphone permissions, selected language support, and installed speech voices. AJARVIS pauses recognition during spoken replies to reduce feedback loops where it hears and repeats its own response. This is browser speech recognition, not a guaranteed always-on offline wake-word engine.
+
 ## Hosted Cloud Mode
 
 Use cloud_app.py and requirements-web.txt for the Render-hosted workspace. The cloud version uses password accounts and PostgreSQL storage for notes, editable user preferences, tasks, reminders, document text, and history. Personal preferences are visible and removable from the dashboard. The Agent Activity panel records executed tool names, outcome and duration without recording tool arguments or private note/document contents. It does not import the camera or Windows desktop-control entry points used by app.py. Deployment is configured by the repository-root render.yaml file.
 
-See [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) before applying the Blueprint, especially its current cost, ephemeral service, Gemini API, and data-retention notes.
+### Voice command console
+
+The hosted dashboard uses browser-based speech recognition and speech synthesis. Press the microphone button to start a voice session, select English (India), English (US), Tamil, or Hindi, and use the status indicator to see when AJARVIS is listening, analyzing, or speaking. Spoken replies can be muted or stopped. Simple commands can save/read notes and create/list tasks. A leading "Hey Jarvis" phrase is accepted after the mic has been pressed; there is no always-on wake-word listener in cloud mode. Voice support depends on browser/device support and microphone permissions. A spoken "remind me to ..." request creates a task without a scheduled time; set a date and time in Tasks & Reminders to schedule a notification.
+
+Assistant requests are rate-limited per signed-in account to help protect free API quota. The cloud app still cannot control your local computer; desktop automation must remain in the separate local app and requires explicit safety design.
+
+See [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) before applying the Blueprint, especially its cost, ephemeral service, Gemini API, and data-retention notes.

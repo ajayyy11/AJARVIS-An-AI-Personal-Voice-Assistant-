@@ -390,6 +390,49 @@
         transform: translateX(40px);
       }
     }
+
+    .local-voice-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 9px;
+      width: min(92%, 540px);
+      margin: 14px auto 0;
+      color: #80deea;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 1.2px;
+    }
+    .local-voice-controls select,
+    .local-voice-controls button {
+      border: 1px solid rgba(0, 240, 255, .35);
+      border-radius: 4px;
+      padding: 7px 9px;
+      color: #b2ebf2;
+      background: rgba(0, 240, 255, .07);
+      font: inherit;
+      letter-spacing: .4px;
+    }
+    .local-voice-controls select { max-width: 155px; }
+    .local-voice-controls .local-voice-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .local-voice-controls input { accent-color: #00f0ff; width: auto; margin: 0; }
+    .local-voice-controls button { cursor: pointer; }
+    .local-voice-controls button:disabled { cursor: not-allowed; opacity: .45; }
+    .local-voice-controls button:not(:disabled):hover,
+    .local-voice-controls select:focus-visible {
+      border-color: #00f0ff;
+      box-shadow: 0 0 14px rgba(0, 240, 255, .18);
+      outline: none;
+    }
+    @media (max-width: 650px) {
+      .local-voice-controls { gap: 7px; font-size: 9px; }
+      .local-voice-controls > label:first-child { width: 100%; }
+    }
   </style>
 
 <body>
@@ -429,6 +472,20 @@
       <div class="clock" id="clock"></div>
       <div class="core" id="ai-core" style="cursor: pointer;">AI</div>
       <div id="mic-status" style="margin-top: 25px; color: #ffeb3b; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;">TAP CORE TO START MIC</div>
+      <div class="local-voice-controls" aria-label="Voice settings">
+        <label for="local-voice-language">VOICE LANGUAGE</label>
+        <select id="local-voice-language" aria-label="Speech recognition and reply language">
+          <option value="en-IN" selected>English · India</option>
+          <option value="en-US">English · US</option>
+          <option value="ta-IN">தமிழ் · Tamil</option>
+          <option value="hi-IN">हिन्दी · Hindi</option>
+        </select>
+        <label class="local-voice-toggle" for="local-voice-output">
+          <input id="local-voice-output" type="checkbox" checked>
+          <span>SPOKEN REPLIES</span>
+        </label>
+        <button type="button" id="local-stop-speech" disabled>STOP VOICE</button>
+      </div>
 
       <div class="wave" style="margin-top: 15px;">
         <div class="bar"></div>
@@ -592,12 +649,86 @@
     const transcriptBox = document.getElementById("transcript-box");
     const textInput = document.getElementById("text-command-input");
     const sendBtn = document.getElementById("send-command-btn");
+    const voiceLanguageSelect = document.getElementById("local-voice-language");
+    const voiceOutputToggle = document.getElementById("local-voice-output");
+    const stopSpeechButton = document.getElementById("local-stop-speech");
+    let recognition = null;
+    let shouldListen = true;
+    let recognitionBlocked = false;
+    let speechHold = false;
+    let speechGeneration = 0;
     let state = "idle";
 
-    // Shared command handler. Returning the server reply lets callers wait
-    // for activation/deactivation to finish before updating the UI state.
+    try {
+      const savedLanguage = window.localStorage.getItem("ajarvis.local.voice.language");
+      if (savedLanguage && Array.from(voiceLanguageSelect.options).some((option) => option.value === savedLanguage)) {
+        voiceLanguageSelect.value = savedLanguage;
+      }
+      voiceOutputToggle.checked = window.localStorage.getItem("ajarvis.local.voice.output") !== "false";
+    } catch (_error) {
+      // The voice controls still work if browser storage is restricted.
+    }
+
+    voiceLanguageSelect.addEventListener("change", () => {
+      if (recognition) {
+        recognition.lang = voiceLanguageSelect.value;
+        // Re-arm after a permission/language failure or restart with the new locale.
+        const shouldRestart = recognitionBlocked;
+        recognitionBlocked = false;
+        shouldListen = true;
+        if (shouldRestart) {
+          try { recognition.start(); } catch (_error) {}
+        } else if (!speechHold) {
+          try { recognition.stop(); } catch (_error) {}
+        }
+      }
+      try { window.localStorage.setItem("ajarvis.local.voice.language", voiceLanguageSelect.value); } catch (_error) {}
+      showToast("Voice language set to " + voiceLanguageSelect.options[voiceLanguageSelect.selectedIndex].text + ".");
+    });
+    voiceOutputToggle.addEventListener("change", () => {
+      try { window.localStorage.setItem("ajarvis.local.voice.output", voiceOutputToggle.checked ? "true" : "false"); } catch (_error) {}
+      if (!voiceOutputToggle.checked) stopSpokenReply();
+      showToast(voiceOutputToggle.checked ? "Spoken replies enabled." : "Spoken replies muted.");
+    });
+
+    function stripWakePhrase(value) {
+      return String(value || "").replace(
+        /^(?:(?:hey|hi|hello|okay|ok)[,]?\s+)?(?:a\.?\s*j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|ajarvis|jarvis)\b[\s,.:;!?-]*/i,
+        ""
+      ).trim();
+    }
+
+    function stopSpokenReply() {
+      speechGeneration += 1;
+      speechHold = false;
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (stopSpeechButton) stopSpeechButton.disabled = true;
+      if (recognition && shouldListen && !recognitionBlocked) {
+        window.setTimeout(() => {
+          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
+          try { recognition.start(); } catch (_error) {}
+        }, 350);
+      }
+    }
+
+    stopSpeechButton.addEventListener("click", stopSpokenReply);
+
+    // Serialize voice requests so recognition cannot dispatch overlapping commands.
+    let commandInProgress = false;
     async function processCommand(command) {
+      if (commandInProgress) return null;
+      commandInProgress = true;
       aiStatus.textContent = "Processing...";
+      if ("speechSynthesis" in window && window.speechSynthesis.speaking) {
+        speechGeneration += 1;
+        speechHold = false;
+        window.speechSynthesis.cancel();
+        if (stopSpeechButton) stopSpeechButton.disabled = true;
+      }
+      if (recognition && shouldListen && !recognitionBlocked && !speechHold) {
+        try { recognition.stop(); } catch (_error) {}
+      }
+
       try {
         const res = await fetch('/voice_command', {
           method: 'POST',
@@ -621,6 +752,14 @@
         aiStatus.textContent = "Command failed";
         showToast(error.message || "Could not reach AJARVIS. Check the connection and try again.");
         return null;
+      } finally {
+        commandInProgress = false;
+        if (!speechHold && recognition && shouldListen && !recognitionBlocked) {
+          window.setTimeout(() => {
+            if (commandInProgress || speechHold || !shouldListen || recognitionBlocked) return;
+            try { recognition.start(); } catch (_error) {}
+          }, 450);
+        }
       }
     }
 
@@ -661,15 +800,15 @@
     sendBtn.addEventListener("click", executeTextCommand);
 
     if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
+      recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = false;
-      recognition.lang = "en-US";
+      recognition.lang = voiceLanguageSelect.value || "en-IN";
 
       // idle → greeted → activated
 
       recognition.onstart = () => {
-        aiStatus.textContent = "Standby";
+        aiStatus.textContent = state === "activated" ? "System Active" : (state === "greeted" ? "Awaiting Activation" : "Standby");
         const statusText = document.getElementById('mic-status');
         if(statusText) statusText.style.display = 'none';
         
@@ -680,28 +819,49 @@
         }
       };
 
-      let shouldListen = true;
-      let recognitionBlocked = false;
-
       recognition.onerror = (event) => {
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        const errorCode = String(event.error || "unknown");
+        const statusText = document.getElementById("mic-status");
+        if (errorCode === "not-allowed" || errorCode === "service-not-allowed") {
           recognitionBlocked = true;
           shouldListen = false;
           aiStatus.textContent = "Microphone permission required";
-          const statusText = document.getElementById("mic-status");
           if (statusText) statusText.textContent = "ALLOW MICROPHONE ACCESS TO USE VOICE";
+          showToast("Microphone access is blocked. Allow it in your browser's site settings, then tap the core to retry.");
+        } else if (errorCode === "audio-capture") {
+          aiStatus.textContent = "Microphone not found";
+          if (statusText) statusText.textContent = "CHECK MICROPHONE OR HEADSET";
+          showToast("No microphone was found. Check your input device and try again.");
+        } else if (errorCode === "language-not-supported") {
+          recognitionBlocked = true;
+          shouldListen = false;
+          aiStatus.textContent = "Speech language unavailable";
+          if (statusText) statusText.textContent = "SELECT ANOTHER VOICE LANGUAGE";
+          showToast("This browser cannot recognize speech in the selected language. Choose another language below.");
+        } else if (errorCode === "network") {
+          recognitionBlocked = true;
+          shouldListen = false;
+          aiStatus.textContent = "Speech service unavailable";
+          if (statusText) statusText.textContent = "CHECK CONNECTION AND TAP CORE TO RETRY";
+          showToast("The browser speech service could not be reached. Check connectivity and tap the core to retry.");
+        } else if (errorCode === "no-speech") {
+          aiStatus.textContent = state === "activated" ? "System Active" : "No speech detected";
+        } else if (errorCode !== "aborted") {
+          aiStatus.textContent = "Voice input error";
+          showToast("Voice input failed (" + errorCode + "). You can change the voice language or use the text command box.");
         }
       };
 
       recognition.onend = () => {
-        if (!shouldListen || recognitionBlocked) return;
+        if (!shouldListen || recognitionBlocked || speechHold) return;
         window.setTimeout(() => {
+          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
           try {
             recognition.start();
-          } catch (error) {
+          } catch (_error) {
             // The browser can still be transitioning between listening states.
           }
-        }, 500);
+        }, 450);
       };
 
       recognition.onresult = async (event) => {
@@ -716,17 +876,29 @@
            STATE 1 — IDLE
         ==========================*/
         if (state === "idle") {
+          const startsWithWakePhrase =
+            /^(?:(?:hey|hi|hello|okay|ok)[,]?\s+)?(?:ajarvis|jarvis)\b/i.test(transcript);
 
-          if (transcript.includes("hey jarvis")) {
+          if (startsWithWakePhrase) {
+            const wakeCommand = stripWakePhrase(transcript);
 
-            state = "greeted";
-            aiStatus.textContent = "Awaiting Activation";
-
-            const reply = "Hello " + username;
-
-            speak(reply);
-
-            core.style.boxShadow = "0 0 100px #00ffff";
+            // Preserve the activation gate, but don't discard activation when
+            // it is spoken in the same utterance as the wake phrase.
+            if (/^system activate\b/i.test(wakeCommand)) {
+              const activationReply = await processCommand(wakeCommand);
+              if (activationReply && activationReply.toLowerCase().includes("activating system")) {
+                state = "activated";
+                core.classList.add("activate-ring");
+                setTimeout(() => core.classList.remove("activate-ring"), 3600);
+                aiStatus.textContent = "System Active";
+                core.style.boxShadow = "0 0 140px #00ffff";
+              }
+            } else {
+              state = "greeted";
+              aiStatus.textContent = "Awaiting Activation";
+              speak("Hello " + username + ". Awaiting system activation.");
+              core.style.boxShadow = "0 0 100px #00ffff";
+            }
           }
 
           return;
@@ -736,8 +908,8 @@
            STATE 2 — GREETED
         ==========================*/
         if (state === "greeted") {
-
-          if (transcript.includes("system activate")) {
+          const activationCommand = stripWakePhrase(transcript) || transcript;
+          if (/system activate/i.test(activationCommand)) {
             const activationReply = await processCommand("system activate");
             if (activationReply && activationReply.toLowerCase().includes("activating system")) {
               state = "activated";
@@ -747,7 +919,6 @@
               core.style.boxShadow = "0 0 140px #00ffff";
             }
           }
-
           return;
         }
 
@@ -784,17 +955,24 @@
       document.getElementById('ai-core').addEventListener('click', () => {
         shouldListen = true;
         recognitionBlocked = false;
+        recognition.lang = voiceLanguageSelect.value || "en-IN";
+        if (speechHold || ("speechSynthesis" in window && window.speechSynthesis.speaking)) {
+          speechGeneration += 1;
+          speechHold = false;
+          if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+          if (stopSpeechButton) stopSpeechButton.disabled = true;
+        }
         try {
           recognition.start();
           const statusText = document.getElementById('mic-status');
-          if(statusText) statusText.textContent = 'INITIALIZING...';
-        } catch(e) {
+          if (statusText) statusText.textContent = 'INITIALIZING...';
+        } catch (_error) {
           console.log("Mic already listening");
         }
-        
-        // Also resume AudioContext for the visualizer if suspended
+
+        // Also resume AudioContext for the visualizer if suspended.
         if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume();
+          audioContext.resume();
         }
       });
     } else {
@@ -803,16 +981,50 @@
       if (statusText) statusText.textContent = "SPEECH UNAVAILABLE — USE TEXT COMMANDS";
     }
 
-    /* Text to Speech Helper */
+    /* Text to Speech Helper. Pause recognition during playback to avoid
+       AJARVIS transcribing its own voice as the next command. */
     function speak(text) {
-      if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+      if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined"
+          || !voiceOutputToggle.checked || !String(text ?? "").trim()) {
         return;
       }
 
-      // Replace queued speech so quick commands don't stack old responses.
+      speechGeneration += 1;
+      const generation = speechGeneration;
+      speechHold = true;
+      if (recognition && shouldListen && !recognitionBlocked) {
+        try { recognition.stop(); } catch (_error) {}
+      }
+
+      // Replace queued speech so old utterances cannot overlap new replies.
       window.speechSynthesis.cancel();
-      const speech = new SpeechSynthesisUtterance(String(text ?? ""));
-      speech.lang = "en-US";
+      const speech = new SpeechSynthesisUtterance(String(text ?? "").trim().slice(0, 1800));
+      const language = voiceLanguageSelect.value || "en-IN";
+      speech.lang = language;
+      speech.rate = 0.98;
+      speech.pitch = 0.94;
+      const voices = window.speechSynthesis.getVoices();
+      const exactVoice = voices.find((voice) => voice.lang.toLowerCase() === language.toLowerCase());
+      const sameLanguageVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(language.split("-")[0].toLowerCase()));
+      if (exactVoice || sameLanguageVoice) speech.voice = exactVoice || sameLanguageVoice;
+
+      const finishSpeech = () => {
+        if (generation !== speechGeneration) return;
+        speechHold = false;
+        if (stopSpeechButton) stopSpeechButton.disabled = true;
+        if (recognition && shouldListen && !recognitionBlocked) {
+          window.setTimeout(() => {
+            if (!shouldListen || recognitionBlocked || speechHold) return;
+            try { recognition.start(); } catch (_error) {}
+          }, 450);
+        }
+      };
+      speech.onstart = () => {
+        if (stopSpeechButton) stopSpeechButton.disabled = false;
+      };
+      speech.onend = finishSpeech;
+      speech.onerror = finishSpeech;
+      if (stopSpeechButton) stopSpeechButton.disabled = false;
       window.speechSynthesis.speak(speech);
     }
 

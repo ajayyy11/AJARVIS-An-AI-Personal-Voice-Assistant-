@@ -25,6 +25,13 @@ The cloud workspace is deployed at https://ajarvis-cloud.onrender.com. The Rende
 5. Deploy and wait for the build. Check `/healthz` and `/readyz`; then create a test account and verify notes, preferences, tasks, documents, and logout.
 6. Keep an export/backup of anything important. A free service is suitable for demos, not critical or confidential data.
 
+## Voice interaction
+
+- In the cloud workspace, press the microphone button to begin a voice session. The browser handles speech recognition; select English (India), English (US), Tamil, or Hindi in the Voice Language control.
+- AJARVIS accepts a leading “Hey Jarvis” phrase after the microphone has been pressed. This is not an always-on wake word: browsers do not guarantee continuous background listening for hosted websites.
+- Spoken replies can be muted or stopped from the voice controls. Voice recognition and voice playback depend on the browser, device, selected language, microphone permission, and available system voices.
+- Simple spoken commands include saving/reading notes and adding/listing tasks. “Remind me to …” creates a task but does not schedule a timed reminder unless a date/time is set in Tasks & Reminders.
+
 ## Free-tier trade-offs
 
 - Render Free web services spin down after inactivity and can take around a minute to wake up. Their filesystem is ephemeral, so the database must remain external.
