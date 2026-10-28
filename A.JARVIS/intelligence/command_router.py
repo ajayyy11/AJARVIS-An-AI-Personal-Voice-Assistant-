@@ -11,6 +11,7 @@ from google import genai
 
 from intelligence.memory import add_memory, get_recent
 from intelligence.notes import notes_path, read_recent_notes
+from intelligence.web_research import generate_web_research_response, is_web_research_request
 from intelligence.agent import generate_agent_response
 from intelligence.power_actions import clear_pending_power_action, handle_power_command
 from intelligence.user_state import activate_user, deactivate_user, is_user_active
@@ -334,6 +335,24 @@ def process_command(command, username):
                 print("Weather error:", e)
                 reply = "Could not fetch weather data. Check your internet connection."
 
+        add_memory(command, reply, username)
+        return reply
+
+    # ── GROUNDED WEB RESEARCH ──
+    # This is intentionally a separate Gemini request, not a local tool call.
+    if is_web_research_request(original_command):
+        ai_client = _get_genai_client()
+        if ai_client is None:
+            reply = "Web research is not configured. Add GEMINI_API_KEY to your .env file."
+        else:
+            try:
+                reply = generate_web_research_response(
+                    client=ai_client,
+                    query=original_command,
+                )
+            except Exception:
+                logger.warning("Grounded web research failed", exc_info=True)
+                reply = "I couldn't complete a grounded web search. Please try again with a more specific question."
         add_memory(command, reply, username)
         return reply
 
