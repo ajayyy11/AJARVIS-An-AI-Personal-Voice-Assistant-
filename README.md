@@ -49,7 +49,7 @@ pip install -r requirements.txt
 
 ### 4. Configure the application
 
-Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` enables Gemini responses; without it, local commands can still run but free-form AI answers are unavailable. `WEATHER_API_KEY` is optional and enables weather lookups. Create the MySQL database and tables using `database/schema.sql`. For an existing installation, back up the database and apply `database/migrations/001_user_scoped_history.sql` once before running the updated version; historical rows remain unassigned because their owner cannot be determined safely.
+Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` enables Gemini responses; without it, local commands can still run but free-form AI answers are unavailable. `WEATHER_API_KEY` is optional and enables weather lookups. For a new database, create tables from `database/schema.sql`. For an existing installation, follow the step-by-step [database upgrade runbook](A.JARVIS/database/migrations/README.md); don't run the fresh-install schema over an existing database.
 
 Never commit `.env`, API keys, database passwords, or real biometric data. Use a unique random secret key and disable debug mode in any deployment.
 
