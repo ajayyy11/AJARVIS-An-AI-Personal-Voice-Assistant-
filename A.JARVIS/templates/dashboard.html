@@ -390,6 +390,49 @@
         transform: translateX(40px);
       }
     }
+
+    .local-voice-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 9px;
+      width: min(92%, 540px);
+      margin: 14px auto 0;
+      color: #80deea;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      letter-spacing: 1.2px;
+    }
+    .local-voice-controls select,
+    .local-voice-controls button {
+      border: 1px solid rgba(0, 240, 255, .35);
+      border-radius: 4px;
+      padding: 7px 9px;
+      color: #b2ebf2;
+      background: rgba(0, 240, 255, .07);
+      font: inherit;
+      letter-spacing: .4px;
+    }
+    .local-voice-controls select { max-width: 155px; }
+    .local-voice-controls .local-voice-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .local-voice-controls input { accent-color: #00f0ff; width: auto; margin: 0; }
+    .local-voice-controls button { cursor: pointer; }
+    .local-voice-controls button:disabled { cursor: not-allowed; opacity: .45; }
+    .local-voice-controls button:not(:disabled):hover,
+    .local-voice-controls select:focus-visible {
+      border-color: #00f0ff;
+      box-shadow: 0 0 14px rgba(0, 240, 255, .18);
+      outline: none;
+    }
+    @media (max-width: 650px) {
+      .local-voice-controls { gap: 7px; font-size: 9px; }
+      .local-voice-controls > label:first-child { width: 100%; }
+    }
   </style>
 
 <body>
@@ -429,6 +472,20 @@
       <div class="clock" id="clock"></div>
       <div class="core" id="ai-core" style="cursor: pointer;">AI</div>
       <div id="mic-status" style="margin-top: 25px; color: #ffeb3b; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;">TAP CORE TO START MIC</div>
+      <div class="local-voice-controls" aria-label="Voice settings">
+        <label for="local-voice-language">VOICE LANGUAGE</label>
+        <select id="local-voice-language" aria-label="Speech recognition and reply language">
+          <option value="en-IN" selected>English · India</option>
+          <option value="en-US">English · US</option>
+          <option value="ta-IN">தமிழ் · Tamil</option>
+          <option value="hi-IN">हिन्दी · Hindi</option>
+        </select>
+        <label class="local-voice-toggle" for="local-voice-output">
+          <input id="local-voice-output" type="checkbox" checked>
+          <span>SPOKEN REPLIES</span>
+        </label>
+        <button type="button" id="local-stop-speech" disabled>STOP VOICE</button>
+      </div>
 
       <div class="wave" style="margin-top: 15px;">
         <div class="bar"></div>
