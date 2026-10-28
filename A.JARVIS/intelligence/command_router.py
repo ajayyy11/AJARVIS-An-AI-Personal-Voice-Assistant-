@@ -38,19 +38,18 @@ WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 
 
 _WAKE_PREFIX_RE = re.compile(
-    r"^(?:(?:hey|hi|hello|okay|ok)[,]?\\s+)?"
-    r"(?:a\\.?\\s*j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|"
-    r"j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|ajarvis|jarvis)\\b"
-    r"[\\s,.:;!?-]*",
+    r"^(?:(?:hey|hi|hello|okay|ok)[,]?\s+)?"
+    r"(?:a\.?\s*j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|"
+    r"j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|ajarvis|jarvis)\b"
+    r"[\s,.:;!?-]*",
     flags=re.IGNORECASE,
 )
 
 
 def _strip_wake_prefix(command):
     """Remove only a leading wake phrase so the spoken command still runs."""
-    normalized = re.sub(r"\\s+", " ", str(command).strip())
+    normalized = re.sub(r"\s+", " ", str(command).strip())
     return _WAKE_PREFIX_RE.sub("", normalized, count=1).strip()
-
 
 def process_command(command, username):
     original_command = _strip_wake_prefix(command)
