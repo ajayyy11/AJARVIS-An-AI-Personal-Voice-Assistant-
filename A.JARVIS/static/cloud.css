@@ -166,3 +166,12 @@ input::placeholder, textarea::placeholder { color: #60798d; }
   .bottom-strip { align-items: flex-start; flex-direction: column; }
   .auth-card { padding: 25px 20px; }
 }
+
+.danger-button, .delete-document-button, .delete-note-button { border: 1px solid rgba(255, 143, 157, .25); background: rgba(255, 143, 157, .055); color: #ff9aa8; border-radius: 9px; padding: 7px 10px; font-size: 10px; font-weight: 700; }
+.danger-button:hover, .delete-document-button:hover, .delete-note-button:hover { border-color: rgba(255, 143, 157, .65); background: rgba(255, 143, 157, .1); }
+.delete-note-button { margin-top: 9px; }
+.delete-document-button { margin: 9px 0 0; }
+.document-answer { padding: 10px; border-radius: 9px; background: rgba(87, 231, 242, .035); border: 1px solid rgba(87, 231, 242, .12); }
+.source-link { display: inline-block; margin: 2px 7px 2px 0; color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+.bottom-strip .danger-button { margin-left: auto; }
+@media (max-width: 600px) { .bottom-strip .danger-button { margin-left: 0; } }
