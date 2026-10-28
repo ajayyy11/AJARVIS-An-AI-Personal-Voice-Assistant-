@@ -39,13 +39,19 @@
         <div class="panel-heading">
           <div class="panel-symbol">✳</div>
           <div><h2>Ask AJARVIS</h2><p>AI assistant · web research · personal memory</p></div>
-          <span class="panel-status">READY</span>
+          <span id="assistantStatus" class="panel-status" data-state="ready" role="status" aria-live="polite">READY</span>
         </div>
         <div id="chatLog" class="chat-log" aria-live="polite">
           <div class="chat-message assistant-message">
             <span class="message-orb">A</span>
             <div><small>AJARVIS</small><p>Hello {{ user }}. Ask me a question, search your saved notes, research a current topic, or look inside an uploaded document.</p></div>
           </div>
+        </div>
+        <div class="quick-actions" aria-label="Quick commands">
+          <span class="quick-actions-label">QUICK COMMANDS</span>
+          <button type="button" class="quick-command" data-command="What time is it?">◷ Time</button>
+          <button type="button" class="quick-command" data-command="Read my notes">▤ My notes</button>
+          <button type="button" class="quick-command" data-command="List my tasks">✓ My tasks</button>
         </div>
         <form id="chatForm" class="chat-composer">
           <textarea id="commandInput" rows="2" maxlength="2000" placeholder="Ask anything… Try “search the web for the latest Python release”" required></textarea>
@@ -57,7 +63,22 @@
             </div>
           </div>
         </form>
-        <p class="capability-note">Web research and document Q&amp;A use Gemini. Cloud mode does not control your personal computer.</p>
+        <div class="voice-toolbar" aria-label="Voice settings">
+          <label class="voice-language-label" for="voiceLanguage">VOICE LANGUAGE
+            <select id="voiceLanguage" aria-label="Voice recognition and spoken reply language">
+              <option value="en-IN" selected>English · India</option>
+              <option value="en-US">English · US</option>
+              <option value="ta-IN">தமிழ் · Tamil</option>
+              <option value="hi-IN">हिन्दी · Hindi</option>
+            </select>
+          </label>
+          <label class="voice-output-toggle" for="voiceOutput">
+            <input id="voiceOutput" type="checkbox" checked>
+            <span>Speak replies</span>
+          </label>
+          <button id="stopSpeakingButton" type="button" class="stop-voice-button" disabled>Stop voice</button>
+        </div>
+        <p class="capability-note">Voice input depends on your browser. Say “Hey Jarvis” naturally. Cloud mode does not control your personal computer.</p>
       </div>
 
       <div class="panel tasks-panel">
