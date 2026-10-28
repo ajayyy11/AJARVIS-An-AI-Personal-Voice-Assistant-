@@ -258,6 +258,42 @@ def _genai():
     return _genai_client
 
 
+
+def _list_user_notes(username: str, query: str = "", limit: int = 20) -> list[dict[str, Any]]:
+    """Return note metadata for the owner only, optionally filtered by phrase."""
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        if query:
+            cursor.execute(
+                "SELECT id, note_text, created_at FROM cloud_notes "
+                "WHERE username = %s AND POSITION(LOWER(%s) IN LOWER(note_text)) > 0 "
+                "ORDER BY id DESC LIMIT %s",
+                (username, query[:120], limit),
+            )
+        else:
+            cursor.execute(
+                "SELECT id, note_text, created_at FROM cloud_notes "
+                "WHERE username = %s ORDER BY id DESC LIMIT %s",
+                (username, limit),
+            )
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": int(row[0]),
+                "text": str(row[1])[:MAX_NOTE_CHARS],
+                "created_at": row[2].isoformat() if row[2] else None,
+            }
+            for row in rows
+        ]
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
 def _recent_notes(username: str, limit: int = 5) -> dict[str, Any]:
     conn = cursor = None
     try:
@@ -392,16 +428,18 @@ def _cloud_tool_registry() -> ToolRegistry:
     return registry
 
 
-def _save_note(username: str, note_text: str) -> None:
+def _save_note(username: str, note_text: str) -> dict[str, Any]:
     conn = cursor = None
     try:
         conn = _database()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO cloud_notes (username, note_text) VALUES (%s, %s)",
+            "INSERT INTO cloud_notes (username, note_text) VALUES (%s, %s) RETURNING id, created_at",
             (username, note_text),
         )
+        row = cursor.fetchone()
         conn.commit()
+        return {"id": int(row[0]), "text": note_text, "created_at": row[1].isoformat() if row[1] else None}
     except Exception:
         if conn is not None:
             conn.rollback()
@@ -621,12 +659,9 @@ def notes_api():
     auth_error = _require_login()
     if auth_error:
         return auth_error
-    query = request.args.get("q", "").strip()
+    query = request.args.get("q", "").strip()[:120]
     try:
-        if query:
-            result = _search_notes(session["user"], query, 10)
-            return jsonify({"notes": result["matches"]})
-        return jsonify({"notes": _recent_notes(session["user"], 20)["notes"]})
+        return jsonify({"notes": _list_user_notes(session["user"], query=query, limit=20)})
     except Exception:
         return jsonify({"error": "Notes are temporarily unavailable."}), 503
 
@@ -644,11 +679,45 @@ def create_note_api():
     if not isinstance(text_value, str) or not text_value.strip() or len(text_value.strip()) > MAX_NOTE_CHARS:
         return jsonify({"error": "Note text must contain 1–4,000 characters."}), 400
     try:
-        _save_note(session["user"], text_value.strip())
-        return jsonify({"ok": True}), 201
+        note = _save_note(session["user"], text_value.strip())
+        return jsonify({"ok": True, "note": note}), 201
     except Exception:
         logger.warning("Could not save a cloud note.")
         return jsonify({"error": "Could not save your note. Please retry."}), 503
+
+
+
+@app.delete("/api/notes/<int:note_id>")
+def delete_note_api(note_id: int):
+    auth_error = _require_login()
+    if auth_error:
+        return auth_error
+    csrf_error = _require_csrf()
+    if csrf_error:
+        return csrf_error
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM cloud_notes WHERE id = %s AND username = %s",
+            (note_id, session["user"]),
+        )
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        if not deleted:
+            return jsonify({"error": "Note not found."}), 404
+        return jsonify({"ok": True})
+    except Exception:
+        if conn is not None:
+            conn.rollback()
+        logger.warning("Could not delete a cloud note.")
+        return jsonify({"error": "Could not delete the note."}), 503
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
 
 
 @app.get("/api/tasks")
@@ -895,6 +964,40 @@ def ask_document_api(document_id: int):
         return jsonify({"error": "Could not answer from the document. Please retry."}), 503
 
 
+
+@app.delete("/api/documents/<int:document_id>")
+def delete_document_api(document_id: int):
+    auth_error = _require_login()
+    if auth_error:
+        return auth_error
+    csrf_error = _require_csrf()
+    if csrf_error:
+        return csrf_error
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM ajarvis_documents WHERE id = %s AND username = %s",
+            (document_id, session["user"]),
+        )
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        if not deleted:
+            return jsonify({"error": "Document not found."}), 404
+        return jsonify({"ok": True})
+    except Exception:
+        if conn is not None:
+            conn.rollback()
+        logger.warning("Could not delete an uploaded document.")
+        return jsonify({"error": "Could not delete the document."}), 503
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
 @app.post("/api/assistant")
 def assistant_api():
     auth_error = _require_login()
@@ -918,6 +1021,55 @@ def assistant_api():
     except Exception:
         logger.warning("Cloud assistant command failed.")
         return jsonify({"error": "AJARVIS could not process that request."}), 503
+
+
+
+@app.post("/api/account/delete")
+def delete_account_api():
+    auth_error = _require_login()
+    if auth_error:
+        return auth_error
+    csrf_error = _require_csrf()
+    if csrf_error:
+        return csrf_error
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or data.get("confirmation") != "DELETE":
+        return jsonify({"error": "Type DELETE to confirm account and data removal."}), 400
+    password = data.get("password")
+    if not isinstance(password, str) or not password or len(password) > 256:
+        return jsonify({"error": "Your current password is required."}), 400
+
+    username = session["user"]
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        cursor.execute("SELECT password_hash FROM cloud_users WHERE username = %s", (username,))
+        row = cursor.fetchone()
+        if not row or not check_password_hash(row[0], password):
+            return jsonify({"error": "The password was not accepted."}), 403
+        for table in ("cloud_notes", "ajarvis_tasks", "ajarvis_documents", "command_history"):
+            cursor.execute("DELETE FROM " + table + " WHERE username = %s", (username,))
+        cursor.execute("DELETE FROM cloud_users WHERE username = %s", (username,))
+        conn.commit()
+    except Exception:
+        if conn is not None:
+            conn.rollback()
+        logger.warning("Cloud account deletion failed.")
+        return jsonify({"error": "Account deletion failed. No changes were committed."}), 503
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+    try:
+        from intelligence.memory import clear_user_memory
+        clear_user_memory(username)
+    except Exception:
+        logger.warning("Could not clear the process-local history cache after account deletion.")
+    session.clear()
+    return jsonify({"ok": True})
 
 
 @app.get("/api/history")
