@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 ### 4. Configure the application
 
-Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` enables Gemini responses; without it, local commands can still run but free-form AI answers are unavailable. `WEATHER_API_KEY` is optional and enables weather lookups. Create the MySQL database and tables using `database/schema.sql`.
+Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` enables Gemini responses; without it, local commands can still run but free-form AI answers are unavailable. `WEATHER_API_KEY` is optional and enables weather lookups. Create the MySQL database and tables using `database/schema.sql`. For an existing installation, back up the database and apply `database/migrations/001_user_scoped_history.sql` once before running the updated version; historical rows remain unassigned because their owner cannot be determined safely.
 
 Never commit `.env`, API keys, database passwords, or real biometric data. Use a unique random secret key and disable debug mode in any deployment.
 
@@ -87,7 +87,7 @@ $env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
 pytest -q tests
 ```
 
-These tests cover session validation, database history fallback/cleanup, and power-action confirmation. They do not replace full integration testing of the camera, face-recognition accuracy, MySQL schema, or external AI services.
+Command history, AI context, and analytics are scoped to the signed-in username. Existing database installations must apply the migration in the setup instructions before persistent history will work. These tests cover session validation, database history fallback/cleanup, and power-action confirmation. They do not replace full integration testing of the camera, face-recognition accuracy, MySQL schema, or external AI services.
 
 ## Repository Layout
 
