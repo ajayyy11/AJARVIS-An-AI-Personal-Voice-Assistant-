@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 ### 4. Configure the application
 
-Copy `.env.example` to `.env` and fill in the required values for the database, Gemini API, and Flask secret key. Create/configure the MySQL database as described in `database/db.py`.
+Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` enables Gemini responses; without it, local commands can still run but free-form AI answers are unavailable. `WEATHER_API_KEY` is optional and enables weather lookups. Create the MySQL database and tables using `database/schema.sql`.
 
 Never commit `.env`, API keys, database passwords, or real biometric data. Use a unique random secret key and disable debug mode in any deployment.
 
@@ -64,26 +64,30 @@ Follow any application-specific setup instructions in [the application README](A
 
 This project handles camera input, face-related data, sessions, and API credentials. Use it only with informed consent, protect credentials, and review access controls before exposing it to a network. Face recognition can make mistakes and should not be treated as infallible identity verification.
 
+## Safer Desktop Controls
+
+Shutdown and restart requests now require an exact confirmation within 30 seconds. For example, say `shutdown system`, then `confirm shutdown`. Say `cancel` to cancel the pending action. The application does not execute shutdown or restart commands from the initial phrase alone.
+
 ## Automated Tests
 
-A GitHub Actions workflow runs the session-management security tests on pushes and pull requests. To run those tests locally from the application directory:
+GitHub Actions compiles the Python modules and runs the session, memory-persistence, and power-confirmation tests. To run the suite locally from the application directory:
 
 ```bash
 cd A.JARVIS
-python -m pip install Flask python-dotenv pytest
+python -m pip install Flask python-dotenv pytest mysql-connector-python
 # Linux/macOS:
 export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-pytest -q tests/test_session_manager.py
+pytest -q tests
 ```
 
 On Windows PowerShell, set the test secret before running pytest:
 
 ```powershell
 $env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
-pytest -q tests/test_session_manager.py
+pytest -q tests
 ```
 
-These tests cover session creation, revocation, expiry, and malformed timestamps. They do not replace full integration testing of the camera, database, or external AI services.
+These tests cover session validation, database history fallback/cleanup, and power-action confirmation. They do not replace full integration testing of the camera, face-recognition accuracy, MySQL schema, or external AI services.
 
 ## Repository Layout
 
