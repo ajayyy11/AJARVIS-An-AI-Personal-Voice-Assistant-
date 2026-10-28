@@ -1,7 +1,7 @@
-# Render Blueprint for the hosted AJARVIS workspace.
-# The web app uses a free compute plan (it spins down when idle).
-# PostgreSQL uses a small paid plan for persistent user data; review Render's
-# current pricing before applying this Blueprint.
+# Zero-cost starter Blueprint for AJARVIS Cloud.
+# Web service uses Render Free and DATABASE_URL points to an external free
+# PostgreSQL provider (for example Neon). Create that database first and set
+# DATABASE_URL in Render. Free services may sleep and are not production SLAs.
 services:
   - type: web
     name: ajarvis-cloud
@@ -19,9 +19,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        fromDatabase:
-          name: ajarvis-cloud-db
-          property: connectionString
+        sync: false
       - key: SESSION_TIMEOUT_MINUTES
         value: "60"
       - key: MAX_CONTENT_LENGTH_BYTES
@@ -32,12 +30,3 @@ services:
         value: gemini-2.5-flash
       - key: GEMINI_API_KEY
         sync: false
-
-databases:
-  - name: ajarvis-cloud-db
-    databaseName: ajarvis
-    user: ajarvis
-    region: singapore
-    plan: 0.1c-256mb
-    diskSizeGB: 1
-    postgresMajorVersion: "18"
