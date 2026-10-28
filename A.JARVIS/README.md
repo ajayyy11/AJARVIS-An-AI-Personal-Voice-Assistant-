@@ -26,7 +26,7 @@ Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL · python
    ```
 
 4. Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` is needed for free-form Gemini answers but is no longer required just to start local commands; `WEATHER_API_KEY` is optional.
-5. Create the MySQL database and tables using `database/schema.sql`.
+5. Create the MySQL database and tables using `database/schema.sql`. Before updating an existing database, back it up and apply `database/migrations/001_user_scoped_history.sql` once. Old history rows remain unassigned because their owner cannot be safely inferred.
 6. Start the app:
 
    ```bash
@@ -40,6 +40,10 @@ Shutdown and restart requests need an exact confirmation within 30 seconds: say 
 ## Automated Tests
 
 From this directory, set `SECRET_KEY` and run `python -m pip install Flask python-dotenv pytest mysql-connector-python`, followed by `pytest -q tests`.
+
+## User-Scoped History
+
+Command history, AI context, and analytics are filtered by the authenticated username. The current schema stores each new history entry with its username; legacy rows remain unassigned after migration so they are not exposed to another account.
 
 ## Security and Privacy
 
