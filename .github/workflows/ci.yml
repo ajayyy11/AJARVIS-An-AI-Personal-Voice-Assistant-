@@ -34,12 +34,12 @@ jobs:
           from pathlib import Path
 
           html = Path("templates/dashboard.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script\\s*>", html, flags=re.IGNORECASE | re.DOTALL)
+          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script\s*>", html, flags=re.IGNORECASE | re.DOTALL)
           inline_scripts = [script for script in scripts if script.strip()]
           if not inline_scripts:
               raise SystemExit("No inline dashboard scripts were found.")
 
-          javascript = "\\n;\\n".join(inline_scripts)
+          javascript = "\n;\n".join(inline_scripts)
           javascript = javascript.replace("{{ user | tojson }}", '"ci-user"')
           if "{{" in javascript or "{%" in javascript:
               raise SystemExit("Unrendered Jinja template syntax remains in dashboard JavaScript.")
