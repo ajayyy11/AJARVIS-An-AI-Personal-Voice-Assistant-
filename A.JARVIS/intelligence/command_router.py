@@ -136,14 +136,14 @@ def process_command(command, username):
 
     # TIME — use word boundaries so words such as "sometimes" do not
     # accidentally trigger a clock lookup.
-    if re.search(r"\\btime\\b", command) and not re.search(r"\\bdate\\b", command):
+    if re.search(r"\btime\b", command) and not re.search(r"\bdate\b", command):
         now = datetime.datetime.now().strftime("%I:%M %p")
         reply = f"The current time is {now}."
         add_memory(command, reply, username)
         return reply
 
     # DATE — match a real date intent, not the "date" substring in "update".
-    if re.search(r"\\bdate\\b", command) or re.search(r"\\bwhat day\\b", command) or re.search(r"\\btoday\\b", command):
+    if re.search(r"\bdate\b", command) or re.search(r"\bwhat day\b", command) or re.search(r"\btoday\b", command):
         today = datetime.datetime.now().strftime("%A, %B %d, %Y")
         reply = f"Today is {today}."
         add_memory(command, reply, username)
