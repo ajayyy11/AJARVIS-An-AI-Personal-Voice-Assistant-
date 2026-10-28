@@ -37,17 +37,33 @@ DEFAULT_CITY = os.getenv("DEFAULT_CITY", "London")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 
 
-def process_command(command, username):
-    original_command = str(command).strip()
-    command = original_command.lower()
+_WAKE_PREFIX_RE = re.compile(
+    r"^(?:(?:hey|hi|hello|okay|ok)[,]?\\s+)?"
+    r"(?:a\\.?\\s*j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|"
+    r"j\\.?\\s*a\\.?\\s*r\\.?\\s*v\\.?\\s*i\\.?\\s*s\\.?|ajarvis|jarvis)\\b"
+    r"[\\s,.:;!?-]*",
+    flags=re.IGNORECASE,
+)
 
-    # ──────────────────────────────────────────────
-    # WAKE WORD
-    # ──────────────────────────────────────────────
-    if "hey jarvis" in command:
+
+def _strip_wake_prefix(command):
+    """Remove only a leading wake phrase so the spoken command still runs."""
+    normalized = re.sub(r"\\s+", " ", str(command).strip())
+    return _WAKE_PREFIX_RE.sub("", normalized, count=1).strip()
+
+
+def process_command(command, username):
+    original_command = _strip_wake_prefix(command)
+    normalized_command = original_command.lower()
+
+    # A standalone wake phrase should greet the user. If the user also said a
+    # command, keep processing it instead of swallowing everything after wake.
+    if not original_command:
         reply = f"Hello {username}. Awaiting system activation."
-        add_memory(command, reply, username)
+        add_memory("hey jarvis", reply, username)
         return reply
+
+    command = normalized_command
 
     # ──────────────────────────────────────────────
     # ACTIVATE
