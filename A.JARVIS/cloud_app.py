@@ -676,7 +676,7 @@ def process_cloud_command(username: str, command: str) -> str:
             return "Notes are limited to 4,000 characters."
         try:
             _save_note(username, note_text)
-            return "Saved to your notes. I'll be able to find it when you ask."
+            return "Note saved to your cloud account."
         except Exception:
             logger.warning("Could not save a voice-requested note.")
             return "I couldn't save that note just now. Please try again."
