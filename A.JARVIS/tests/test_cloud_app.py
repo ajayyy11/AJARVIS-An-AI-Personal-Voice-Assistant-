@@ -504,3 +504,98 @@ def test_activity_api_filters_by_current_username(client, monkeypatch):
     assert response.status_code == 200
     assert response.get_json()["activity"][0]["tool_name"] == "read_user_preferences"
     assert cursor.executed[0][1] == ("alice", 30)
+
+
+
+def test_registration_attempts_are_rate_limited_per_client_address(client):
+    ip_address = "198.51.100.45"
+    with cloud_app._registration_lock:
+        cloud_app._registration_attempts.pop(ip_address, None)
+
+    try:
+        for _ in range(cloud_app.MAX_REGISTRATION_ATTEMPTS):
+            response = client.post(
+                "/api/auth/register",
+                environ_base={"REMOTE_ADDR": ip_address},
+                json={"username": "invalid", "password": "short"},
+            )
+            assert response.status_code == 400
+
+        limited = client.post(
+            "/api/auth/register",
+            environ_base={"REMOTE_ADDR": ip_address},
+            json={"username": "invalid", "password": "short"},
+        )
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"] == str(cloud_app.REGISTRATION_WINDOW_SECONDS)
+    finally:
+        with cloud_app._registration_lock:
+            cloud_app._registration_attempts.pop(ip_address, None)
+
+
+def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatch):
+    username = "shared_quota_tester"
+    login_session(client, username=username, csrf="test-token")
+    with cloud_app._assistant_lock:
+        cloud_app._assistant_requests.pop(username, None)
+
+    monkeypatch.setattr(cloud_app, "process_cloud_command", lambda _username, _command: "test reply")
+    monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
+    monkeypatch.setattr(cloud_app, "_genai", lambda: object())
+    monkeypatch.setattr(
+        cloud_app,
+        "_database",
+        lambda: FakeConnection(FakeCursor(fetchone_value=("report.txt", "A saved report."))),
+    )
+
+    try:
+        for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
+            response = client.post(
+                "/api/assistant",
+                headers={"X-CSRF-Token": "test-token"},
+                json={"command": "Hello AJARVIS"},
+            )
+            assert response.status_code == 200
+
+        response = client.post(
+            "/api/documents/17/ask",
+            headers={"X-CSRF-Token": "test-token"},
+            json={"question": "Summarize the report"},
+        )
+        assert response.status_code == 429
+        assert response.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
+    finally:
+        with cloud_app._assistant_lock:
+            cloud_app._assistant_requests.pop(username, None)
+
+
+
+def test_document_is_saved_when_ai_quota_is_exhausted(client, monkeypatch):
+    from io import BytesIO
+
+    login_session(client, username="alice", csrf="test-token")
+    timestamp = datetime.now(timezone.utc)
+    cursor = FakeCursor(fetchone_value=(44, timestamp))
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    monkeypatch.setattr(cloud_app, "_genai", lambda: object())
+    monkeypatch.setattr(
+        cloud_app,
+        "extract_document_text",
+        lambda filename, raw: ("Readable document content", None),
+    )
+    monkeypatch.setattr(cloud_app, "_assistant_rate_limited", lambda _username: True)
+
+    response = client.post(
+        "/api/documents",
+        headers={"X-CSRF-Token": "test-token"},
+        data={"file": (BytesIO(b"test document"), "report.txt")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    result = response.get_json()
+    assert result["id"] == 44
+    assert "Document saved successfully" in result["summary"]
+    assert "summary was skipped" in result["summary"]
+    assert connection.committed
