@@ -114,7 +114,7 @@ def verify_schema():
         print(f"ERROR: {error}")
 
     if errors:
-        print("AJARVIS database preflight FAILED.")
+        print("AJARVIS database preflight FAILED. Review errors; for an existing database, preview database/migrate_database.py first.")
         return 1
 
     print(f"AJARVIS database schema is usable: {Config.MYSQL_DB}")
