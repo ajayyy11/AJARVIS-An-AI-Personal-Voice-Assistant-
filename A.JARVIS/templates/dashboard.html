@@ -901,17 +901,24 @@
       document.getElementById('ai-core').addEventListener('click', () => {
         shouldListen = true;
         recognitionBlocked = false;
+        recognition.lang = voiceLanguageSelect.value || "en-IN";
+        if (speechHold || ("speechSynthesis" in window && window.speechSynthesis.speaking)) {
+          speechGeneration += 1;
+          speechHold = false;
+          if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+          if (stopSpeechButton) stopSpeechButton.disabled = true;
+        }
         try {
           recognition.start();
           const statusText = document.getElementById('mic-status');
-          if(statusText) statusText.textContent = 'INITIALIZING...';
-        } catch(e) {
+          if (statusText) statusText.textContent = 'INITIALIZING...';
+        } catch (_error) {
           console.log("Mic already listening");
         }
-        
-        // Also resume AudioContext for the visualizer if suspended
+
+        // Also resume AudioContext for the visualizer if suspended.
         if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume();
+          audioContext.resume();
         }
       });
     } else {
@@ -920,16 +927,50 @@
       if (statusText) statusText.textContent = "SPEECH UNAVAILABLE — USE TEXT COMMANDS";
     }
 
-    /* Text to Speech Helper */
+    /* Text to Speech Helper. Pause recognition during playback to avoid
+       AJARVIS transcribing its own voice as the next command. */
     function speak(text) {
-      if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+      if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined"
+          || !voiceOutputToggle.checked || !String(text ?? "").trim()) {
         return;
       }
 
-      // Replace queued speech so quick commands don't stack old responses.
+      speechGeneration += 1;
+      const generation = speechGeneration;
+      speechHold = true;
+      if (recognition && shouldListen && !recognitionBlocked) {
+        try { recognition.stop(); } catch (_error) {}
+      }
+
+      // Replace queued speech so old utterances cannot overlap new replies.
       window.speechSynthesis.cancel();
-      const speech = new SpeechSynthesisUtterance(String(text ?? ""));
-      speech.lang = "en-US";
+      const speech = new SpeechSynthesisUtterance(String(text ?? "").trim().slice(0, 1800));
+      const language = voiceLanguageSelect.value || "en-IN";
+      speech.lang = language;
+      speech.rate = 0.98;
+      speech.pitch = 0.94;
+      const voices = window.speechSynthesis.getVoices();
+      const exactVoice = voices.find((voice) => voice.lang.toLowerCase() === language.toLowerCase());
+      const sameLanguageVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(language.split("-")[0].toLowerCase()));
+      if (exactVoice || sameLanguageVoice) speech.voice = exactVoice || sameLanguageVoice;
+
+      const finishSpeech = () => {
+        if (generation !== speechGeneration) return;
+        speechHold = false;
+        if (stopSpeechButton) stopSpeechButton.disabled = true;
+        if (recognition && shouldListen && !recognitionBlocked) {
+          window.setTimeout(() => {
+            if (!shouldListen || recognitionBlocked || speechHold) return;
+            try { recognition.start(); } catch (_error) {}
+          }, 450);
+        }
+      };
+      speech.onstart = () => {
+        if (stopSpeechButton) stopSpeechButton.disabled = false;
+      };
+      speech.onend = finishSpeech;
+      speech.onerror = finishSpeech;
+      if (stopSpeechButton) stopSpeechButton.disabled = false;
       window.speechSynthesis.speak(speech);
     }
 
