@@ -9,10 +9,14 @@ This setup is for a hobby/demo deployment with **no required monthly hosting or 
 - Gemini API using a Google AI Studio free-tier key, only if your account/model has free quota. Rate limits and model availability apply; never enable paid billing if your budget is zero.
 - GitHub for source control and automatic deployments.
 
-## Deploy
+## Current deployment
 
-1. Open the repository pull request and merge the reviewed changes to `main`.
-2. Create a Neon project on its Free plan. Create a database/user if needed and copy the connection string. Keep it private.
+The cloud workspace is deployed at https://ajarvis-cloud.onrender.com. The Render service is configured on the Free plan, and its `DATABASE_URL` should point to the Neon PostgreSQL database. This guide also documents how to reproduce the setup if you need to redeploy.
+
+## Deploy or redeploy
+
+1. Use the repository's `main` branch, where the cloud deployment changes are merged.
+2. Create a Neon project on its Free plan if you do not already have one. Create a database/user if needed and copy the connection string. Keep it private.
 3. In Render, choose **New → Blueprint** and connect this repository. Select the `main` branch and apply the root `render.yaml`. The Blueprint creates only the free web service; it does not create a paid Render database.
 4. In the Render service's Environment settings, set:
    - `DATABASE_URL`: Neon PostgreSQL connection string. Use the provider's pooled connection string if available.
