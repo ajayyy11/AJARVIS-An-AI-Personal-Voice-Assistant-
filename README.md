@@ -19,9 +19,9 @@ Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL
 
 ## Hosted Cloud Workspace
 
-A separate cloud entry point is available at A.JARVIS/cloud_app.py. The zero-cost starter deployment uses Render Free plus an external free PostgreSQL provider (such as Neon) and a free-eligible Gemini API key; see A.JARVIS/CLOUD_DEPLOYMENT.md for setup and limits.
+A separate cloud entry point is available at A.JARVIS/cloud_app.py. The hosted cloud workspace is deployed at https://ajarvis-cloud.onrender.com using Render Free, an external PostgreSQL database on Neon, and a Gemini API key where free quota is available. Free tiers have usage limits and may sleep; see A.JARVIS/CLOUD_DEPLOYMENT.md for setup, limitations, and troubleshooting.
 
-Deployment configuration and exact setup steps are in [the cloud deployment guide](A.JARVIS/CLOUD_DEPLOYMENT.md). The root [Render Blueprint](render.yaml) defines the hosted web service and managed PostgreSQL. Review its database plan and current cost before applying; the database uses a paid persistent plan, and Gemini API use may incur separate charges.
+Deployment configuration and setup steps are in [the cloud deployment guide](A.JARVIS/CLOUD_DEPLOYMENT.md). The root [Render Blueprint](render.yaml) defines a free Render web service only; it does not create a Render-managed database. `DATABASE_URL` points to the external Neon PostgreSQL database, and `GEMINI_API_KEY` is configured privately in Render. Gemini API quotas vary, so do not enable paid billing if you need to keep costs at ₹0.
 
 The cloud app depends on the Render-provided DATABASE_URL, a generated SECRET_KEY, and a manually configured GEMINI_API_KEY for AI features. Never commit live secrets.
 
