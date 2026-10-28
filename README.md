@@ -19,7 +19,7 @@ Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL
 
 ## Hosted Cloud Workspace
 
-A separate cloud entry point is now available at A.JARVIS/cloud_app.py. It provides password-based accounts, a responsive workspace, user-scoped PostgreSQL notes and history, tasks/reminders, document extraction and Q&A, Gemini agent tools, and grounded web research. It intentionally does not enable camera authentication or remote control of the user's personal computer.
+A separate cloud entry point is now available at A.JARVIS/cloud_app.py. It provides password-based accounts, a responsive workspace, user-scoped PostgreSQL notes, preferences and history, tasks/reminders, document extraction and Q&A, Gemini agent tools, a privacy-minimal activity log, and grounded web research. It intentionally does not enable camera authentication or remote control of the user's personal computer.
 
 Deployment configuration and exact setup steps are in [the cloud deployment guide](A.JARVIS/CLOUD_DEPLOYMENT.md). The root [Render Blueprint](render.yaml) defines the hosted web service and managed PostgreSQL. Review its database plan and current cost before applying; the database uses a paid persistent plan, and Gemini API use may incur separate charges.
 
