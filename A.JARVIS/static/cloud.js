@@ -289,9 +289,22 @@
       list.appendChild(make("p", "empty-state", query ? "No matching notes found." : "No saved notes yet."));
       return;
     }
-    notes.slice().reverse().forEach((line) => {
+    notes.slice().reverse().forEach((note) => {
       const item = make("article", "note-item");
-      item.appendChild(make("p", "", line));
+      const value = typeof note === "string" ? note : ("[" + friendlyDate(note.created_at) + "] " + note.text);
+      item.appendChild(make("p", "", value));
+      if (note && typeof note === "object" && note.id) {
+        const remove = make("button", "delete-note-button", "Delete note");
+        remove.type = "button";
+        remove.addEventListener("click", async () => {
+          try {
+            await api("/api/notes/" + note.id, { method: "DELETE" });
+            await loadNotes($("noteQuery").value.trim());
+            toast("Note deleted.");
+          } catch (error) { toast(error.message, true, "NOTE DELETE"); }
+        });
+        item.appendChild(remove);
+      }
       list.appendChild(item);
     });
   }
@@ -327,6 +340,17 @@
       const details = make("div", "document-copy");
       details.appendChild(make("strong", "", doc.filename));
       details.appendChild(make("small", "", (doc.page_count ? String(doc.page_count) + " pages/sheets · " : "") + friendlyDate(doc.created_at)));
+      const removeButton = make("button", "delete-document-button", "Delete document");
+      removeButton.type = "button";
+      removeButton.addEventListener("click", async () => {
+        if (!window.confirm("Delete this saved document and its extracted text?")) return;
+        try {
+          await api("/api/documents/" + doc.id, { method: "DELETE" });
+          await loadDocuments();
+          toast("Document deleted.");
+        } catch (error) { toast(error.message, true, "DOCUMENT DELETE"); }
+      });
+      details.appendChild(removeButton);
       const questionForm = make("form", "document-question");
       const question = make("input", "");
       question.type = "text";
@@ -404,6 +428,27 @@
     } catch (_error) {
       $("serverStatus").textContent = "Metrics unavailable";
     }
+  }
+
+  const deleteAccountButton = $("deleteAccountButton");
+  if (deleteAccountButton) {
+    deleteAccountButton.addEventListener("click", async () => {
+      const confirmation = window.prompt("This permanently deletes your account, notes, tasks, uploaded document text, and history. Type DELETE to continue.");
+      if (confirmation !== "DELETE") return;
+      const password = window.prompt("Enter your current password to confirm account deletion.");
+      if (!password) return;
+      deleteAccountButton.disabled = true;
+      try {
+        await api("/api/account/delete", {
+          method: "POST",
+          body: JSON.stringify({ confirmation: "DELETE", password })
+        });
+        window.location.assign("/register");
+      } catch (error) {
+        toast(error.message, true, "ACCOUNT DELETION");
+        deleteAccountButton.disabled = false;
+      }
+    });
   }
 
   $("logoutButton").addEventListener("click", async () => {
