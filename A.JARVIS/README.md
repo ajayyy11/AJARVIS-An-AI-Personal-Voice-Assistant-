@@ -73,9 +73,11 @@ The initial agent can read the current date/time, CPU and memory usage, home-dis
 
 Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. When the note tools are used, matching note content is sent to the configured Gemini model for an answer; do not store passwords, API keys, or other secrets in notes. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
 
+Requests containing wording such as `search the web`, `latest`, `current`, or `recent` are routed through `intelligence/web_research.py`, a separate Google Search-grounded Gemini request. The response includes up to five validated HTTP(S) source links when grounding metadata is available. This requires `GEMINI_API_KEY`; the default model is `gemini-2.5-flash`, and `GEMINI_WEB_MODEL` can override it. Gemini API usage charges may apply. When no source metadata is returned, AJARVIS says it could not verify source links.
+
 Run the focused unit tests with:
 
 ```bash
-pytest -q tests/test_tool_registry.py tests/test_agent.py
+pytest -q tests/test_tool_registry.py tests/test_agent.py tests/test_notes.py tests/test_web_research.py
 ```
 
