@@ -623,7 +623,7 @@ def _save_history(username: str, command: str, response_text: str) -> None:
 
 
 _WAKE_PREFIX_RE = re.compile(
-    r"^(?:(?:hey|hi|hello|okay|ok)\s+)?"
+    r"^(?:(?:hey|hi|hello|okay|ok)[,]?\s+)?"
     r"(?:a\.?\s*j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|"
     r"j\.?\s*a\.?\s*r\.?\s*v\.?\s*i\.?\s*s\.?|ajarvis|jarvis)\b"
     r"[\s,.:;!?-]*",
@@ -788,9 +788,10 @@ def process_cloud_command(username: str, command: str) -> str:
             "You are AJARVIS, an original, high-end personal intelligence system inspired by the calm precision "
             "of a futuristic technical aide. Be composed, perceptive, articulate, warm, quietly confident, and "
             "occasionally dryly witty—not theatrical, obsequious, or needlessly verbose. Lead with the useful "
-            "answer, organize complex replies clearly, and expand when the problem warrants it. Address the user "
-            "as 'sir' only when it feels natural; never repeat it mechanically. Anticipate the next practical "
-            "step when genuinely helpful, but do not presume permission to take actions. Understand casual speech "
+            "answer, organize complex replies clearly, and expand when the problem warrants it. Reply in the same "
+            "language as the user's latest request unless they ask otherwise. Address the user as 'sir' only when "
+            "it feels natural; never repeat it mechanically. Anticipate the next practical step when genuinely "
+            "helpful, but do not presume permission to take actions. Understand casual speech "
             "and dictated requests, including phrases prefixed with 'Hey Jarvis'. "
             "You can answer questions and use the available read-only tools to inspect this signed-in user's "
             "saved preferences, notes, and uploaded document text. Use those sources only when relevant. "
