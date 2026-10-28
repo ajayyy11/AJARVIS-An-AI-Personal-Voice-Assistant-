@@ -54,3 +54,9 @@ def handle_power_command(command, username, now=None):
         return {"status": "no_pending", "action": None}
 
     return None
+
+
+def clear_pending_power_action(username):
+    """Forget an unconfirmed power action when a user deactivates or logs out."""
+    if isinstance(username, str) and username.strip():
+        _pending_actions.pop(username.strip(), None)
