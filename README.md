@@ -10,6 +10,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 - Gemini-powered command/assistant integration
 - Face-authentication workflow using computer-vision libraries
 - MySQL database connection layer
+- User-scoped command history, AI context, notes, and activation state
 - Session management and system-statistics modules
 
 ## Tech Stack
@@ -87,7 +88,7 @@ $env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
 pytest -q tests
 ```
 
-Command history, AI context, and analytics are scoped to the signed-in username. Existing database installations must apply the migration in the setup instructions before persistent history will work. These tests cover session validation, database history fallback/cleanup, and power-action confirmation. They do not replace full integration testing of the camera, face-recognition accuracy, MySQL schema, or external AI services.
+Command history, AI context, analytics, notes, and activation state are scoped to the signed-in username. Existing database installations must apply the migration in the setup instructions before persistent history will work. These tests cover session validation, database history fallback/cleanup, and power-action confirmation. They do not replace full integration testing of the camera, face-recognition accuracy, MySQL schema, or external AI services.
 
 ## Repository Layout
 
