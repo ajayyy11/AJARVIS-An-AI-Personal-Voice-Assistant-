@@ -1,7 +1,10 @@
 import datetime
+import hashlib
 import logging
 import os
+import re
 import subprocess
+from pathlib import Path
 
 import psutil
 import pyautogui
@@ -29,15 +32,24 @@ def _get_genai_client():
     client = genai.Client(api_key=api_key)
     return client
 
-system_active = False
-notes_file = os.path.join(os.path.dirname(__file__), "..", "notes.txt")
+active_users = set()
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "London")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 
 
-def process_command(command, username):
-    global system_active
+def _notes_path(username):
+    """Return a stable, user-specific notes path without using raw usernames."""
+    app_dir = Path(__file__).resolve().parents[1]
+    notes_dir = app_dir / "user_data" / "notes"
+    notes_dir.mkdir(parents=True, exist_ok=True)
 
+    username_text = str(username)
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", username_text).strip("_")[:32] or "user"
+    suffix = hashlib.sha256(username_text.encode("utf-8")).hexdigest()[:12]
+    return notes_dir / f"{safe_name}-{suffix}.txt"
+
+
+def process_command(command, username):
     command = command.lower().strip()
 
     # ──────────────────────────────────────────────
@@ -52,7 +64,7 @@ def process_command(command, username):
     # ACTIVATE
     # ──────────────────────────────────────────────
     if "system activate" in command:
-        system_active = True
+        active_users.add(username)
         reply = "Activating system. All functions online."
         add_memory(command, reply, username)
         return reply
@@ -61,7 +73,7 @@ def process_command(command, username):
     # DEACTIVATE
     # ──────────────────────────────────────────────
     if "system deactivate" in command or "system shut down" in command:
-        system_active = False
+        active_users.discard(username)
         reply = f"System deactivating. Until next time, {username}."
         add_memory(command, reply, username)
         return reply
@@ -69,8 +81,8 @@ def process_command(command, username):
     # ──────────────────────────────────────────────
     # SYSTEM OFFLINE GUARD
     # ──────────────────────────────────────────────
-    if not system_active:
-        return "System is offline. Say 'system activate' to begin."
+    if username not in active_users:
+        return "System is offline for this user. Say 'system activate' to begin."
 
     # Destructive power commands require a second, exact confirmation phrase.
     power_event = handle_power_command(command, username)
@@ -268,9 +280,10 @@ def process_command(command, username):
                      .strip())
         if note_text:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-            with open(notes_file, "a", encoding="utf-8") as f:
-                f.write(f"[{timestamp}] {note_text}\n")
-            reply = f"Note saved: {note_text}"
+            notes_path = _notes_path(username)
+            with notes_path.open("a", encoding="utf-8") as notes_file:
+                notes_file.write(f"[{timestamp}] {note_text}\n")
+            reply = "Note saved to your personal notes."
         else:
             reply = "What would you like me to note? Please repeat with the note content."
         add_memory(command, reply, username)
@@ -278,15 +291,16 @@ def process_command(command, username):
 
     if "read my notes" in command or "read notes" in command:
         try:
-            with open(notes_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+            notes_path = _notes_path(username)
+            with notes_path.open("r", encoding="utf-8") as notes_file:
+                lines = notes_file.readlines()
             if lines:
-                notes = " | ".join(l.strip() for l in lines[-5:])
+                notes = " | ".join(line.strip() for line in lines[-5:])
                 reply = f"Your recent notes: {notes}"
             else:
                 reply = "You have no saved notes."
-        except FileNotFoundError:
-            reply = "You have no saved notes yet."
+        except OSError:
+            reply = "Your personal notes are not available right now."
         add_memory(command, reply, username)
         return reply
 
