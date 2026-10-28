@@ -304,6 +304,7 @@
       if (preview) $("commandInput").value = preview;
       if (finalText && !submittedTranscript) {
         submittedTranscript = true;
+        $("commandInput").value = finalText;
         isListening = false;
         syncVoiceControls();
         try { recognition.stop(); } catch (_error) {}
