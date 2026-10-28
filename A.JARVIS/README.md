@@ -39,7 +39,7 @@ Shutdown and restart requests need an exact confirmation within 30 seconds: say 
 
 ## Automated Tests
 
-From this directory, set `SECRET_KEY` and run `python -m pip install Flask python-dotenv pytest mysql-connector-python`, followed by `pytest -q tests`.
+From this directory, set `SECRET_KEY` and run `python -m pip install Flask python-dotenv pytest mysql-connector-python`, followed by `pytest -q tests`. GitHub Actions also checks the dashboard's inline JavaScript syntax and compiles the Python modules.
 
 ## User-Scoped History
 
