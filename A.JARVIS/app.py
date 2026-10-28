@@ -68,13 +68,29 @@ def register():
     if latest is None:
         return jsonify({"status": "error", "message": "Camera not ready, please wait a moment."}), 400
 
-    rgb_frame = cv2.cvtColor(latest, cv2.COLOR_BGR2RGB)
-    face_locations = face_recognition.face_locations(rgb_frame)
-    if len(face_locations) != 1:
-        return jsonify({"status": "error", "message": "Ensure exactly one face visible"}), 400
+    try:
+        rgb_frame = cv2.cvtColor(latest, cv2.COLOR_BGR2RGB)
+        face_locations = face_recognition.face_locations(rgb_frame)
+        if len(face_locations) != 1:
+            return jsonify({
+                "status": "error",
+                "message": "Ensure exactly one face is visible and well lit.",
+            }), 400
 
-    face_encoding = face_recognition.face_encodings(rgb_frame, face_locations)[0]
-    encoding_bytes = face_encoding.tobytes()
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+        if len(face_encodings) != 1:
+            return jsonify({
+                "status": "error",
+                "message": "Could not create a face encoding. Adjust lighting and try again.",
+            }), 400
+        face_encoding = face_encodings[0]
+        encoding_bytes = face_encoding.tobytes()
+    except Exception:
+        app.logger.exception("Face processing failed during registration")
+        return jsonify({
+            "status": "error",
+            "message": "Face processing failed. Check camera input and try again.",
+        }), 503
 
     conn = None
     cursor = None
