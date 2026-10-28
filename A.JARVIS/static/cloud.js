@@ -325,6 +325,53 @@
     catch (error) { toast(error.message, true, "NOTE SEARCH"); }
   });
 
+  async function loadPreferences() {
+    const result = await api("/api/preferences");
+    const list = $("preferenceList");
+    list.replaceChildren();
+    const preferences = result.preferences || [];
+    if (!preferences.length) {
+      list.appendChild(make("p", "empty-state", "No saved preferences yet. Add small, useful preferences that AJARVIS should remember."));
+      return;
+    }
+    preferences.forEach((preference) => {
+      const item = make("article", "preference-item");
+      const details = make("div", "preference-copy");
+      details.appendChild(make("strong", "", preference.key));
+      details.appendChild(make("p", "", preference.value));
+      const remove = make("button", "delete-note-button", "Forget");
+      remove.type = "button";
+      remove.addEventListener("click", async () => {
+        try {
+          await api("/api/preferences/" + encodeURIComponent(preference.key), { method: "DELETE" });
+          await loadPreferences();
+          toast("Preference forgotten.");
+        } catch (error) {
+          toast(error.message, true, "PERSONAL MEMORY");
+        }
+      });
+      item.append(details, remove);
+      list.appendChild(item);
+    });
+  }
+
+  $("preferenceForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const key = $("preferenceKey").value.trim();
+    const value = $("preferenceValue").value.trim();
+    try {
+      await api("/api/preferences", {
+        method: "POST",
+        body: JSON.stringify({ key, value })
+      });
+      $("preferenceValue").value = "";
+      await loadPreferences();
+      toast("Personal preference saved.");
+    } catch (error) {
+      toast(error.message, true, "PERSONAL MEMORY");
+    }
+  });
+
   async function loadDocuments() {
     const result = await api("/api/documents");
     const list = $("documentList");
@@ -464,6 +511,7 @@
 
   loadTasks().catch(error => toast(error.message, true, "TASKS"));
   loadNotes().catch(error => toast(error.message, true, "NOTES"));
+  loadPreferences().catch(error => toast(error.message, true, "PERSONAL MEMORY"));
   loadDocuments().catch(error => toast(error.message, true, "DOCUMENTS"));
   refreshHistory().catch(() => {});
   loadSystemStatus();
