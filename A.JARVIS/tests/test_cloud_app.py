@@ -176,6 +176,51 @@ def test_cloud_note_reads_are_scoped_to_current_user(monkeypatch):
     assert "bob's note" not in result
 
 
+def test_wake_word_is_stripped_for_spoken_note_command(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cloud_app, "_save_note", lambda username, text: calls.append((username, text)))
+
+    result = cloud_app.process_cloud_command("alice", "Hey Jarvis, take a note: call the college tomorrow")
+
+    assert result == "Note saved to your cloud account."
+    assert calls == [("alice", "call the college tomorrow")]
+
+
+def test_wake_word_only_gives_ready_prompt(monkeypatch):
+    monkeypatch.setattr(cloud_app, "_genai", lambda: pytest.fail("No model call expected for a wake phrase"))
+    assert "What can I help" in cloud_app.process_cloud_command("alice", "Hey Jarvis")
+
+
+def test_voice_task_command_creates_user_scoped_task(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        cloud_app,
+        "create_user_task",
+        lambda username, title: calls.append((username, title)) or {"title": title},
+    )
+
+    result = cloud_app.process_cloud_command("alice", "Jarvis, add task to renew my passport")
+
+    assert result == "Task added: renew my passport."
+    assert calls == [("alice", "renew my passport")]
+
+
+def test_voice_task_listing_is_owner_scoped(monkeypatch):
+    monkeypatch.setattr(
+        cloud_app,
+        "list_user_tasks",
+        lambda username: [
+            {"title": "Renew passport", "done": False, "due_at": None},
+            {"title": "Buy groceries", "done": True, "due_at": None},
+        ] if username == "alice" else [],
+    )
+
+    result = cloud_app.process_cloud_command("alice", "Hey Jarvis, list my tasks")
+
+    assert "Renew passport" in result
+    assert "Buy groceries" not in result
+
+
 def test_current_time_is_answered_without_api_key(monkeypatch):
     monkeypatch.setattr(cloud_app, "_genai", lambda: None)
     result = cloud_app.process_cloud_command("alice", "what time is it")
