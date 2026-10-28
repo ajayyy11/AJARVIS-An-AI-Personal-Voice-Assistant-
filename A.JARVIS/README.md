@@ -69,9 +69,9 @@ See the repository-level README for the full project overview and setup.
 
 The AI fallback now uses manual Gemini function calling through an explicit allow-list in `intelligence/tool_registry.py` and `intelligence/agent.py`.
 
-The initial agent can read the current date/time, CPU and memory usage, home-disk usage, and battery status. Calls are validated against registered argument schemas, and the agent limits the number of tool calls and the amount of returned data. Automatic SDK function execution is disabled so the application, not the model, decides whether a requested tool can run.
+The initial agent can read the current date/time, CPU and memory usage, home-disk usage, battery status, and the signed-in user's saved notes (recent notes or phrase search). Calls are validated against registered argument schemas, and the agent limits the number of tool calls and the amount of returned data. Automatic SDK function execution is disabled so the application, not the model, decides whether a requested tool can run.
 
-Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
+Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. When the note tools are used, matching note content is sent to the configured Gemini model for an answer; do not store passwords, API keys, or other secrets in notes. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
 
 Run the focused unit tests with:
 
