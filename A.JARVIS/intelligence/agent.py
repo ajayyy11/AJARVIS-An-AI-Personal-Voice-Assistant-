@@ -13,6 +13,7 @@ import os
 from typing import Any, Mapping
 
 
+from intelligence.notes import read_recent_notes, search_personal_notes
 from intelligence.tool_registry import (
     ToolArgumentError,
     ToolNotFoundError,
@@ -61,8 +62,26 @@ def _battery_status(*, username: str) -> dict[str, Any]:
     }
 
 
+def _read_recent_notes_tool(*, username: str, limit: int = 5) -> dict[str, Any]:
+    try:
+        notes = read_recent_notes(username, limit=limit)
+    except OSError:
+        return {"available": False, "message": "Personal notes are not available right now."}
+    return {"count": len(notes), "notes": notes}
+
+
+def _search_personal_notes_tool(
+    *, username: str, query: str, limit: int = 5
+) -> dict[str, Any]:
+    try:
+        matches = search_personal_notes(username, query, limit=limit)
+    except OSError:
+        return {"available": False, "message": "Personal notes are not available right now."}
+    return {"count": len(matches), "matches": matches}
+
+
 def build_default_registry() -> ToolRegistry:
-    """Build the small, safe starter toolkit. All tools are read-only."""
+    """Build the safe starter toolkit. Every registered built-in is read-only."""
     registry = ToolRegistry()
     registry.register(
         "get_current_datetime",
@@ -78,6 +97,31 @@ def build_default_registry() -> ToolRegistry:
         "get_battery_status",
         "Read battery percentage and charging state, if available.",
         _battery_status,
+    )
+    registry.register(
+        "read_recent_notes",
+        "Read the most recent saved notes belonging to the signed-in user.",
+        _read_recent_notes_tool,
+        parameters={
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 5}},
+            "required": [],
+            "additionalProperties": False,
+        },
+    )
+    registry.register(
+        "search_personal_notes",
+        "Search the signed-in user's saved notes for a phrase.",
+        _search_personal_notes_tool,
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "minLength": 1, "maxLength": 120},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
     )
     return registry
 
