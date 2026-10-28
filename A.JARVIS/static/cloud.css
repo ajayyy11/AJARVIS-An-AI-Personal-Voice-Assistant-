@@ -336,3 +336,36 @@ input::placeholder, textarea::placeholder { color: #60798d; }
   .assistant-panel.assistant-thinking .panel-symbol { animation: none; }
   .quick-command { transition: none; }
 }
+
+.assistant-panel .panel-symbol {
+  position: relative;
+  isolation: isolate;
+  background: radial-gradient(circle at 50% 45%, rgba(87, 231, 242, .18), rgba(87, 231, 242, .035) 65%);
+  box-shadow: inset 0 0 18px rgba(87, 231, 242, .05);
+}
+.assistant-panel .panel-symbol::before,
+.assistant-panel .panel-symbol::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+}
+.assistant-panel .panel-symbol::before {
+  inset: 4px;
+  border: 1px solid rgba(87, 231, 242, .24);
+  border-top-color: rgba(87, 231, 242, .85);
+  border-bottom-color: rgba(87, 231, 242, .08);
+  transform: rotate(-28deg);
+}
+.assistant-panel .panel-symbol::after {
+  inset: 9px;
+  border: 1px dashed rgba(87, 231, 242, .28);
+  animation: reactorOrbit 12s linear infinite;
+}
+@keyframes reactorOrbit {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-panel .panel-symbol::after { animation: none; }
+}
