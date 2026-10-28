@@ -15,7 +15,7 @@ This roadmap keeps the existing Windows assistant working while adding broader c
 ## Phase 1 — Agent reliability and safety
 
 - Expand tests around tool schemas, timeouts, provider errors, and session boundaries.
-- Add an audit trail for tool name, timestamp, outcome, and user, without logging sensitive arguments or secrets.
+- Extend the activity audit to include rejected/invalid tool attempts and request-level failures without logging sensitive arguments, prompt content, or secrets.
 - Create a real user-facing approval flow with short-lived, user-scoped approvals for each specific action.
 - Keep the model unable to approve its own proposed actions.
 - Add CI checks for dependencies and a minimal integration test for the agent adapter.
