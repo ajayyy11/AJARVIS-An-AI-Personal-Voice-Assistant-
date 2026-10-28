@@ -137,6 +137,14 @@ def generate_agent_response(
                 parameters_json_schema=item["parameters"],
             )
         )
+    if not declarations:
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=_config(config_types, system_instruction, []),
+        )
+        return (getattr(response, "text", None) or "").strip()
+
     provider_tool = config_types.Tool(function_declarations=declarations)
     config = config_types.GenerateContentConfig(
         system_instruction=system_instruction,
