@@ -43,7 +43,7 @@ From this directory, set `SECRET_KEY` and run `python -m pip install Flask pytho
 
 ## User-Scoped History
 
-Command history, AI context, and analytics are filtered by the authenticated username. The current schema stores each new history entry with its username; legacy rows remain unassigned after migration so they are not exposed to another account.
+Command history, AI context, analytics, notes, and activation state are scoped to the authenticated username. The current schema stores each new history entry with its username; legacy rows remain unassigned after migration so they are not exposed to another account.
 
 ## Security and Privacy
 
