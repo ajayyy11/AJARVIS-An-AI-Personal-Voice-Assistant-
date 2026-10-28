@@ -118,6 +118,7 @@
       $("micButton").disabled = false;
       $("commandInput").focus();
       refreshHistory().catch(() => {});
+      loadActivity().catch(() => {});
     }
   }
 
@@ -251,6 +252,7 @@
     } catch (error) { toast(error.message, true, "TASK SAVE"); }
   });
   $("refreshTasks").addEventListener("click", () => loadTasks().catch(error => toast(error.message, true)));
+  $("refreshActivity").addEventListener("click", () => loadActivity().catch(error => toast(error.message, true, "ACTIVITY")));
 
   async function claimReminders() {
     const result = await api("/api/reminders/claim", {
@@ -372,6 +374,27 @@
       toast(error.message, true, "PERSONAL MEMORY");
     }
   });
+
+  async function loadActivity() {
+    const result = await api("/api/activity");
+    const list = $("activityList");
+    list.replaceChildren();
+    const activity = result.activity || [];
+    if (!activity.length) {
+      list.appendChild(make("p", "empty-state", "No AI tool activity recorded yet. Ask AJARVIS to search your notes or preferences."));
+      return;
+    }
+    activity.forEach((entry) => {
+      const item = make("article", "activity-item");
+      const status = make("span", "activity-status" + (entry.outcome === "success" ? " success" : " failure"),
+        entry.outcome === "success" ? "✓" : "!");
+      const info = make("div", "activity-copy");
+      info.appendChild(make("strong", "", entry.tool_name));
+      info.appendChild(make("small", "", friendlyDate(entry.created_at) + " · " + entry.duration_ms + " ms"));
+      item.append(status, info);
+      list.appendChild(item);
+    });
+  }
 
   async function loadDocuments() {
     const result = await api("/api/documents");
@@ -514,6 +537,7 @@
   loadNotes().catch(error => toast(error.message, true, "NOTES"));
   loadPreferences().catch(error => toast(error.message, true, "PERSONAL MEMORY"));
   loadDocuments().catch(error => toast(error.message, true, "DOCUMENTS"));
+  loadActivity().catch(error => toast(error.message, true, "ACTIVITY"));
   refreshHistory().catch(() => {});
   loadSystemStatus();
   claimReminders().catch(() => {});
