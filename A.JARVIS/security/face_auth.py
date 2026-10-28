@@ -1,6 +1,7 @@
 """Face-encoding loading and matching for local AJARVIS authentication."""
 
 import logging
+import os
 
 import cv2
 import face_recognition
@@ -10,9 +11,15 @@ from database.db import get_connection
 
 logger = logging.getLogger(__name__)
 
-# A lower threshold is stricter than the library's common 0.6 default.
-# Tune against consented samples on the target machine before relying on it.
-FACE_MATCH_THRESHOLD = 0.55
+# A lower threshold is stricter. Tune against consented samples on the target
+# camera/lighting setup; this is not a substitute for liveness detection.
+try:
+    FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.55"))
+except ValueError as exc:
+    raise RuntimeError("FACE_MATCH_THRESHOLD must be a number between 0 and 1.") from exc
+if not 0.0 <= FACE_MATCH_THRESHOLD <= 1.0:
+    raise RuntimeError("FACE_MATCH_THRESHOLD must be a number between 0 and 1.")
+
 ENCODING_LENGTH = 128
 
 # Cache entries are (username, 128-dimensional face encoding).
