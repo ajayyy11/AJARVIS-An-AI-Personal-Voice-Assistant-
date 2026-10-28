@@ -10,9 +10,9 @@ import psutil
 import pyautogui
 import requests
 from google import genai
-from google.genai import types
 
 from intelligence.memory import add_memory, get_recent
+from intelligence.agent import generate_agent_response
 from intelligence.power_actions import clear_pending_power_action, handle_power_command
 from intelligence.user_state import activate_user, deactivate_user, is_user_active
 
@@ -378,16 +378,13 @@ def process_command(command, username):
         # Add current command
         messages.append({"role": "user", "parts": [{"text": command}]})
 
-        response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
+        reply = generate_agent_response(
+            client=ai_client,
             contents=messages,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                max_output_tokens=512
-            )
+            system_instruction=system_prompt,
+            username=username,
+            model="gemini-2.5-flash",
         )
-
-        reply = (response.text or "").strip()
         if not reply:
             reply = "I couldn't generate a response. Please try asking another way."
         add_memory(command, reply, username)
