@@ -50,7 +50,7 @@ Command history, AI context, analytics, notes, and activation state are scoped t
 - Keep `.env` out of version control; never publish API keys or database credentials.
 - Do not use a predictable fallback secret key in a deployed environment.
 - Disable Flask debug mode outside local development and configure secure session-cookie settings.
-- Face recognition may produce false matches or rejections. Use informed consent and do not treat it as infallible authentication. The matching threshold has been made stricter and should be validated on the target camera and lighting conditions.
+- Face recognition may produce false matches or rejections and this project does not implement liveness detection. Use informed consent and do not treat face recognition alone as infallible identity verification. `FACE_MATCH_THRESHOLD` defaults to 0.55; lower values are stricter, and the threshold must be validated with consented samples under the target camera and lighting conditions.
 
 ## Main Components
 
