@@ -498,16 +498,7 @@
     const aiStatus = document.querySelector(".ai-status");
     const transcriptBox = document.getElementById("transcript-box");
 
-    /* REAL SYSTEM STATS */
-    setInterval(() => {
-      fetch('/system_stats')
-        .then(res => res.json())
-        .then(data => {
-          document.querySelector(".cpu").textContent = "CPU: " + data.cpu + "%";
-          document.querySelector(".ram").textContent = "RAM: " + data.memory + "%";
-          document.querySelector(".disk").textContent = "Disk: " + data.disk + "%";
-        });
-    }, 2000);
+
 
     /* BATTERY STATUS */
     if (navigator.getBattery) {
@@ -600,91 +591,87 @@
     const username = {{ user | tojson }};  // Safely serialize the username for JavaScript
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const bars = document.querySelectorAll(".bar");
+    const commandBox = document.querySelector(".command");
+    const core = document.querySelector(".core") || document.getElementById("ai-core");
+    const aiStatus = document.querySelector(".ai-status");
+    const transcriptBox = document.getElementById("transcript-box");
+    const textInput = document.getElementById("text-command-input");
+    const sendBtn = document.getElementById("send-command-btn");
+    let state = "idle";
+
+    // Shared command handler. Returning the server reply lets callers wait
+    // for activation/deactivation to finish before updating the UI state.
+    async function processCommand(command) {
+      aiStatus.textContent = "Processing...";
+      try {
+        const res = await fetch('/voice_command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.response || data.error || "The command could not be processed.");
+        }
+        if (typeof data.response !== "string") {
+          throw new Error("The server returned an invalid response.");
+        }
+
+        aiStatus.textContent = data.response.substring(0, 60) + (data.response.length > 60 ? '...' : '');
+        speak(data.response);
+        showToast(data.response);
+        refreshHistory();
+        return data.response;
+      } catch (error) {
+        aiStatus.textContent = "Command failed";
+        showToast(error.message || "Could not reach AJARVIS. Check the connection and try again.");
+        return null;
+      }
+    }
+
+    async function executeTextCommand() {
+      const command = textInput.value.trim();
+      if (!command || sendBtn.disabled) return;
+
+      transcriptBox.textContent = `"${command}" (Type)`;
+      textInput.value = "";
+      sendBtn.disabled = true;
+
+      try {
+        // Text input remains available even when speech recognition is not.
+        if (state !== "activated") {
+          const activationReply = await processCommand("system activate");
+          if (!activationReply || !activationReply.toLowerCase().includes("activating system")) {
+            return;
+          }
+          state = "activated";
+          core.style.boxShadow = "0 0 140px #00ffff";
+          if (command.toLowerCase() === "system activate") return;
+        }
+
+        await processCommand(command);
+        if (["system deactivate", "system shutdown", "system shut down"].includes(command.toLowerCase())) {
+          state = "idle";
+          aiStatus.textContent = "Standby";
+          core.style.boxShadow = "0 0 40px #00ffff";
+        }
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    textInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") executeTextCommand();
+    });
+    sendBtn.addEventListener("click", executeTextCommand);
 
     if (SpeechRecognition) {
-
-      const transcriptBox = document.getElementById("transcript-box");
-      const aiStatus = document.querySelector(".ai-status");
-      const commandBox = document.querySelector(".ai-status");
-      const core = document.querySelector(".ai-core") || document.getElementById("ai-core");
-
-      // Shared command handler. Returning the server reply lets callers wait
-      // for activation/deactivation to finish before updating the UI state.
-      async function processCommand(command) {
-        aiStatus.textContent = "Processing...";
-        try {
-          const res = await fetch('/voice_command', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command })
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.response || data.error || "The command could not be processed.");
-          }
-          if (typeof data.response !== "string") {
-            throw new Error("The server returned an invalid response.");
-          }
-
-          aiStatus.textContent = data.response.substring(0, 60) + (data.response.length > 60 ? '...' : '');
-          speak(data.response);
-          showToast(data.response);
-          refreshHistory();
-          return data.response;
-        } catch (error) {
-          aiStatus.textContent = "Command failed";
-          showToast(error.message || "Could not reach AJARVIS. Check the connection and try again.");
-          return null;
-        }
-      }
-
-      // Logic for Text Commands
-      const textInput = document.getElementById("text-command-input");
-      const sendBtn = document.getElementById("send-command-btn");
-
-      async function executeTextCommand() {
-        const command = textInput.value.trim();
-        if (!command || sendBtn.disabled) return;
-
-        transcriptBox.textContent = `"${command}" (Type)`;
-        textInput.value = "";
-        sendBtn.disabled = true;
-
-        try {
-          // Text commands auto-activate on the server as well as in the UI.
-          if (state !== "activated") {
-            const activationReply = await processCommand("system activate");
-            if (!activationReply || !activationReply.toLowerCase().includes("activating system")) {
-              return;
-            }
-            state = "activated";
-            core.style.boxShadow = "0 0 140px #00ffff";
-            if (command.toLowerCase() === "system activate") return;
-          }
-
-          await processCommand(command);
-          if (["system deactivate", "system shutdown", "system shut down"].includes(command.toLowerCase())) {
-            state = "idle";
-            aiStatus.textContent = "Standby";
-            core.style.boxShadow = "0 0 40px #00ffff";
-          }
-        } finally {
-          sendBtn.disabled = false;
-        }
-      }
-
-      textInput.addEventListener("keypress", (e) => { if (e.key === "Enter") executeTextCommand(); });
-      sendBtn.addEventListener("click", executeTextCommand);
-
-      /* =========================
-         SPEECH RECOGNITION LOGIC
-      ==========================*/
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = false;
       recognition.lang = "en-US";
 
-      let state = "idle";
       // idle → greeted → activated
 
       recognition.onstart = () => {
@@ -699,8 +686,28 @@
         }
       };
 
+      let shouldListen = true;
+      let recognitionBlocked = false;
+
+      recognition.onerror = (event) => {
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          recognitionBlocked = true;
+          shouldListen = false;
+          aiStatus.textContent = "Microphone permission required";
+          const statusText = document.getElementById("mic-status");
+          if (statusText) statusText.textContent = "ALLOW MICROPHONE ACCESS TO USE VOICE";
+        }
+      };
+
       recognition.onend = () => {
-        recognition.start(); // auto restart
+        if (!shouldListen || recognitionBlocked) return;
+        window.setTimeout(() => {
+          try {
+            recognition.start();
+          } catch (error) {
+            // The browser can still be transitioning between listening states.
+          }
+        }, 500);
       };
 
       recognition.onresult = async (event) => {
@@ -782,6 +789,8 @@
 
       // Handle mobile browsers requiring a physical tap to start audio
       document.getElementById('ai-core').addEventListener('click', () => {
+        shouldListen = true;
+        recognitionBlocked = false;
         try {
           recognition.start();
           const statusText = document.getElementById('mic-status');
@@ -795,6 +804,10 @@
             audioContext.resume();
         }
       });
+    } else {
+      aiStatus.textContent = "Speech recognition unavailable";
+      const statusText = document.getElementById("mic-status");
+      if (statusText) statusText.textContent = "SPEECH UNAVAILABLE — USE TEXT COMMANDS";
     }
 
     /* Text to Speech Helper */
