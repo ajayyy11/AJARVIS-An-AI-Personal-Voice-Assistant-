@@ -71,7 +71,7 @@ Shutdown and restart requests now require an exact confirmation within 30 second
 
 ## Automated Tests
 
-GitHub Actions compiles the Python modules and runs the session, memory-persistence, and power-confirmation tests. To run the suite locally from the application directory:
+GitHub Actions validates the dashboard JavaScript syntax, compiles the Python modules, and runs the session, memory-persistence, activation-expiry, and power-confirmation tests. To run the suite locally from the application directory:
 
 ```bash
 cd A.JARVIS
