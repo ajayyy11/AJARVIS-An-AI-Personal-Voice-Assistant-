@@ -141,7 +141,10 @@ def generate_agent_response(
         response = client.models.generate_content(
             model=model,
             contents=contents,
-            config=_config(config_types, system_instruction, []),
+            config=config_types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                max_output_tokens=512,
+            ),
         )
         return (getattr(response, "text", None) or "").strip()
 
