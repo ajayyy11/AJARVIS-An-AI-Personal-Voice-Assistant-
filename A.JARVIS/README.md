@@ -63,3 +63,19 @@ Command history, AI context, analytics, notes, and activation state are scoped t
 - `templates/` and `static/` — web interface
 
 See the repository-level README for the full project overview and setup.
+
+
+## Tool-Enabled Agent Foundation
+
+The AI fallback now uses manual Gemini function calling through an explicit allow-list in `intelligence/tool_registry.py` and `intelligence/agent.py`.
+
+The initial agent can read the current date/time, CPU and memory usage, home-disk usage, and battery status. Calls are validated against registered argument schemas, and the agent limits the number of tool calls and the amount of returned data. Automatic SDK function execution is disabled so the application, not the model, decides whether a requested tool can run.
+
+Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
+
+Run the focused unit tests with:
+
+```bash
+pytest -q tests/test_tool_registry.py tests/test_agent.py
+```
+
