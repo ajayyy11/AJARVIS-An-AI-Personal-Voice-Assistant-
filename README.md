@@ -7,7 +7,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 ## Project Highlights
 
 - Flask-based web interface and dashboard
-- Gemini-powered command/assistant integration
+- Gemini-powered command/assistant integration with a bounded, allow-listed read-only tool-calling layer
 - Face-authentication workflow using computer-vision libraries
 - MySQL database connection layer
 - User-scoped command history, AI context, notes, and activation state
@@ -64,6 +64,10 @@ Follow any application-specific setup instructions in [the application README](A
 ## Security and Privacy
 
 This project handles camera input, face-related data, sessions, and API credentials. Use it only with informed consent, protect credentials, and review access controls before exposing it to a network. Face recognition can make mistakes and should not be treated as infallible identity verification.
+
+## Agent Tool Safety
+
+Gemini tool calls are handled manually through a local allow-list. The current agent tools provide read-only date/time and system/battery status. Arbitrary shell execution is not exposed, and side-effecting tool requests are rejected until a trusted approval workflow exists. See [the application agent notes](A.JARVIS/README.md#tool-enabled-agent-foundation).
 
 ## Safer Desktop Controls
 
