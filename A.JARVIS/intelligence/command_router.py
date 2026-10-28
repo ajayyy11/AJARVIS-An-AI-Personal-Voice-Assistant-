@@ -1,13 +1,33 @@
-import os
 import datetime
+import logging
+import os
+import subprocess
+
 import psutil
 import pyautogui
+import requests
 from google import genai
 from google.genai import types
-import requests
-from intelligence.memory import add_memory, get_recent
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+from intelligence.memory import add_memory, get_recent
+from intelligence.power_actions import handle_power_command
+
+logger = logging.getLogger(__name__)
+client = None
+
+
+def _get_genai_client():
+    """Create the Gemini client only when a configured key is available."""
+    global client
+    if client is not None:
+        return client
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    client = genai.Client(api_key=api_key)
+    return client
 
 system_active = False
 notes_file = os.path.join(os.path.dirname(__file__), "..", "notes.txt")
@@ -51,6 +71,47 @@ def process_command(command, username):
     # ──────────────────────────────────────────────
     if not system_active:
         return "System is offline. Say 'system activate' to begin."
+
+    # Destructive power commands require a second, exact confirmation phrase.
+    power_event = handle_power_command(command, username)
+    if power_event:
+        status = power_event["status"]
+        action = power_event.get("action")
+
+        if status == "confirmation_required":
+            reply = (
+                f"Confirm {action} within 30 seconds by saying "
+                f"'confirm {action}'. Say 'cancel' to cancel."
+            )
+        elif status == "cancelled":
+            reply = f"Pending {action} cancelled."
+        elif status == "expired":
+            reply = f"The {action} confirmation expired. Request it again if needed."
+        elif status == "no_pending":
+            reply = "There is no matching power action awaiting confirmation."
+        elif status == "confirmed":
+            if os.name != "nt":
+                reply = "Shutdown and restart controls are supported only on Windows."
+            else:
+                switch = "/s" if action == "shutdown" else "/r"
+                try:
+                    result = subprocess.run(
+                        ["shutdown", switch, "/t", "5"],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        reply = f"System {action} scheduled in 5 seconds."
+                    else:
+                        reply = f"Windows could not schedule the {action}."
+                except (OSError, subprocess.TimeoutExpired):
+                    logger.warning("Could not schedule Windows %s", action, exc_info=True)
+                    reply = f"Could not schedule the {action}. Please check Windows permissions."
+
+        add_memory(command, reply)
+        return reply
 
     # ──────────────────────────────────────────────
     # ── PREDEFINED COMMANDS ──
@@ -102,18 +163,7 @@ def process_command(command, username):
         return reply
 
     # ── SYSTEM CONTROLS ──
-    if "shutdown system" in command:
-        os.system("shutdown /s /t 5")
-        reply = "System shutting down in 5 seconds."
-        add_memory(command, reply)
-        return reply
-
-    if "restart system" in command:
-        os.system("shutdown /r /t 5")
-        reply = "Restarting system in 5 seconds."
-        add_memory(command, reply)
-        return reply
-
+    # Shutdown/restart are handled above with explicit confirmation.
     if "lock system" in command:
         os.system("rundll32.exe user32.dll,LockWorkStation")
         reply = "System locked."
@@ -172,9 +222,16 @@ def process_command(command, username):
                     break
             
             if found_path:
-                # Open the folder containing the file
-                os.system(f'explorer /select,"{found_path}"')
-                reply = f"Found {target} and opened its location."
+                # Open Explorer without passing user-controlled paths through a shell.
+                start_file = getattr(os, "startfile", None)
+                try:
+                    if start_file is None:
+                        raise OSError("Opening folders is supported on Windows only")
+                    start_file(os.path.dirname(found_path))
+                    reply = f"Found {target} and opened its containing folder."
+                except OSError:
+                    logger.warning("Could not open the folder for a found file", exc_info=True)
+                    reply = f"Found {target}, but could not open its containing folder."
             else:
                 reply = f"Could not find {target} in your home directory."
             
@@ -246,11 +303,11 @@ def process_command(command, username):
             reply = "Weather API key is not configured. Please add WEATHER_API_KEY to your .env file."
         else:
             try:
-                url = (
-                    f"https://api.openweathermap.org/data/2.5/weather"
-                    f"?q={city}&appid={WEATHER_API_KEY}&units=metric"
+                res = requests.get(
+                    "https://api.openweathermap.org/data/2.5/weather",
+                    params={"q": city, "appid": WEATHER_API_KEY, "units": "metric"},
+                    timeout=(3.05, 5),
                 )
-                res = requests.get(url, timeout=5)
                 data = res.json()
 
                 if res.status_code == 200:
@@ -276,7 +333,11 @@ def process_command(command, username):
     # ── AI FALLBACK with MEMORY CONTEXT ──
     # ──────────────────────────────────────────────
     try:
-        print("Using Gemini with memory context...")
+        ai_client = _get_genai_client()
+        if ai_client is None:
+            reply = "AI responses are not configured. Add GEMINI_API_KEY to your .env file."
+            add_memory(command, reply)
+            return reply
 
         system_prompt = (
             f"You are A.JARVIS, an advanced AI assistant created for {username}. "
@@ -294,7 +355,7 @@ def process_command(command, username):
         # Add current command
         messages.append({"role": "user", "parts": [{"text": command}]})
 
-        response = client.models.generate_content(
+        response = ai_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=messages,
             config=types.GenerateContentConfig(
@@ -303,11 +364,12 @@ def process_command(command, username):
             )
         )
 
-        reply = response.text.strip()
-        print("Gemini Response:", reply)
+        reply = (response.text or "").strip()
+        if not reply:
+            reply = "I couldn't generate a response. Please try asking another way."
         add_memory(command, reply)
         return reply
 
-    except Exception as e:
-        print("Gemini Error:", e)
+    except Exception:
+        logger.warning("Gemini response failed", exc_info=True)
         return "AI module encountered an error. Please try again."
