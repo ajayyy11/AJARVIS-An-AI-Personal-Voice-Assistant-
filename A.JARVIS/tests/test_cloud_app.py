@@ -567,3 +567,35 @@ def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatc
     finally:
         with cloud_app._assistant_lock:
             cloud_app._assistant_requests.pop(username, None)
+
+
+
+def test_document_is_saved_when_ai_quota_is_exhausted(client, monkeypatch):
+    from io import BytesIO
+
+    login_session(client, username="alice", csrf="test-token")
+    timestamp = datetime.now(timezone.utc)
+    cursor = FakeCursor(fetchone_value=(44, timestamp))
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    monkeypatch.setattr(cloud_app, "_genai", lambda: object())
+    monkeypatch.setattr(
+        cloud_app,
+        "extract_document_text",
+        lambda filename, raw: ("Readable document content", None),
+    )
+    monkeypatch.setattr(cloud_app, "_assistant_rate_limited", lambda _username: True)
+
+    response = client.post(
+        "/api/documents",
+        headers={"X-CSRF-Token": "test-token"},
+        data={"file": (BytesIO(b"test document"), "report.txt")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    result = response.get_json()
+    assert result["id"] == 44
+    assert "Document saved successfully" in result["summary"]
+    assert "summary was skipped" in result["summary"]
+    assert connection.committed
