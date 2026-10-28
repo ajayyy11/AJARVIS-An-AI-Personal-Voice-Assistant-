@@ -123,6 +123,8 @@ def test_unknown_and_side_effecting_tools_are_not_executed(requested_name, risk_
             requested_name, "Delete file.", lambda **_: executed.append(True),
             risk_level=risk_level,
         )
+    else:
+        registry.register("read_safe_value", "Read a test value.", lambda **_: "safe")
     content = SimpleNamespace(role="model", parts=["function call"])
     client = FakeClient([
         response(function_calls=[function_call(requested_name)], content=content),
@@ -190,3 +192,20 @@ def test_agent_requires_a_nonempty_username():
             registry=ToolRegistry(),
             types_module=FakeTypes,
         )
+
+
+
+def test_empty_registry_falls_back_to_plain_gemini_response():
+    client = FakeClient([response(text="Hello there.")])
+
+    result = generate_agent_response(
+        client=client,
+        contents=[{"role": "user", "parts": [{"text": "Hello"}]}],
+        system_instruction="Test assistant",
+        username="ajay",
+        registry=ToolRegistry(),
+        types_module=FakeTypes,
+    )
+
+    assert result == "Hello there."
+    assert client.calls[0]["config"].tools == []
