@@ -72,7 +72,7 @@ def process_command(command, username):
     # ──────────────────────────────────────────────
     # DEACTIVATE
     # ──────────────────────────────────────────────
-    if "system deactivate" in command or "system shut down" in command:
+    if "system deactivate" in command or "system shut down" in command or "system shutdown" in command:
         deactivate_user(username)
         clear_pending_power_action(username)
         reply = f"System deactivating. Until next time, {username}."
