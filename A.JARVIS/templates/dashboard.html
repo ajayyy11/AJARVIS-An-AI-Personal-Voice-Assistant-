@@ -805,7 +805,13 @@
 
     /* Text to Speech Helper */
     function speak(text) {
-      const speech = new SpeechSynthesisUtterance(text);
+      if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+        return;
+      }
+
+      // Replace queued speech so quick commands don't stack old responses.
+      window.speechSynthesis.cancel();
+      const speech = new SpeechSynthesisUtterance(String(text ?? ""));
       speech.lang = "en-US";
       window.speechSynthesis.speak(speech);
     }
