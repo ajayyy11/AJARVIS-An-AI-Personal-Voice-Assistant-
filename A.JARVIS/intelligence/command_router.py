@@ -275,7 +275,7 @@ def process_command(command, username):
         return reply
 
     # ── NOTES ──
-    if "take a note" in command or "make a note" in command:
+    if command.startswith("take a note") or command.startswith("make a note"):
         note_text = re.sub(
             r"^(?:take a note|make a note)\b",
             "",
