@@ -276,12 +276,8 @@ def process_command(command, username):
 
     # ── NOTES ──
     if "take a note" in command or "make a note" in command:
-        note_text = (command
-                     .replace("take a note", "")
-                     .replace("make a note", "")
-                     .strip())
         note_text = re.sub(
-            r"^(?:take a note|make a note)\\b",
+            r"^(?:take a note|make a note)\b",
             "",
             original_command,
             count=1,
@@ -292,7 +288,7 @@ def process_command(command, username):
             try:
                 notes_path = _notes_path(username)
                 with notes_path.open("a", encoding="utf-8") as notes_file:
-                    notes_file.write(f"[{timestamp}] {note_text}\\n")
+                    notes_file.write(f"[{timestamp}] {note_text}\n")
                 reply = "Note saved to your personal notes."
             except OSError:
                 logger.warning("Could not write personal notes", exc_info=True)
