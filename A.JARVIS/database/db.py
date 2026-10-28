@@ -17,7 +17,7 @@ def get_connection():
                 "DATABASE_URL is set but psycopg is not installed. "
                 "Install the web requirements or psycopg[binary]."
             ) from exc
-        return psycopg.connect(Config.DATABASE_URL, connect_timeout=Config.MYSQL_CONNECT_TIMEOUT_SECONDS)
+        database_url = Config.DATABASE_URL\n        if database_url.startswith("postgres://"):\n            database_url = "postgresql://" + database_url[len("postgres://"):]\n        return psycopg.connect(database_url, connect_timeout=Config.MYSQL_CONNECT_TIMEOUT_SECONDS)
 
     import mysql.connector
 
