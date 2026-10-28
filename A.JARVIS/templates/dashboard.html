@@ -822,17 +822,29 @@
            STATE 1 — IDLE
         ==========================*/
         if (state === "idle") {
+          const startsWithWakePhrase =
+            /^(?:(?:hey|hi|hello|okay|ok)[,]?\s+)?(?:ajarvis|jarvis)\b/i.test(transcript);
 
-          if (transcript.includes("hey jarvis")) {
+          if (startsWithWakePhrase) {
+            const wakeCommand = stripWakePhrase(transcript);
 
-            state = "greeted";
-            aiStatus.textContent = "Awaiting Activation";
-
-            const reply = "Hello " + username;
-
-            speak(reply);
-
-            core.style.boxShadow = "0 0 100px #00ffff";
+            // Preserve the activation gate, but don't discard activation when
+            // it is spoken in the same utterance as the wake phrase.
+            if (/^system activate\b/i.test(wakeCommand)) {
+              const activationReply = await processCommand(wakeCommand);
+              if (activationReply && activationReply.toLowerCase().includes("activating system")) {
+                state = "activated";
+                core.classList.add("activate-ring");
+                setTimeout(() => core.classList.remove("activate-ring"), 3600);
+                aiStatus.textContent = "System Active";
+                core.style.boxShadow = "0 0 140px #00ffff";
+              }
+            } else {
+              state = "greeted";
+              aiStatus.textContent = "Awaiting Activation";
+              speak("Hello " + username + ". Awaiting system activation.");
+              core.style.boxShadow = "0 0 100px #00ffff";
+            }
           }
 
           return;
@@ -842,8 +854,8 @@
            STATE 2 — GREETED
         ==========================*/
         if (state === "greeted") {
-
-          if (transcript.includes("system activate")) {
+          const activationCommand = stripWakePhrase(transcript) || transcript;
+          if (/system activate/i.test(activationCommand)) {
             const activationReply = await processCommand("system activate");
             if (activationReply && activationReply.toLowerCase().includes("activating system")) {
               state = "activated";
@@ -853,7 +865,6 @@
               core.style.boxShadow = "0 0 140px #00ffff";
             }
           }
-
           return;
         }
 
