@@ -12,7 +12,15 @@ def grant_access(username):
 
 
 def revoke_access():
+    username = session.get("user")
     session.clear()
+    if username:
+        # Clear process-local privileges as soon as a web session is revoked.
+        from intelligence.power_actions import clear_pending_power_action
+        from intelligence.user_state import deactivate_user
+
+        deactivate_user(username)
+        clear_pending_power_action(username)
 
 
 def is_authenticated():
