@@ -710,7 +710,9 @@
       aiStatus.textContent = "Processing...";
       if ("speechSynthesis" in window && window.speechSynthesis.speaking) {
         speechGeneration += 1;
+        speechHold = false;
         window.speechSynthesis.cancel();
+        if (stopSpeechButton) stopSpeechButton.disabled = true;
       }
       if (recognition && shouldListen && !recognitionBlocked && !speechHold) {
         try { recognition.stop(); } catch (_error) {}
