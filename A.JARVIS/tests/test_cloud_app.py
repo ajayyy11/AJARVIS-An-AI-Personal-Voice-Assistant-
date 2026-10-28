@@ -190,6 +190,7 @@ def test_cloud_agent_registry_exposes_no_desktop_control():
         "read_recent_notes",
         "search_personal_notes",
         "search_saved_documents",
+        "read_user_preferences",
     }
     assert not any("shutdown" in name or "shell" in name or "open_app" in name for name in names)
 
@@ -235,7 +236,7 @@ def test_account_deletion_removes_user_scoped_data_and_session(client, monkeypat
         if "DELETE FROM " in sql
     ]
     assert deleted_tables == [
-        "cloud_notes", "ajarvis_tasks", "ajarvis_documents",
+        "cloud_notes", "user_preferences", "ajarvis_tasks", "ajarvis_documents",
         "command_history", "cloud_users",
     ]
     with client.session_transaction() as sess:
@@ -267,3 +268,89 @@ def test_document_delete_is_owner_scoped(client, monkeypatch):
     response = client.delete("/api/documents/7", headers={"X-CSRF-Token": "test-token"})
     assert response.status_code == 404
     assert cursor.executed[0][1] == (7, "alice")
+
+
+
+def test_preference_save_validates_key_and_upserts_user_scoped_data(monkeypatch):
+    timestamp = datetime.now(timezone.utc)
+    cursor = FakeCursor(fetchone_value=("answer_style", "Use concise examples", timestamp))
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+
+    saved = cloud_app._save_user_preference("alice", "Answer_Style", "Use concise examples")
+
+    assert saved["key"] == "answer_style"
+    assert saved["value"] == "Use concise examples"
+    sql, params = cursor.executed[0]
+    assert "ON CONFLICT (username, preference_key)" in sql
+    assert params == ("alice", "answer_style", "Use concise examples")
+    assert connection.committed
+
+
+@pytest.mark.parametrize("key", ["", " ", "key with spaces", "../secret", "x" * 81])
+def test_preference_key_rejects_invalid_values(monkeypatch, key):
+    monkeypatch.setattr(cloud_app, "_database", lambda: pytest.fail("No DB call for invalid key"))
+    with pytest.raises(ValueError, match="Preference keys"):
+        cloud_app._save_user_preference("alice", key, "a value")
+
+
+def test_preference_value_is_bounded(monkeypatch):
+    monkeypatch.setattr(cloud_app, "_database", lambda: pytest.fail("No DB call for invalid value"))
+    with pytest.raises(ValueError, match="1–1,000"):
+        cloud_app._save_user_preference("alice", "answer_style", "x" * 1001)
+
+
+def test_remember_preference_command_saves_explicit_user_request(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        cloud_app,
+        "_save_user_preference",
+        lambda username, key, value: calls.append((username, key, value))
+        or {"key": key.lower(), "value": value},
+    )
+    result = cloud_app.process_cloud_command("alice", "remember preference answer_style = concise with examples")
+    assert result == "Preference saved: answer_style."
+    assert calls == [("alice", "answer_style", "concise with examples")]
+
+
+def test_preferences_api_requires_authentication(client):
+    response = client.get("/api/preferences")
+    assert response.status_code == 401
+
+
+def test_preferences_api_is_csrf_protected_and_owner_scoped(client, monkeypatch):
+    login_session(client, username="alice", csrf="test-token")
+    saves = []
+    monkeypatch.setattr(
+        cloud_app,
+        "_save_user_preference",
+        lambda username, key, value: saves.append((username, key, value))
+        or {"key": key, "value": value, "updated_at": None},
+    )
+
+    denied = client.post("/api/preferences", json={"key": "answer_style", "value": "concise"})
+    assert denied.status_code == 403
+    assert saves == []
+
+    allowed = client.post(
+        "/api/preferences",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"key": "answer_style", "value": "concise"},
+    )
+    assert allowed.status_code == 201
+    assert saves == [("alice", "answer_style", "concise")]
+
+
+def test_preference_delete_is_scoped_to_current_user(client, monkeypatch):
+    login_session(client, username="alice", csrf="test-token")
+    cursor = FakeCursor()
+    cursor.rowcount = 1
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+
+    response = client.delete(
+        "/api/preferences/answer_style",
+        headers={"X-CSRF-Token": "test-token"},
+    )
+    assert response.status_code == 200
+    assert cursor.executed[0][1] == ("alice", "answer_style")
