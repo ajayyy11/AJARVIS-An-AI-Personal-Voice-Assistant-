@@ -50,7 +50,7 @@ class Config:
     DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
     CLOUD_MODE = _env_bool("CLOUD_MODE", False)
     MAX_CONTENT_LENGTH_BYTES = _env_int(
-        "MAX_CONTENT_LENGTH_BYTES", 8 * 1024 * 1024, 1024 * 1024, 50 * 1024 * 1024
+        "MAX_CONTENT_LENGTH_BYTES", 10 * 1024 * 1024, 1024 * 1024, 50 * 1024 * 1024
     )
 
     SESSION_TIMEOUT_MINUTES = _env_int("SESSION_TIMEOUT_MINUTES", 30, 1, 1440)
