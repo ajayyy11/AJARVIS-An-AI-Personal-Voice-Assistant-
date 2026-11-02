@@ -89,3 +89,38 @@ def test_document_answer_rejects_empty_question():
             types_module=FakeTypes,
         )
     assert client.calls == []
+
+
+
+def test_rejects_docx_with_excessive_uncompressed_size(monkeypatch):
+    from io import BytesIO
+    from zipfile import ZIP_DEFLATED, ZipFile
+    import intelligence.documents as documents
+
+    monkeypatch.setattr(documents, "MAX_OFFICE_UNCOMPRESSED_BYTES", 64)
+    payload = BytesIO()
+    with ZipFile(payload, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", "x" * 512)
+
+    with pytest.raises(DocumentError, match="unpacked-size limit"):
+        extract_document_text("report.docx", payload.getvalue())
+
+
+def test_rejects_office_archive_with_too_many_entries(monkeypatch):
+    from io import BytesIO
+    from zipfile import ZipFile
+    import intelligence.documents as documents
+
+    monkeypatch.setattr(documents, "MAX_OFFICE_ARCHIVE_ENTRIES", 1)
+    payload = BytesIO()
+    with ZipFile(payload, "w") as archive:
+        archive.writestr("word/document.xml", "content")
+        archive.writestr("word/styles.xml", "styles")
+
+    with pytest.raises(DocumentError, match="too many archive entries"):
+        extract_document_text("report.docx", payload.getvalue())
+
+
+def test_rejects_docx_that_is_not_a_zip_archive():
+    with pytest.raises(DocumentError, match="valid ZIP archive"):
+        extract_document_text("report.docx", b"not-a-zip-file")

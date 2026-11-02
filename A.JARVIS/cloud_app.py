@@ -58,12 +58,16 @@ _auth_attempts: dict[str, list[float]] = {}
 _auth_lock = Lock()
 _assistant_requests: dict[str, list[float]] = {}
 _assistant_lock = Lock()
+_registration_attempts: dict[str, list[float]] = {}
+_registration_lock = Lock()
 
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,31}$")
 MAX_LOGIN_ATTEMPTS = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
 MAX_ASSISTANT_REQUESTS = 20
 ASSISTANT_WINDOW_SECONDS = 60
+MAX_REGISTRATION_ATTEMPTS = 5
+REGISTRATION_WINDOW_SECONDS = 60 * 60
 MAX_NOTE_CHARS = 4000
 MAX_DOCUMENT_QUESTION_CHARS = 1500
 
@@ -262,6 +266,38 @@ def _auth_rate_limited() -> bool:
         attempts = [stamp for stamp in _auth_attempts.get(ip_address, []) if now - stamp < LOGIN_WINDOW_SECONDS]
         _auth_attempts[ip_address] = attempts
         return len(attempts) >= MAX_LOGIN_ATTEMPTS
+
+
+def _registration_rate_limited() -> bool:
+    """Limit account creation attempts per client address in this process."""
+    now = time.monotonic()
+    ip_address = request.remote_addr or "unknown"
+    with _registration_lock:
+        attempts = [
+            stamp for stamp in _registration_attempts.get(ip_address, [])
+            if now - stamp < REGISTRATION_WINDOW_SECONDS
+        ]
+        limited = len(attempts) >= MAX_REGISTRATION_ATTEMPTS
+        if not limited:
+            attempts.append(now)
+        _registration_attempts[ip_address] = attempts
+        if len(_registration_attempts) > 2000:
+            expired = [
+                key for key, stamps in _registration_attempts.items()
+                if not stamps or now - stamps[-1] >= REGISTRATION_WINDOW_SECONDS
+            ]
+            for key in expired:
+                _registration_attempts.pop(key, None)
+        return limited
+
+
+def _ai_quota_response():
+    response = jsonify({
+        "error": "You've reached the AI request limit. Wait up to 60 seconds, then try again."
+    })
+    response.status_code = 429
+    response.headers["Retry-After"] = str(ASSISTANT_WINDOW_SECONDS)
+    return response
 
 
 def _record_auth_failure() -> None:
@@ -893,6 +929,13 @@ def register_page():
 
 @app.post("/api/auth/register")
 def register_account():
+    if _registration_rate_limited():
+        response = jsonify({
+            "error": "Too many account creation attempts. Please try again in about an hour."
+        })
+        response.status_code = 429
+        response.headers["Retry-After"] = str(REGISTRATION_WINDOW_SECONDS)
+        return response
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "A JSON object is required."}), 400
@@ -1268,6 +1311,7 @@ def upload_document_api():
         return jsonify({"error": "Choose a PDF, DOCX, XLSX, CSV, or TXT file."}), 400
     filename = secure_filename(upload.filename)[:255] or "document"
     raw = upload.read(8 * 1024 * 1024 + 1)
+    client = _genai()
     try:
         extracted, page_count = extract_document_text(filename, raw)
     except DocumentError as exc:
@@ -1297,9 +1341,10 @@ def upload_document_api():
         if conn is not None:
             conn.close()
 
-    client = _genai()
     summary = "Document saved. Add GEMINI_API_KEY in hosting settings to enable AI summaries and questions."
-    if client is not None:
+    if client is not None and _assistant_rate_limited(session["user"]):
+        summary = "Document saved successfully. The AI request limit has been reached, so the summary was skipped; try again after the limit resets."
+    elif client is not None:
         try:
             summary = answer_document_question(
                 client=client,
@@ -1355,6 +1400,8 @@ def ask_document_api(document_id: int):
     client = _genai()
     if client is None:
         return jsonify({"error": "AI is not configured. Add GEMINI_API_KEY in hosting settings."}), 503
+    if _assistant_rate_limited(session["user"]):
+        return _ai_quota_response()
     try:
         answer = answer_document_question(
             client=client,
@@ -1419,10 +1466,7 @@ def assistant_api():
         return jsonify({"error": "Command must be 2,000 characters or fewer."}), 400
     username = session["user"]
     if _assistant_rate_limited(username):
-        response = jsonify({"error": "You've reached the assistant request limit. Wait up to 60 seconds, then try again."})
-        response.status_code = 429
-        response.headers["Retry-After"] = str(ASSISTANT_WINDOW_SECONDS)
-        return response
+        return _ai_quota_response()
     try:
         reply = process_cloud_command(username, command)
         _save_history(username, command, reply)
