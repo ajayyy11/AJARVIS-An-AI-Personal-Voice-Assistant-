@@ -369,3 +369,21 @@ input::placeholder, textarea::placeholder { color: #60798d; }
 @media (prefers-reduced-motion: reduce) {
   .assistant-panel .panel-symbol::after { animation: none; }
 }
+
+/* Phase 2 unified visual system */
+:root { --bg:#070b13; --panel:rgba(13,21,34,.96); --panel-alt:#101c2d; --stroke:rgba(123,173,201,.17); --cyan:#7beaf2; --cyan-strong:#29c4d5; --radius:16px; }
+body { background:radial-gradient(ellipse at 50% -12%,rgba(31,105,132,.15),transparent 45%),linear-gradient(145deg,#080e18,#05080f 70%,#08111a); }
+.app-glow { opacity:.55; }
+.topbar { box-shadow:0 8px 28px rgba(0,0,0,.12); }
+.workspace { padding-top:clamp(22px,3vw,38px); }
+.welcome-row { margin-bottom:22px; }
+.panel { box-shadow:0 12px 34px rgba(0,0,0,.14),inset 0 1px rgba(255,255,255,.025); transition:border-color .18s ease,transform .18s ease; }
+.panel:hover { border-color:rgba(123,234,242,.25); }
+.panel-heading { padding:17px 19px; }
+.assistant-panel { border-color:rgba(123,234,242,.28); box-shadow:0 18px 48px rgba(0,0,0,.18),0 0 30px rgba(41,196,213,.035); }
+.chat-composer textarea { min-height:66px; }
+.primary-button { background:linear-gradient(135deg,#b8fbfa,#70e6ed 60%,#36c5d6); }
+:focus-visible { outline:2px solid var(--cyan); outline-offset:3px; }
+@media (min-width:1200px) { .workspace-grid { grid-template-columns:minmax(0,1.32fr) minmax(310px,.68fr); gap:20px; } }
+@media (max-width:600px) { .topbar { position:sticky; top:0; z-index:5; backdrop-filter:blur(18px); } .workspace { padding-left:13px; padding-right:13px; } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
