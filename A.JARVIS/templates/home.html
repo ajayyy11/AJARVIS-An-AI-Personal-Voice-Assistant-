@@ -209,6 +209,17 @@
         background: #00f0ff;
         color: #000;
     }
+
+/* Phase 2 welcome screen cleanup */
+.particles { display:none; } .hud { opacity:.18; }
+.container { max-width:1320px; padding:clamp(28px,5vh,60px) clamp(18px,4vw,48px); gap:36px; }
+.main-title { letter-spacing:clamp(2px,1vw,8px); filter:drop-shadow(0 0 12px rgba(0,240,255,.25)); animation:none; }
+.ironman-image { width:min(100%,760px); margin:12px auto; border-color:rgba(123,234,242,.2); box-shadow:0 24px 70px rgba(0,0,0,.35); }
+.ironman-image::before { opacity:.35; }
+.feature { border:1px solid rgba(123,234,242,.12); border-radius:14px; background:rgba(14,25,39,.72); }
+.start-btn { border-width:1px; border-radius:9px; box-shadow:0 8px 24px rgba(0,240,255,.08); }
+@media (max-width:700px) { .container { padding:28px 16px; } .features { grid-template-columns:minmax(0,1fr); } .subtitle { font-size:14px; line-height:1.7; } .footer { padding:22px 16px; } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
