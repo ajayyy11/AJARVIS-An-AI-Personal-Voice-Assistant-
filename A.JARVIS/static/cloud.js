@@ -337,7 +337,7 @@
 
       const rawTranscript = capturedFinalTranscript || $("commandInput").value.trim();
       const command = rawTranscript
-        .replace(/^\\s*(?:(?:hey|hi|hello|ok|okay)\\s+)?jarvis[,.!]?\\s*/i, "")
+        .replace(/^\s*(?:(?:hey|hi|hello|ok|okay)\s+)?jarvis[,.!]?\s*/i, "")
         .trim();
 
       if (!command) {
