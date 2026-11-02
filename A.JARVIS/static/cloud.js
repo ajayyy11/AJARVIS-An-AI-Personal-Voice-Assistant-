@@ -328,25 +328,42 @@
       if (recognitionInstance === recognition) recognitionInstance = null;
       isListening = false;
       syncVoiceControls();
-      if (!isPro    recognition.onend = () => {
-      if (recognitionInstance === recognition) recognitionInstance = null;
-      isListening = false;
-      syncVoiceControls();
-      if (!isProcessing && !isSpeaking && !voiceErrorShown) setAssistantStatus("ready", "READY");
+
+      if (!isProcessing && !isSpeaking && !voiceErrorShown) {
+        setAssistantStatus("ready", "READY");
+      }
+
       if (submittedTranscript || manualStop || voiceErrorShown) return;
 
       const rawTranscript = capturedFinalTranscript || $("commandInput").value.trim();
-      const command = rawTranscript.replace(/^\s*(?:(?:hey|hi|hello|ok|okay)\s+)?jarvis[,.!]?\s*/i, "").trim();
+      const command = rawTranscript
+        .replace(/^\\s*(?:(?:hey|hi|hello|ok|okay)\\s+)?jarvis[,.!] ?\\s*/i, "")
+        .trim();
+
       if (!command) {
         $("commandInput").value = "";
-        toast(rawTranscript ? "I heard “Jarvis”. Please say your command after the wake phrase." : "I didn't catch anything that time. Check microphone permission and try again.", true, "VOICE INPUT");
+        toast(
+          rawTranscript
+            ? "I heard “Jarvis”. Please say your command after the wake phrase."
+            : "I didn't catch anything that time. Check microphone permission and try again.",
+          true,
+          "VOICE INPUT"
+        );
         return;
       }
+
       submittedTranscript = true;
       $("commandInput").value = command;
       $("chatForm").requestSubmit();
     };
-or", "MIC ISSUE");
+
+    try {
+      recognition.start();
+    } catch (_error) {
+      recognitionInstance = null;
+      isListening = false;
+      syncVoiceControls();
+      setAssistantStatus("error", "MIC ISSUE");
       toast("Could not start the microphone. Close other speech sessions and try again.", true, "VOICE INPUT");
     }
   });
