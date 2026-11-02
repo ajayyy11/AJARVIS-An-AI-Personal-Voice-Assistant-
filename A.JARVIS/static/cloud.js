@@ -290,6 +290,7 @@
     recognition.onstart = () => {
       if (isListening) setAssistantStatus("listening", "LISTENING");
     };
+    let capturedFinalTranscript = "";
     recognition.onresult = (event) => {
       const finalParts = [];
       const interimParts = [];
@@ -301,16 +302,9 @@
         else interimParts.push(spoken);
       }
       const finalText = finalParts.join(" ").trim();
-      const preview = [finalText, interimParts.join(" ").trim()].filter(Boolean).join(" ").trim();
+      if (finalText) capturedFinalTranscript = finalText;
+      const preview = [capturedFinalTranscript, interimParts.join(" ").trim()].filter(Boolean).join(" ").trim();
       if (preview) $("commandInput").value = preview;
-      if (finalText && !submittedTranscript) {
-        submittedTranscript = true;
-        $("commandInput").value = finalText;
-        isListening = false;
-        syncVoiceControls();
-        try { recognition.stop(); } catch (_error) {}
-        $("chatForm").requestSubmit();
-      }
     };
     recognition.onerror = (event) => {
       if (manualStop && event.error === "aborted") return;
@@ -334,15 +328,35 @@
       if (recognitionInstance === recognition) recognitionInstance = null;
       isListening = false;
       syncVoiceControls();
-      if (!isProcessing && !isSpeaking && !voiceErrorShown) setAssistantStatus("ready", "READY");
-      if (!submittedTranscript && !manualStop && !voiceErrorShown) {
-        if ($("commandInput").value.trim()) {
-          toast("I caught only part of that. Review the text and tap Send, or try speaking again.", true, "VOICE INPUT");
-        } else {
-          toast("I didn't catch anything that time. Check microphone permission and try again.", true, "VOICE INPUT");
-        }
+
+      if (!isProcessing && !isSpeaking && !voiceErrorShown) {
+        setAssistantStatus("ready", "READY");
       }
+
+      if (submittedTranscript || manualStop || voiceErrorShown) return;
+
+      const rawTranscript = capturedFinalTranscript || $("commandInput").value.trim();
+      const command = rawTranscript
+        .replace(/^\s*(?:(?:hey|hi|hello|ok|okay)\s+)?jarvis[,.!]?\s*/i, "")
+        .trim();
+
+      if (!command) {
+        $("commandInput").value = "";
+        toast(
+          rawTranscript
+            ? "I heard “Jarvis”. Please say your command after the wake phrase."
+            : "I didn't catch anything that time. Check microphone permission and try again.",
+          true,
+          "VOICE INPUT"
+        );
+        return;
+      }
+
+      submittedTranscript = true;
+      $("commandInput").value = command;
+      $("chatForm").requestSubmit();
     };
+
     try {
       recognition.start();
     } catch (_error) {
