@@ -72,3 +72,16 @@ def test_wake_phrase_in_middle_of_sentence_is_not_a_wake_only_command():
     reply = command_router.process_command("Please tell me the time, hey Jarvis", "alice")
 
     assert reply.startswith("The current time is ")
+
+
+
+@pytest.mark.parametrize("phrase", ["update my task", "sometimes I need help with planning"])
+def test_words_containing_time_or_date_substrings_do_not_trigger_clock_commands(monkeypatch, phrase):
+    user_state.activate_user("alice")
+    monkeypatch.setattr(command_router, "_get_genai_client", lambda: None)
+
+    reply = command_router.process_command(phrase, "alice")
+
+    assert "AI responses are not configured" in reply
+    assert not reply.startswith("Today is ")
+    assert not reply.startswith("The current time is ")
