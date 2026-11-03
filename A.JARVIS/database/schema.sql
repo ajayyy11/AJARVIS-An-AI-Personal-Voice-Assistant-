@@ -45,3 +45,21 @@ CREATE TABLE IF NOT EXISTS user_memories (
 ) ENGINE=InnoDB
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
+
+
+-- Minimal audit metadata for proposed and approved automation activity.
+-- Raw tool arguments, URLs, prompts, and tool outputs are never stored here.
+CREATE TABLE IF NOT EXISTS automation_activity (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(100) NOT NULL,
+  plan_id CHAR(32) NOT NULL,
+  step_number INT NULL,
+  event_type VARCHAR(40) NOT NULL,
+  tool_name VARCHAR(64) NULL,
+  summary VARCHAR(240) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_automation_activity_user_id (username, id)
+) ENGINE=InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
