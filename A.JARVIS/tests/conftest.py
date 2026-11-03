@@ -40,6 +40,10 @@ class _UnavailableCapture:
 
 _install_stub("cv2", {
     "COLOR_BGR2RGB": 4,
+    "cvtColor": lambda frame, _code: frame,
+    "rectangle": lambda *_args, **_kwargs: None,
+    "putText": lambda *_args, **_kwargs: None,
+    "imencode": lambda *_args, **_kwargs: (False, None),
     "FILLED": -1,
     "FONT_HERSHEY_DUPLEX": 0,
     "FONT_HERSHEY_SIMPLEX": 0,
