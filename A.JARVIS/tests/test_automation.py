@@ -5,7 +5,8 @@ from intelligence.tool_registry import ToolRegistry
 
 
 @pytest.fixture(autouse=True)
-def clear_pending_plans():
+def clear_pending_plans(monkeypatch):
+    monkeypatch.setattr(automation, "_activity", lambda *_args, **_kwargs: None)
     with automation._lock:
         automation._plans.clear()
     yield
@@ -160,4 +161,47 @@ def test_execution_failure_stops_plan_and_does_not_run_later_steps():
     state=automation.advance_plan(created["plan_id"],"alice",registry=registry)
     assert state["status"]=="failed"
     assert state["steps"][0]["status"]=="failed"
+    assert events==[]
+
+
+def test_cancellation_during_read_only_step_prevents_later_actions():
+    import threading
+
+    entered=threading.Event()
+    release=threading.Event()
+    events=[]
+    registry=ToolRegistry()
+    def read_slow(*,username):
+        entered.set()
+        assert release.wait(2)
+        return {"ready":True}
+    registry.register("read_slow","Wait for a test signal.",read_slow)
+    registry.register(
+        "set_setting","Change setting.",lambda *,username,value:events.append(value),
+        risk_level="reversible",requires_confirmation=True,
+        parameters={
+            "type":"object",
+            "properties":{"value":{"type":"string","minLength":1}},
+            "required":["value"],"additionalProperties":False,
+        },
+    )
+    created=automation.create_plan(
+        "alice","Read then change.",
+        [step("read_slow"),step("set_setting",{"value":"on"})],
+        registry=registry,
+    )
+    result={}
+    worker=threading.Thread(target=lambda:result.update(
+        automation.advance_plan(created["plan_id"],"alice",registry=registry)
+    ))
+    worker.start()
+    assert entered.wait(2)
+    cancelling=automation.cancel_plan(created["plan_id"],"alice")
+    assert cancelling["cancel_requested"] is True
+    release.set()
+    worker.join(2)
+    assert not worker.is_alive()
+    assert result["status"]=="cancelled"
+    assert result["steps"][0]["status"]=="completed"
+    assert result["steps"][1]["status"]=="cancelled"
     assert events==[]

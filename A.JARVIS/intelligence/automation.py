@@ -399,6 +399,9 @@ def respond_to_approval(
         if decision == "reject":
             step["status"] = "rejected"
             plan["status"] = "cancelled"
+            for pending_step in plan["steps"][plan["current_step"] + 1:]:
+                if pending_step["status"] == "pending":
+                    pending_step["status"] = "cancelled"
             _activity(owner, plan, "approval_rejected", step)
             return _snapshot(plan)
         plan["status"] = "executing"

@@ -3,7 +3,6 @@ from types import SimpleNamespace
 import pytest
 
 from intelligence import planner
-from intelligence.automation import build_automation_registry
 from intelligence.planner import PlannerError
 
 
@@ -30,10 +29,9 @@ class FakeClient:
 
 
 @pytest.fixture(autouse=True)
-def clear_plans():
-    with planner.create_plan.__globals__["_plans_lock"] if "_plans_lock" in planner.create_plan.__globals__ else __import__("contextlib").nullcontext():
-        pass
+def clear_plans(monkeypatch):
     from intelligence import automation
+    monkeypatch.setattr(automation, "_activity", lambda *_args, **_kwargs: None)
     with automation._lock:
         automation._plans.clear()
     yield
