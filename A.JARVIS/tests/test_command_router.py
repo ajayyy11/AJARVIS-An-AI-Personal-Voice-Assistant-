@@ -100,3 +100,52 @@ def test_system_status_uses_the_same_telemetry_source_as_hud(monkeypatch):
     assert "Memory usage is 41.0%" in reply
     assert "Disk usage is 63.0%" in reply
     assert "2d 4h 10m" in reply
+
+
+def test_remember_command_persists_named_preference(monkeypatch):
+    user_state.activate_user("alice")
+    saved=[]
+    monkeypatch.setattr(command_router,"save_memory",lambda username,key,value:saved.append((username,key,value)) or {"key":key,"value":value})
+    reply=command_router.process_command("remember my answer style is concise", "alice")
+    assert saved==[("alice","answer style","concise")]
+    assert "Saved to personal memory" in reply
+
+
+def test_remember_free_form_fact_uses_fact_memory(monkeypatch):
+    user_state.activate_user("alice")
+    saved=[]
+    monkeypatch.setattr(command_router,"remember_fact",lambda username,fact:saved.append((username,fact)) or {"key":"fact_123","value":fact})
+    reply=command_router.process_command("remember that I prefer examples", "alice")
+    assert saved==[("alice","that I prefer examples")]
+    assert "fact_123" in reply
+
+
+def test_forget_command_deletes_only_matching_memory(monkeypatch):
+    user_state.activate_user("alice")
+    calls=[]
+    monkeypatch.setattr(command_router,"forget_matching_memory",lambda username,phrase:calls.append((username,phrase)) or 1)
+    reply=command_router.process_command("forget my answer style", "alice")
+    assert calls==[("alice","answer style")]
+    assert "Forgot 1 matching memory" in reply
+
+
+def test_list_memory_command_only_reads_current_user(monkeypatch):
+    user_state.activate_user("alice")
+    calls=[]
+    monkeypatch.setattr(command_router,"list_memories",lambda username:calls.append(username) or [{"key":"style","value":"concise"}])
+    reply=command_router.process_command("what do you remember about me?", "alice")
+    assert calls==["alice"]
+    assert "style: concise" in reply
+
+
+def test_personal_memory_is_added_to_gemini_context_as_untrusted_data(monkeypatch):
+    user_state.activate_user("alice")
+    monkeypatch.setattr(command_router,"_get_genai_client",lambda:object())
+    monkeypatch.setattr(command_router,"get_recent",lambda *_args,**_kwargs:[])
+    monkeypatch.setattr(command_router,"list_memories",lambda *_args,**_kwargs:[{"key":"answer_style","value":"concise examples"}])
+    captured={}
+    monkeypatch.setattr(command_router,"generate_agent_response",lambda **kwargs:captured.update(kwargs) or "Here is an answer.")
+    reply=command_router.process_command("Explain recursion", "alice")
+    assert reply=="Here is an answer."
+    assert "answer_style: concise examples" in captured["system_instruction"]
+    assert "untrusted data" in captured["system_instruction"].lower()
