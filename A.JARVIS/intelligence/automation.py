@@ -297,6 +297,10 @@ def _get_plan(plan_id: str, username: str, now: float | None = None) -> dict[str
         if current_time >= plan["expires_at"] and plan["status"] not in {"completed", "cancelled", "failed", "expired"}:
             plan["status"] = "expired"
             plan["approval_id"] = None
+            plan["approval_expires_at"] = None
+            for step in plan["steps"]:
+                if step["status"] in {"pending", "awaiting_approval"}:
+                    step["status"] = "expired"
             _activity(owner, plan, "plan_expired")
         return plan
 
@@ -314,7 +318,19 @@ def advance_plan(plan_id: str, username: str, *, registry: ToolRegistry | None =
         plan["status"] = "running"
 
     while True:
+        # Re-read monotonic time for every step boundary. A slow read-only tool
+        # must not create an approval window that is already expired.
+        step_time = time.monotonic() if now is None else float(now)
         with _lock:
+            if step_time >= plan["expires_at"]:
+                plan["status"] = "expired"
+                plan["approval_id"] = None
+                plan["approval_expires_at"] = None
+                for pending_step in plan["steps"]:
+                    if pending_step["status"] in {"pending", "awaiting_approval"}:
+                        pending_step["status"] = "expired"
+                _activity(username, plan, "plan_expired")
+                return _snapshot(plan)
             if plan.get("cancel_requested"):
                 plan["status"] = "cancelled"
                 for pending_step in plan["steps"][plan["current_step"]:]:
@@ -330,7 +346,7 @@ def advance_plan(plan_id: str, username: str, *, registry: ToolRegistry | None =
             if step["requires_confirmation"]:
                 plan["approval_id"] = uuid.uuid4().hex
                 plan["approval_expires_at"] = min(
-                    plan["expires_at"], current_time + APPROVAL_TTL_SECONDS
+                    plan["expires_at"], step_time + APPROVAL_TTL_SECONDS
                 )
                 plan["status"] = "awaiting_approval"
                 step["status"] = "awaiting_approval"
@@ -440,7 +456,7 @@ def respond_to_approval(
     if plan["status"] == "cancelled":
         _activity(owner, plan, "plan_cancelled")
         return _snapshot(plan)
-    return advance_plan(plan["plan_id"], owner, registry=tools, now=current_time)
+    return advance_plan(plan["plan_id"], owner, registry=tools, now=now)
 
 
 def cancel_plan(plan_id: str, username: str) -> dict[str, Any]:
