@@ -11,6 +11,8 @@ A local Windows-focused assistant application using Flask, Google Gemini integra
 - System resource statistics
 - Explicit, editable, user-scoped personal memory for facts and answer preferences
 - Relevant conversation context, follow-up resolution, and read-only memory retrieval tools
+- Bounded multi-step task planning with per-step approvals for computer-changing actions
+- User-scoped automation activity history that omits raw arguments and tool outputs
 
 ## Tech Stack
 
@@ -74,7 +76,7 @@ The AI fallback now uses manual Gemini function calling through an explicit allo
 
 The initial agent can read the current date/time, CPU and memory usage, home-disk usage, battery status, and the signed-in user's saved notes (recent notes or phrase search). Calls are validated against registered argument schemas, and the agent limits the number of tool calls and the amount of returned data. Automatic SDK function execution is disabled so the application, not the model, decides whether a requested tool can run.
 
-Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. When the note or memory tools are used, matching content is sent to the configured Gemini model for an answer; do not store passwords, API keys, tokens, or other secrets in notes or personalization memory. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
+Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. When the note or memory tools are used, matching content is sent to the configured Gemini model for an answer; do not store passwords, API keys, tokens, or other secrets in notes or personalization memory. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. The separate Phase 5 task planner now offers a small registered action allow-list behind trusted, one-time approvals. The ordinary Gemini chat/tool path remains read-only and cannot directly invoke side-effecting tools.
 
 Requests containing wording such as `search the web`, `latest`, `current`, or `recent` are routed through `intelligence/web_research.py`, a separate Google Search-grounded Gemini request. The response includes up to five validated HTTP(S) source links when grounding metadata is available. This requires `GEMINI_API_KEY`; the default model is `gemini-2.5-flash`, and `GEMINI_WEB_MODEL` can override it. Gemini API usage charges may apply. When no source metadata is returned, AJARVIS says it could not verify source links.
 
@@ -85,6 +87,29 @@ pytest -q tests/test_tool_registry.py tests/test_agent.py tests/test_notes.py te
 ```
 
 
+## Phase 5 — Task Planning & Controlled Automation
+
+The local dashboard includes a **Task Planner & Controlled Automation** panel. Enter a task in natural language, such as:
+
+- "Check my battery and system status."
+- "Check my system status, then open https://openai.com."
+- "Open Calculator, then check my battery."
+
+AJARVIS asks Gemini for a structured plan of at most five steps, then validates every tool name and argument against the application's registered tool catalogue. The model does not execute tools or supply shell commands.
+
+### Execution and approval rules
+
+- Registered read-only checks (date/time, system and battery status, and the signed-in user's saved notes or memories) may run automatically after you submit a task.
+- Opening a website is available only for public HTTPS URLs. Embedded credentials, local hostnames, and private/local IP destinations are rejected.
+- On Windows, the planner can request Calculator, Notepad, File Explorer, Chrome, VS Code, or workstation locking. Application names are mapped to fixed executable identifiers; arbitrary executable paths and commands are not accepted.
+- Each computer-changing step pauses until you approve that exact step in the dashboard. Approval tokens are one-time, bound to the signed-in username, and expire after 60 seconds. A plan expires after five minutes.
+- Rejecting a step stops the rest of the plan. Cancellation prevents later steps from starting; an operation that has already started cannot be assumed to have been undone.
+- Pending plans and approval tokens are kept in process memory and are discarded on application restart. This fails closed: a user must create and approve a new plan after a restart.
+- The activity table records per-user event metadata (tool name, event type and a short generic summary). It deliberately does not persist task prompts, URLs, raw arguments, note contents, or tool results.
+
+The agent chat tool-call path remains read-only. The planner is a separate, server-validated workflow; it does not offer arbitrary shell execution, unrestricted file editing, email sending, or autonomous background operation. Use the dashboard's activity panel to review recent planner events.
+
+For existing MySQL installations, back up the database, review the dry run, and apply `python database/migrate_database.py --apply` as described in [the database upgrade runbook](database/migrations/README.md). The migration creates the privacy-minimal `automation_activity` table and its per-user index if they are missing.
 
 ## Local Voice Command Flow
 

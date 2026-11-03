@@ -32,7 +32,7 @@ From inside A.JARVIS, run:
 python database/migrate_database.py
 ```
 
-By default this is a dry run. It only reads MySQL metadata and shows planned schema changes. It does not modify records or schema. The migration adds the Phase 4 `user_memories` table and the Phase 5 `automation_activity` table if they are missing.
+By default this is a dry run. It only reads MySQL metadata and shows planned schema changes. It does not modify records or schema. The Phase 4 `user_memories` table and Phase 5 `automation_activity` table are added when missing. The activity table stores only event metadata; pending approval tokens and active plans remain in process memory and are discarded on restart.
 
 If it reports missing required tables or columns other than command_history.username, stop and investigate before proceeding. Do not use the migration to repair an unknown schema.
 
@@ -44,7 +44,7 @@ After confirming you have a valid backup, run:
 python database/migrate_database.py --apply
 ```
 
-Review the planned changes and type MIGRATE only when the displayed database name is correct. The script adds a nullable username column to `command_history` if missing, creates its supporting index if missing, creates the `user_memories` table and its unique `(username, memory_key)` constraint if missing, and creates the privacy-minimal `automation_activity` table plus its per-user index if missing. It does not delete or rewrite existing records. Existing history rows remain `username IS NULL` because their original owners cannot be identified safely. The new memory table starts empty and stores each memory under the currently signed-in username.
+Review the planned changes and type MIGRATE only when the displayed database name is correct. The script adds a nullable username column to `command_history` if missing, creates its supporting index if missing, creates the `user_memories` table and its unique `(username, memory_key)` constraint if missing, and creates the privacy-minimal `automation_activity` table plus its per-user index if missing. Pending approvals are not stored in MySQL. It does not delete or rewrite existing records. Existing history rows remain `username IS NULL` because their original owners cannot be identified safely. The new memory table starts empty and stores each memory under the currently signed-in username.
 
 The script is safe to run again after a successful migration: it should report that no changes are needed. If it reports an error, stop and review the message before attempting manual SQL.
 

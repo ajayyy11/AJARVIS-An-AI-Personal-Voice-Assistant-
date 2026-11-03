@@ -11,6 +11,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 - Face-authentication workflow using computer-vision libraries
 - MySQL database connection layer
 - User-scoped command history, AI context, notes, activation state, and editable personal memory
+- Multi-step task planning with a controlled allow-list and per-step user approval for computer-changing actions
 - Session management and system-statistics modules
 
 ## Tech Stack
@@ -75,7 +76,7 @@ This project handles camera input, face-related data, sessions, and API credenti
 
 ## Agent Tool Safety
 
-Gemini tool calls are handled manually through a local allow-list. The current agent tools provide read-only date/time, system/battery status, and user-scoped saved-note lookup. Commands containing explicit web-search or current-information wording use a separate Gemini Google Search-grounded request and display the available source URLs. Web research requires `GEMINI_API_KEY` and may incur API usage charges. Note content may be sent to the configured Gemini model when the notes tools are used, so do not store secrets in notes. Arbitrary shell execution is not exposed, and side-effecting tool requests are rejected until a trusted approval workflow exists. See [the application agent notes](A.JARVIS/README.md#tool-enabled-agent-foundation).
+Gemini tool calls are handled manually through a local allow-list. The current agent tools provide read-only date/time, system/battery status, and user-scoped saved-note lookup. Commands containing explicit web-search or current-information wording use a separate Gemini Google Search-grounded request and display the available source URLs. Web research requires `GEMINI_API_KEY` and may incur API usage charges. Note content may be sent to the configured Gemini model when the notes tools are used, so do not store secrets in notes. Arbitrary shell execution and unrestricted file operations are not exposed. The Phase 5 task planner can coordinate registered read-only checks and a small host-specific action allow-list; every computer-changing planner step requires a one-time, user-bound approval in the local dashboard. The ordinary chat tool path remains read-only. See [the application agent notes](A.JARVIS/README.md#tool-enabled-agent-foundation).
 
 ## Safer Desktop Controls
 
@@ -83,7 +84,7 @@ Shutdown and restart requests now require an exact confirmation within 30 second
 
 ## Automated Tests
 
-GitHub Actions validates the dashboard JavaScript syntax, compiles the Python modules, and runs the session, memory-persistence, activation-expiry, and power-confirmation tests. To run the suite locally from the application directory:
+GitHub Actions validates both dashboard JavaScript surfaces and the Render Blueprint, compiles the Python modules, and runs the session, memory, task-planner, approval, activity-log, migration, and command integration tests. To run the suite locally from the application directory:
 
 ```bash
 cd A.JARVIS
