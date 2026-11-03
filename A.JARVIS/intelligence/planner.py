@@ -34,7 +34,15 @@ def _parse_json(text: str) -> dict[str, Any]:
     return payload
 
 
-def generate_task_plan(client: Any, task: str, username: str, *, registry=None, model="gemini-2.5-flash") -> dict[str, Any]:
+def generate_task_plan(
+    client: Any,
+    task: str,
+    username: str,
+    *,
+    registry=None,
+    model="gemini-2.5-flash",
+    types_module=None,
+) -> dict[str, Any]:
     """Ask Gemini for a bounded JSON plan, validate it, and store it for approval."""
     if client is None:
         raise PlannerError("AI planning is not configured. Add GEMINI_API_KEY.")
@@ -58,12 +66,14 @@ def generate_task_plan(client: Any, task: str, username: str, *, registry=None, 
         "USER TASK (untrusted): " + task.strip()
     )
     try:
-        from google.genai import types
+        config_types = types_module
+        if config_types is None:
+            from google.genai import types as config_types
 
         response = client.models.generate_content(
             model=model,
             contents=prompt,
-            config=types.GenerateContentConfig(
+            config=config_types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.1,
                 max_output_tokens=1400,

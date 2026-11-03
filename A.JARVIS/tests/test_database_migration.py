@@ -44,15 +44,17 @@ def test_missing_core_column_stops_migration():
 
 
 def test_wrong_named_index_stops_migration():
-    tables={"users","command_history","user_memories"}
+    tables={"users","command_history","user_memories","automation_activity"}
     columns={
         "users":{"username","face_encoding"},
         "command_history":{"id","username","command","response"},
         "user_memories":{"id","username","memory_key","memory_value","created_at","updated_at"},
+        "automation_activity":{"id","username","plan_id","step_number","event_type","tool_name","summary","created_at"},
     }
     indexes={
         "command_history":{"idx_command_history_username_id":("id","username")},
         "user_memories":{"uq_user_memories_username_key":("username","memory_key")},
+        "automation_activity":{"idx_automation_activity_user_id":("username","id")},
     }
     actions,errors=plan_migration(tables,columns,indexes)
     assert actions==[]
@@ -60,13 +62,17 @@ def test_wrong_named_index_stops_migration():
 
 
 def test_existing_memory_table_with_unknown_schema_stops_migration():
-    tables={"users","command_history","user_memories"}
+    tables={"users","command_history","user_memories","automation_activity"}
     columns={
         "users":{"username","face_encoding"},
         "command_history":{"id","username","command","response"},
         "user_memories":{"id","username","memory_key"},
+        "automation_activity":{"id","username","plan_id","step_number","event_type","tool_name","summary","created_at"},
     }
-    indexes={"command_history":{"idx_command_history_username_id":("username","id")}}
+    indexes={
+        "command_history":{"idx_command_history_username_id":("username","id")},
+        "automation_activity":{"idx_automation_activity_user_id":("username","id")},
+    }
     actions,errors=plan_migration(tables,columns,indexes)
     assert actions==[]
     assert any("user_memories is missing" in error for error in errors)
@@ -74,13 +80,17 @@ def test_existing_memory_table_with_unknown_schema_stops_migration():
 
 
 def test_existing_user_memory_table_without_unique_owner_key_is_rejected():
-    tables={"users","command_history","user_memories"}
+    tables={"users","command_history","user_memories","automation_activity"}
     columns={
         "users":{"username","face_encoding"},
         "command_history":{"id","username","command","response"},
         "user_memories":{"id","username","memory_key","memory_value","created_at","updated_at"},
+        "automation_activity":{"id","username","plan_id","step_number","event_type","tool_name","summary","created_at"},
     }
-    indexes={"command_history":{"idx_command_history_username_id":("username","id")}}
+    indexes={
+        "command_history":{"idx_command_history_username_id":("username","id")},
+        "automation_activity":{"idx_automation_activity_user_id":("username","id")},
+    }
     actions,errors=plan_migration(tables,columns,indexes)
     assert actions==[]
     assert any("unique index uq_user_memories_username_key" in error for error in errors)
