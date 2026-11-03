@@ -50,6 +50,7 @@ jobs:
 
           javascript = "\n;\n".join(inline_scripts)
           javascript = javascript.replace("{{ user | tojson }}", '"ci-user"')
+          javascript = javascript.replace("{{ is_active | tojson }}", "false")
           if "{{" in javascript or "{%" in javascript:
               raise SystemExit("Unrendered Jinja template syntax remains in dashboard JavaScript.")
 
