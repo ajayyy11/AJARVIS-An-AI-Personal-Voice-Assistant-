@@ -13,7 +13,7 @@ MAX_CONTEXT_CHARS = 6000
 _FOLLOW_UP_RE = re.compile(
     r"^(?:and\b|also\b|it\b|that\b|this\b|they\b|them\b|those\b|these\b|"
     r"continue\b|go on\b|do that\b|do it\b|repeat that\b|again\b|"
-    r"explain more\b|tell me more\b|what about\b|why\b|how about\b|"
+    r"explain more\b|tell me more\b|what about\b|how about\b|why(?: is that| does that| did that| about it)?(?:\?|$)|"
     r"open it\b|run it\b|search it\b|find it\b|summarize that\b|"
     r"same for\b|and the\b|what if\b|how much\b|how many\b|"
     r"what happens if\b|can you expand\b)",
