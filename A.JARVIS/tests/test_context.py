@@ -10,10 +10,14 @@ from intelligence.context import (
 
 @pytest.mark.parametrize("text,expected", [
     ("What time is it?", "question"),
+    ("How do I configure the microphone?", "question"),
     ("open Chrome", "command"),
     ("search latest Python news", "search"),
+    ("research Python decorators", "search"),
+    ("find information about Python", "search"),
     ("explain more", "follow_up"),
     ("do that again", "follow_up"),
+    ("search it", "follow_up"),
     ("hello Jarvis", "conversation"),
     ("", "unknown"),
 ])
@@ -23,10 +27,17 @@ def test_classify_intent(text, expected):
 
 @pytest.mark.parametrize("text", [
     "explain more", "continue", "do that again", "what about that",
-    "and also", "open it", "tell me more", "how about it",
+    "and also", "open it", "tell me more", "how about it", "search it",
 ])
 def test_follow_up_patterns(text):
     assert is_follow_up(text)
+
+
+def test_general_how_and_why_questions_are_not_follow_ups():
+    assert not is_follow_up("How do I configure the microphone?")
+    assert not is_follow_up("Why does the app fail?")
+    assert classify_intent("How do I configure the microphone?") == "question"
+    assert classify_intent("Why does the app fail?") == "question"
 
 
 def test_new_topic_selects_relevant_history():
