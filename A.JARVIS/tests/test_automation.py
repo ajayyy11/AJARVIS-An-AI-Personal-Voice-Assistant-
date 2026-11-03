@@ -211,3 +211,38 @@ def test_cancellation_during_read_only_step_prevents_later_actions():
     assert result["steps"][0]["status"]=="completed"
     assert result["steps"][1]["status"]=="cancelled"
     assert events==[]
+
+
+def test_plan_expiring_during_slow_read_only_work_does_not_start_next_step(monkeypatch):
+    events=[]
+    registry=ToolRegistry()
+    registry.register(
+        "read_slow","Read status.",
+        lambda *,username: events.append("read") or {"status":"ok"},
+    )
+    registry.register(
+        "set_setting","Change a setting.",
+        lambda *,username,value: events.append("write"),
+        risk_level="reversible",
+        requires_confirmation=True,
+        parameters={
+            "type":"object",
+            "properties":{"value":{"type":"string","minLength":1}},
+            "required":["value"],
+            "additionalProperties":False,
+        },
+    )
+    created=automation.create_plan(
+        "alice","Read then write.",
+        [step("read_slow"),step("set_setting",{"value":"on"})],
+        registry=registry,
+        now=100,
+    )
+    clock=iter([101.0,102.0,401.0])
+    monkeypatch.setattr(automation.time,"monotonic",lambda:next(clock))
+    expired=automation.advance_plan(created["plan_id"],"alice",registry=registry)
+    assert expired["status"]=="expired"
+    assert expired["steps"][0]["status"]=="completed"
+    assert expired["steps"][1]["status"]=="expired"
+    assert expired["approval"] is None
+    assert events==["read"]
