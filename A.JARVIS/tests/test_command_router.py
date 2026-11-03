@@ -116,7 +116,7 @@ def test_remember_free_form_fact_uses_fact_memory(monkeypatch):
     saved=[]
     monkeypatch.setattr(command_router,"remember_fact",lambda username,fact:saved.append((username,fact)) or {"key":"fact_123","value":fact})
     reply=command_router.process_command("remember that I prefer examples", "alice")
-    assert saved==[("alice","that I prefer examples")]
+    assert saved==[("alice","I prefer examples")]
     assert "fact_123" in reply
 
 
