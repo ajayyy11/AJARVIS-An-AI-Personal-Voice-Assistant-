@@ -445,6 +445,11 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
 @media (max-width:1100px) { .frame { grid-template-columns:minmax(220px,.8fr) minmax(260px,1fr); } .frame > .panel:last-of-type { grid-column:1 / -1; } }
 @media (max-width:760px) { body { display:block; padding:12px; } .frame { width:100%; min-height:0; grid-template-columns:minmax(0,1fr); gap:18px; padding:16px; } .frame > .panel:last-of-type { grid-column:auto; } .center { order:-1; padding:22px 0 30px; min-height:320px; } .core { width:170px; height:170px; } .core::before { width:220px; height:220px; } .core::after { width:195px; height:195px; } .clock { margin-bottom:18px; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; } }
+    .telemetry-meter{width:100%;height:6px;margin:-10px 0 15px;overflow:hidden;border:1px solid rgba(0,240,255,.22);border-radius:8px;background:rgba(0,240,255,.06)}
+    .meter-fill{display:block;width:0%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#00a6c8,#00f0ff);box-shadow:0 0 10px rgba(0,240,255,.55);transition:width .35s ease}
+    .telemetry-updated{color:#7899a8;font-size:10px}
+    @media(prefers-reduced-motion:reduce){.meter-fill{transition:none}}
+
 </style>
 
 <body>
@@ -457,9 +462,15 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     <div class="panel">
       <h3>SYSTEM STATUS</h3>
       <div class="status cpu">CPU: --%</div>
+      <div class="telemetry-meter"><span id="cpu-meter" class="meter-fill" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></span></div>
       <div class="status ram">RAM: --%</div>
+      <div class="telemetry-meter"><span id="memory-meter" class="meter-fill" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></span></div>
       <div class="status disk">Disk: --%</div>
-      <div class="status battery">Battery: --%</div>
+      <div class="telemetry-meter"><span id="disk-meter" class="meter-fill" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></span></div>
+      <div class="status battery">Battery: --</div>
+      <div class="status uptime" id="uptime-status">Uptime: --</div>
+      <div class="status processor" id="processor-status">Processor: --</div>
+      <div class="status telemetry-updated" id="telemetry-updated" role="status" aria-live="polite">Waiting for telemetry…</div>
       <div class="status"><a href="/logout" style="color:#00ffff">Logout</a></div>
 
       <br>
@@ -548,16 +559,29 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     setInterval(updateClock, 1000);
     updateClock();
 
-    /* REAL SYSTEM STATS */
-    setInterval(() => {
-      fetch('/system_stats')
-        .then(res => res.json())
-        .then(data => {
-          document.querySelector(".cpu").textContent = "CPU: " + data.cpu + "%";
-          document.querySelector(".ram").textContent = "RAM: " + data.memory + "%";
-          document.querySelector(".disk").textContent = "Disk: " + data.disk + "%";
-        });
-    }, 2000);
+    /* Shared real host telemetry for the live HUD. */
+    function updateMeter(id,value){
+      const el=document.getElementById(id),pct=Math.max(0,Math.min(100,Number(value)||0));
+      el.style.width=pct+"%";el.setAttribute("aria-valuenow",String(Math.round(pct)));
+    }
+    async function updateSystemStats(){
+      const updated=document.getElementById("telemetry-updated");
+      try{
+        const response=await fetch("/system_stats",{cache:"no-store",headers:{"Accept":"application/json"}});
+        if(response.status===401){window.location.replace("/login");return;}
+        const data=await response.json();if(!response.ok)throw new Error(data.error||"Telemetry unavailable");
+        document.querySelector(".cpu").textContent="CPU: "+data.cpu+"% · "+data.cpu_cores+" logical cores";
+        document.querySelector(".ram").textContent="RAM: "+data.memory+"% ("+data.memory_used_gb+" / "+data.memory_total_gb+" GB)";
+        document.querySelector(".disk").textContent="Disk: "+data.disk+"% ("+data.disk_used_gb+" / "+data.disk_total_gb+" GB)";
+        const battery=data.battery;
+        document.querySelector(".battery").textContent=battery?"Battery: "+battery.percent+"% · "+(battery.plugged?"charging":"on battery"):"Battery: not available";
+        document.getElementById("uptime-status").textContent="Uptime: "+data.uptime;
+        document.getElementById("processor-status").textContent="Processor: "+String(data.processor||data.platform||"Unknown").slice(0,35)+(data.cpu_frequency_mhz?" · "+data.cpu_frequency_mhz+" MHz":"");
+        updateMeter("cpu-meter",data.cpu);updateMeter("memory-meter",data.memory);updateMeter("disk-meter",data.disk);
+        updated.textContent="Updated "+new Date(data.timestamp).toLocaleTimeString();
+      }catch(error){updated.textContent="Telemetry offline · "+String(error.message||"retrying");}
+    }
+    updateSystemStats();setInterval(updateSystemStats,5000);
 
     /* VOICE SYSTEM - STARK PROTOCOL MODE */
 
@@ -653,7 +677,8 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     updateAnalytics();
     setInterval(updateAnalytics, 15000);
 
-    const username = {{ user | tojson }};  // Safely serialize the username for JavaScript
+    const username = {{ user | tojson }};
+    const initialActive = {{ is_active | tojson }};
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const bars = document.querySelectorAll(".bar");
@@ -669,7 +694,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     let recognitionBlocked = false;
     let speechHold = false;
     let speechGeneration = 0;
-    let state = "idle";
+    let state = initialActive ? "activated" : "idle";
 
     try {
       const savedLanguage = window.localStorage.getItem("ajarvis.local.voice.language");
@@ -742,7 +767,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       }
 
       try {
-        const res = await fetch('/voice_command', {
+        const res = await fetch('/command', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ command })
@@ -754,7 +779,10 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
         if (typeof data.response !== "string") {
           throw new Error("The server returned an invalid response.");
         }
-
+        if (typeof data.active === "boolean") {
+          state = data.active ? "activated" : "idle";
+          core.style.boxShadow = data.active ? "0 0 140px #00ffff" : "0 0 40px #00ffff";
+        }
         aiStatus.textContent = data.response.substring(0, 60) + (data.response.length > 60 ? '...' : '');
         speak(data.response);
         showToast(data.response);
@@ -784,23 +812,8 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       sendBtn.disabled = true;
 
       try {
-        // Text input remains available even when speech recognition is not.
-        if (state !== "activated") {
-          const activationReply = await processCommand("system activate");
-          if (!activationReply || !activationReply.toLowerCase().includes("activating system")) {
-            return;
-          }
-          state = "activated";
-          core.style.boxShadow = "0 0 140px #00ffff";
-          if (command.toLowerCase() === "system activate") return;
-        }
-
+        // Text and voice commands share the same explicit activation gate.
         await processCommand(command);
-        if (["system deactivate", "system shutdown", "system shut down"].includes(command.toLowerCase())) {
-          state = "idle";
-          aiStatus.textContent = "Standby";
-          core.style.boxShadow = "0 0 40px #00ffff";
-        }
       } finally {
         sendBtn.disabled = false;
       }

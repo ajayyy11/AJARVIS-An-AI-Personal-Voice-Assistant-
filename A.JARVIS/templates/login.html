@@ -4,17 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AJARVIS Login</title>
-     <script>
-        // Check every 2 seconds if authenticated
-        setInterval(function(){
-            fetch('/check_access')
-            .then(res => res.json())
-            .then(data => {
-                if(data.access){
-                    window.location.href = "/dashboard";
-                }
-            });
-        }, 2000);
+    <script>
+        async function checkFaceAccess(){
+            const status=document.getElementById("face-status");
+            try{
+                const response=await fetch("/check_access",{cache:"no-store"}),data=await response.json();
+                if(response.ok&&data.access){status.textContent="Identity recognized. Opening your workspace…";window.location.replace("/dashboard");return;}
+                status.textContent=data.error||(!data.camera_ready?"Camera unavailable. Connect a camera and restart AJARVIS.":"No stable match yet. Keep one face centered in the camera.");
+            }catch(_error){status.textContent="Authentication service unavailable. Check that AJARVIS is running.";}
+            window.setTimeout(checkFaceAccess,2000);
+        }
+        document.addEventListener("DOMContentLoaded",checkFaceAccess);
     </script>
 <style>
     * {
@@ -232,6 +232,7 @@ img { max-width:100%; height:auto; aspect-ratio:4/3; object-fit:cover; }
         
             <img src="{{ url_for('video_feed') }}" width="640" height="480" alt="Face Scan">
     
+        <p id="face-status" role="status" aria-live="polite">Keep one face centered in the camera while AJARVIS verifies your identity.</p>
         <p>
             Don’t have account? <a href="{{ url_for('register')}}">Register Now !</a>
         </p>

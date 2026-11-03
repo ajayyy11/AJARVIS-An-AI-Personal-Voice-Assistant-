@@ -1,104 +1,61 @@
-"""Face-encoding loading and matching for local AJARVIS authentication."""
-
-import logging
-import os
-
-import cv2
-import face_recognition
-import numpy as np
-
+"""Local face-encoding lookup. Face recognition is not liveness detection."""
+import logging, os
+import cv2, face_recognition, numpy as np
 from database.db import get_connection
-
-logger = logging.getLogger(__name__)
-
-# A lower threshold is stricter. Tune against consented samples on the target
-# camera/lighting setup; this is not a substitute for liveness detection.
-try:
-    FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.55"))
-except ValueError as exc:
-    raise RuntimeError("FACE_MATCH_THRESHOLD must be a number between 0 and 1.") from exc
-if not 0.0 <= FACE_MATCH_THRESHOLD <= 1.0:
-    raise RuntimeError("FACE_MATCH_THRESHOLD must be a number between 0 and 1.")
-
-ENCODING_LENGTH = 128
-
-# Cache entries are (username, 128-dimensional face encoding).
-known_users = []
-
-
+logger=logging.getLogger(__name__)
+try: FACE_MATCH_THRESHOLD=float(os.getenv("FACE_MATCH_THRESHOLD","0.55"))
+except (TypeError,ValueError) as exc: raise RuntimeError("FACE_MATCH_THRESHOLD must be between 0 and 1.") from exc
+if not np.isfinite(FACE_MATCH_THRESHOLD) or not 0.0<=FACE_MATCH_THRESHOLD<=1.0: raise RuntimeError("FACE_MATCH_THRESHOLD must be between 0 and 1.")
+ENCODING_LENGTH=128
+known_users=[]
+def _valid_encoding(value):
+    try: encoding=np.asarray(value,dtype=np.float64)
+    except (TypeError,ValueError): return None
+    if encoding.shape!=(ENCODING_LENGTH,) or not np.isfinite(encoding).all(): return None
+    return encoding
 def load_known_faces():
-    """Load valid face encodings while reliably closing database resources.
-
-    Keep the previous cache if the database query fails; only publish the new
-    cache after a successful read.
-    """
+    """Atomically refresh valid encodings; retain old cache on DB failure."""
     global known_users
-    conn = None
-    cursor = None
-    loaded_users = []
-
+    conn=cursor=None
+    loaded=[]
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
+        conn=get_connection(); cursor=conn.cursor()
         cursor.execute("SELECT username, face_encoding FROM users")
-        users = cursor.fetchall()
-
-        for username, raw_encoding in users:
-            if not raw_encoding:
-                logger.warning("Skipping face record with empty encoding for %r", username)
-                continue
-
-            try:
-                encoding = np.frombuffer(raw_encoding, dtype=np.float64)
-            except (TypeError, ValueError):
-                logger.warning("Skipping unreadable face encoding for %r", username)
-                continue
-
-            if (
-                encoding.shape != (ENCODING_LENGTH,)
-                or not np.isfinite(encoding).all()
-            ):
-                logger.warning("Skipping malformed face encoding for %r", username)
-                continue
-
-            loaded_users.append((username, encoding))
-
+        for username,raw in cursor.fetchall():
+            if not raw:
+                logger.warning("Skipping empty face encoding"); continue
+            try: encoding=np.frombuffer(raw,dtype=np.float64)
+            except (TypeError,ValueError):
+                logger.warning("Skipping unreadable face encoding"); continue
+            encoding=_valid_encoding(encoding)
+            if encoding is None:
+                logger.warning("Skipping malformed face encoding"); continue
+            loaded.append((username,encoding))
     finally:
-        if cursor is not None:
-            cursor.close()
-        if conn is not None:
-            conn.close()
-
-    known_users = loaded_users
-    logger.info("Loaded %d valid face encoding(s)", len(known_users))
+        try:
+            if cursor is not None: cursor.close()
+        finally:
+            if conn is not None: conn.close()
+    known_users=loaded
+    logger.info("Loaded %d valid face encodings",len(known_users))
     return len(known_users)
-
-
 def check_face(frame):
-    """Return (username-or-None, face-location) for each detected face."""
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    face_locations = face_recognition.face_locations(rgb)
-    if not face_locations:
-        return []
-
-    face_encodings = face_recognition.face_encodings(rgb, face_locations)
-    recognized_results = []
-
-    for face_encoding, face_location in zip(face_encodings, face_locations):
-        matched_username = None
-        best_distance = float("inf")
-
-        for username, db_encoding in known_users:
-            distance = float(
-                face_recognition.face_distance([db_encoding], face_encoding)[0]
-            )
-            if distance < best_distance:
-                best_distance = distance
-                matched_username = username
-
-        if best_distance >= FACE_MATCH_THRESHOLD:
-            matched_username = None
-
-        recognized_results.append((matched_username, face_location))
-
-    return recognized_results
+    """Return (username-or-None, face-location) for all detected faces."""
+    if frame is None: return []
+    rgb=cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
+    locations=face_recognition.face_locations(rgb)
+    if not locations: return []
+    candidates=face_recognition.face_encodings(rgb,locations)
+    valid=[(name,enc) for name,raw in known_users if (enc:=_valid_encoding(raw)) is not None]
+    results=[]
+    for index,location in enumerate(locations):
+        matched=None
+        if index<len(candidates) and valid:
+            candidate=_valid_encoding(candidates[index])
+            if candidate is not None:
+                distances=np.asarray(face_recognition.face_distance([enc for _name,enc in valid],candidate),dtype=np.float64).reshape(-1)
+                if distances.size==len(valid) and np.isfinite(distances).all():
+                    best=int(np.argmin(distances))
+                    if float(distances[best])<FACE_MATCH_THRESHOLD: matched=valid[best][0]
+        results.append((matched,location))
+    return results
