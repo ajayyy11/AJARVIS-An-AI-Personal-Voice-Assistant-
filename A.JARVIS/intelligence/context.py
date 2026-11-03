@@ -1,10 +1,9 @@
-"""Bounded intent classification and relevance-ranked conversation context.
+"""Bounded intent classification and relevant conversation context.
 
 This module selects safe text context only. It never executes commands or
 changes authorization decisions.
 """
 from __future__ import annotations
-
 import re
 from collections.abc import Mapping, Sequence
 
@@ -14,9 +13,10 @@ MAX_CONTEXT_CHARS = 6000
 _FOLLOW_UP_RE = re.compile(
     r"^(?:and\b|also\b|it\b|that\b|this\b|they\b|them\b|those\b|these\b|"
     r"continue\b|go on\b|do that\b|do it\b|repeat that\b|again\b|"
-    r"explain more\b|tell me more\b|what about that\b|why is that\b|how about it\b|"
+    r"explain more\b|tell me more\b|what about\b|why\b|how about\b|"
     r"open it\b|run it\b|search it\b|find it\b|summarize that\b|"
-    r"what about it\b|(?:why|how)\s+(?:is that|about it|does that|did that)\b)",
+    r"same for\b|and the\b|what if\b|how much\b|how many\b|"
+    r"what happens if\b|can you expand\b)",
     re.I,
 )
 _TOKEN_RE = re.compile(r"[a-z0-9]{2,}", re.I)
@@ -37,32 +37,29 @@ def _tokens(value: str) -> set[str]:
 
 
 def is_follow_up(command: str) -> bool:
-    """Detect short elliptical requests that depend on conversation context."""
     text = _normalise(command)
     return bool(text and _FOLLOW_UP_RE.match(text))
 
 
 def classify_intent(command: str) -> str:
-    """Classify request type deterministically; classification does not execute."""
     text = _normalise(command)
     if not text:
         return "unknown"
+    if re.match(r"^(?:what do you remember|remember that|remember my|forget that|forget my|forget memory|update memory|save preference|set preference)\b", text):
+        return "memory"
     if is_follow_up(text):
         return "follow_up"
-
-    if re.match(r"^(?:search|look up|research)\b", text) or re.search(
-        r"\b(?:latest|news|find information)\b", text
+    if re.match(r"^(?:search|look up|research|find out)\b", text) or re.search(
+        r"\b(?:latest|recent news|find information|look for)\b", text
     ):
         return "search"
-
     if re.match(
         r"^(?:open|launch|close|lock|shutdown|restart|turn|set|create|delete|save|"
         r"take|find|play|pause|mute|unmute|increase|decrease|volume|"
-        r"system activate|system deactivate)\b",
+        r"system activate|system deactivate|add|remove|change|update)\b",
         text,
     ):
         return "command"
-
     if text.endswith("?") or re.match(
         r"^(?:who|what|when|where|why|how|is|are|am|do|does|did|can|could|"
         r"would|should|will|tell me|explain|describe)\b",
@@ -72,17 +69,8 @@ def classify_intent(command: str) -> str:
     return "conversation"
 
 
-def select_relevant_history(
-    command: str,
-    history: Sequence[Mapping[str, str]] | None,
-    *,
-    limit: int = MAX_CONTEXT_ITEMS,
-) -> list[dict[str, str]]:
-    """Select relevant exchanges from caller-provided user-scoped history.
-
-    Follow-ups prefer recent turns. New topics rank by lexical relevance and
-    recency. Both item count and total characters are bounded.
-    """
+def select_relevant_history(command: str, history: Sequence[Mapping[str, str]] | None,
+                            *, limit: int = MAX_CONTEXT_ITEMS) -> list[dict[str, str]]:
     if not isinstance(command, str) or not command.strip() or not history:
         return []
     try:
@@ -91,7 +79,6 @@ def select_relevant_history(
         max_items = MAX_CONTEXT_ITEMS
     if not max_items:
         return []
-
     rows = []
     for index, item in enumerate(history):
         if not isinstance(item, Mapping):
@@ -102,34 +89,28 @@ def select_relevant_history(
             rows.append({"command": cmd, "response": response, "_index": index})
     if not rows:
         return []
-
     if is_follow_up(command):
         chosen = rows[-max_items:]
     else:
         query_tokens = _tokens(command)
         ranked = []
         for row in rows:
-            command_tokens = _tokens(row["command"])
-            response_tokens = _tokens(row["response"])
-            overlap = len(query_tokens & command_tokens) * 4 + len(query_tokens & response_tokens)
-            # For a new topic, omit zero-overlap exchanges rather than filling
-            # the context window with unrelated history. Recency breaks ties only.
+            cmd_tokens, response_tokens = _tokens(row["command"]), _tokens(row["response"])
+            overlap = len(query_tokens & cmd_tokens) * 4 + len(query_tokens & response_tokens)
             if overlap:
                 score = overlap * (len(rows) + 1) + row["_index"]
                 ranked.append((score, row["_index"], row))
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
         chosen = [item[2] for item in ranked[:max_items]]
         chosen.sort(key=lambda row: row["_index"])
-
-    output = []
-    budget = MAX_CONTEXT_CHARS
+    output, budget = [], MAX_CONTEXT_CHARS
     for row in chosen:
         entry = {"command": row["command"], "response": row["response"]}
         size = len(entry["command"]) + len(entry["response"])
         if size > budget:
             if not output and budget:
                 entry["command"] = entry["command"][:budget]
-                entry["response"] = entry["response"][:max(0, budget - len(entry["command"]))]
+                entry["response"] = entry["response"][:max(0, budget-len(entry["command"]))]
                 output.append(entry)
             break
         output.append(entry)
@@ -138,7 +119,6 @@ def select_relevant_history(
 
 
 def build_context_messages(command: str, history: Sequence[Mapping[str, str]] | None):
-    """Build Gemini conversation messages ending in the current user turn."""
     messages = []
     for entry in select_relevant_history(command, history):
         messages.append({"role": "user", "parts": [{"text": entry["command"]}]})
