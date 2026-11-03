@@ -124,6 +124,7 @@ def test_existing_activity_table_with_wrong_columns_is_rejected():
     indexes={
         "command_history":{"idx_command_history_username_id":("username","id")},
         "user_memories":{"uq_user_memories_username_key":("username","memory_key")},
+        "automation_activity":{"idx_automation_activity_user_id":("username","id")},
     }
     actions,errors=plan_migration(tables,columns,indexes)
     assert actions==[]
