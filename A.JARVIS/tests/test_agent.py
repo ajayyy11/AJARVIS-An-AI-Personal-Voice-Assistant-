@@ -70,7 +70,8 @@ def test_default_registry_exposes_only_read_only_tools():
 
     assert {tool["name"] for tool in tools} == {
         "get_current_datetime", "get_system_status", "get_battery_status",
-        "read_recent_notes", "search_personal_notes"
+        "read_recent_notes", "search_personal_notes", "read_user_memories",
+        "search_user_memories"
     }
     assert all(tool["risk_level"] == "read_only" for tool in tools)
 
@@ -210,3 +211,15 @@ def test_empty_registry_falls_back_to_plain_gemini_response():
 
     assert result == "Hello there."
     assert not getattr(client.calls[0]["config"], "tools", [])
+
+
+def test_default_registry_includes_read_only_personal_memory_tools(monkeypatch):
+    from intelligence import agent
+
+    monkeypatch.setattr(agent, "list_memories", lambda username, limit=10: [{"key": "answer_style", "value": "concise"}])
+    monkeypatch.setattr(agent, "search_memories", lambda username, query, limit=5: [{"key": "answer_style", "value": "concise"}])
+    registry = agent.build_default_registry()
+
+    assert registry.invoke("read_user_memories", username="ajay")["memories"][0]["value"] == "concise"
+    assert registry.invoke("search_user_memories", username="ajay", arguments={"query": "style"})["matches"][0]["key"] == "answer_style"
+    assert all(item["risk_level"] == "read_only" for item in registry.list_tools())

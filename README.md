@@ -10,7 +10,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 - Gemini-powered assistant with bounded, allow-listed read-only tools and grounded web research
 - Face-authentication workflow using computer-vision libraries
 - MySQL database connection layer
-- User-scoped command history, AI context, notes, and activation state
+- User-scoped command history, AI context, notes, activation state, and editable personal memory
 - Session management and system-statistics modules
 
 ## Tech Stack

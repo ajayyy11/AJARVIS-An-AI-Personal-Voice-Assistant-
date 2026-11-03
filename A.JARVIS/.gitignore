@@ -16,3 +16,6 @@ notes.txt
 
 # Camera test output / captured frames
 test_frame.jpg
+
+# Per-user local notes and private workspace data
+user_data/

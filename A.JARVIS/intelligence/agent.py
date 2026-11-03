@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 
 from intelligence.notes import read_recent_notes, search_personal_notes
+from intelligence.user_memory import list_memories, search_memories
 from intelligence.tool_registry import (
     ToolArgumentError,
     ToolNotFoundError,
@@ -113,6 +114,31 @@ def build_default_registry() -> ToolRegistry:
         "search_personal_notes",
         "Search the signed-in user's saved notes for a phrase.",
         _search_personal_notes_tool,
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "minLength": 1, "maxLength": 120},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    )
+    registry.register(
+        "read_user_memories",
+        "Read the signed-in user's explicitly saved preferences and facts.",
+        lambda *, username, limit=10: {"memories": list_memories(username, limit=limit)},
+        parameters={
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 30}},
+            "required": [],
+            "additionalProperties": False,
+        },
+    )
+    registry.register(
+        "search_user_memories",
+        "Find explicitly saved user preferences and facts containing a phrase.",
+        lambda *, username, query, limit=5: {"matches": search_memories(username, query, limit=limit)},
         parameters={
             "type": "object",
             "properties": {

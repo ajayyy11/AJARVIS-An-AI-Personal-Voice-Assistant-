@@ -1,43 +1,37 @@
-"""Safely plan/apply the user-scoped command-history schema migration.
+"""Safely plan/apply local AJARVIS user-history and personalization migrations.
 
-Default mode is read-only and reports the changes that would be made.
-Use --apply only after backing up the database. Apply mode prompts for MIGRATE.
+Default mode is read-only. Apply mode prompts for MIGRATE after a verified backup.
 """
-
 import argparse
 import sys
 
 from config import Config
 from database.db import get_connection
 
-
 REQUIRED_COLUMNS = {
     "users": {"username", "face_encoding"},
     "command_history": {"id", "command", "response"},
+}
+USER_MEMORY_COLUMNS = {
+    "id", "username", "memory_key", "memory_value", "created_at", "updated_at"
 }
 HISTORY_INDEX_NAME = "idx_command_history_username_id"
 HISTORY_INDEX_COLUMNS = ("username", "id")
 
 
 def plan_migration(tables, columns, indexes):
-    """Return (actions, errors) without making any database changes."""
-    actions = []
-    errors = []
-
+    """Return planned actions and errors without making schema changes."""
+    actions, errors = [], []
     for table_name in REQUIRED_COLUMNS:
         if table_name not in tables:
             errors.append(f"Missing required table: {table_name}")
-
     if errors:
         return actions, errors
 
     for table_name, required in REQUIRED_COLUMNS.items():
         missing = sorted(required - columns.get(table_name, set()))
         if missing:
-            errors.append(
-                f"Table {table_name} is missing required column(s): {', '.join(missing)}"
-            )
-
+            errors.append(f"Table {table_name} is missing required column(s): {', '.join(missing)}")
     if errors:
         return actions, errors
 
@@ -55,6 +49,23 @@ def plan_migration(tables, columns, indexes):
             f"expected {HISTORY_INDEX_COLUMNS!r}. Inspect it manually; no changes were planned."
         )
 
+    if "user_memories" not in tables:
+        actions.append("create_user_memories_table")
+    else:
+        missing = sorted(USER_MEMORY_COLUMNS - columns.get("user_memories", set()))
+        if missing:
+            errors.append(
+                "Table user_memories is missing required column(s): " + ", ".join(missing)
+            )
+        memory_indexes = indexes.get("user_memories", {})
+        memory_unique = memory_indexes.get("uq_user_memories_username_key")
+        if memory_unique is None:
+            errors.append("user_memories is missing unique index uq_user_memories_username_key.")
+        elif tuple(memory_unique) != ("username", "memory_key"):
+            errors.append(
+                "Index uq_user_memories_username_key must cover (username, memory_key); "
+                "inspect the existing index manually."
+            )
     return actions, errors
 
 
@@ -65,20 +76,17 @@ def read_schema(cursor, database_name):
         (database_name,),
     )
     tables = {row[0] for row in cursor.fetchall()}
-
-    columns = {}
-    indexes = {}
-    for table_name in REQUIRED_COLUMNS:
+    columns, indexes = {}, {}
+    inspected_tables = [*REQUIRED_COLUMNS, "user_memories"]
+    for table_name in inspected_tables:
         if table_name not in tables:
             continue
-
         cursor.execute(
             "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
             "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
             (database_name, table_name),
         )
         columns[table_name] = {row[0] for row in cursor.fetchall()}
-
         cursor.execute(
             "SELECT INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX "
             "FROM information_schema.STATISTICS "
@@ -93,43 +101,35 @@ def read_schema(cursor, database_name):
             name: tuple(column for _, column in sorted(parts))
             for name, parts in per_index.items()
         }
-
     return tables, columns, indexes
 
 
 def migrate_database(apply=False, confirm=input):
-    """Report planned changes, or apply after an explicit interactive confirmation."""
-    connection = None
-    cursor = None
+    """Report changes or apply them after explicit interactive confirmation."""
+    connection = cursor = None
     try:
         connection = get_connection()
         cursor = connection.cursor()
         tables, columns, indexes = read_schema(cursor, Config.MYSQL_DB)
         actions, errors = plan_migration(tables, columns, indexes)
-
         for error in errors:
             print(f"ERROR: {error}")
         if errors:
             print("Migration stopped. No schema changes were made.")
             return 1
-
         if not actions:
-            print(f"Database {Config.MYSQL_DB} already has the required user-history schema.")
+            print(f"Database {Config.MYSQL_DB} already has the required AJARVIS schema.")
             return 0
 
         descriptions = {
-            "add_nullable_username_column": (
-                "Add nullable command_history.username (existing rows stay NULL)"
-            ),
-            "add_user_history_index": (
-                "Create index idx_command_history_username_id (username, id)"
-            ),
+            "add_nullable_username_column": "Add nullable command_history.username (legacy rows remain NULL)",
+            "add_user_history_index": "Create index idx_command_history_username_id (username, id)",
+            "create_user_memories_table": "Create user_memories for editable, user-scoped preferences and facts",
         }
         print(f"Database: {Config.MYSQL_DB}")
         print("Planned schema changes:")
         for action in actions:
             print(f"  - {descriptions[action]}")
-
         if not apply:
             print("DRY RUN ONLY: no changes were made. Back up the database, then rerun with --apply.")
             return 0
@@ -143,15 +143,26 @@ def migrate_database(apply=False, confirm=input):
         for action in actions:
             if action == "add_nullable_username_column":
                 cursor.execute(
-                    "ALTER TABLE command_history "
-                    "ADD COLUMN username VARCHAR(100) NULL AFTER id"
+                    "ALTER TABLE command_history ADD COLUMN username VARCHAR(100) NULL AFTER id"
                 )
             elif action == "add_user_history_index":
                 cursor.execute(
-                    "CREATE INDEX idx_command_history_username_id "
-                    "ON command_history (username, id)"
+                    "CREATE INDEX idx_command_history_username_id ON command_history (username, id)"
                 )
-
+            elif action == "create_user_memories_table":
+                cursor.execute(
+                    "CREATE TABLE user_memories ("
+                    "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,"
+                    "username VARCHAR(100) NOT NULL,"
+                    "memory_key VARCHAR(80) NOT NULL,"
+                    "memory_value VARCHAR(1000) NOT NULL,"
+                    "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                    "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+                    "PRIMARY KEY (id),"
+                    "UNIQUE KEY uq_user_memories_username_key (username, memory_key),"
+                    "KEY idx_user_memories_username_updated (username, updated_at)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
         print("Migration completed. Existing history rows remain unassigned (username IS NULL).")
         return 0
     except Exception as exc:
@@ -159,26 +170,20 @@ def migrate_database(apply=False, confirm=input):
         return 1
     finally:
         if cursor is not None:
-            try:
-                cursor.close()
-            except Exception:
-                pass
+            try: cursor.close()
+            except Exception: pass
         if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass
+            try: connection.close()
+            except Exception: pass
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Apply the planned changes after typing MIGRATE at the confirmation prompt.",
+        "--apply", action="store_true",
+        help="Apply planned changes after typing MIGRATE at the confirmation prompt.",
     )
-    args = parser.parse_args()
-    return migrate_database(apply=args.apply)
+    return migrate_database(apply=parser.parse_args().apply)
 
 
 if __name__ == "__main__":
