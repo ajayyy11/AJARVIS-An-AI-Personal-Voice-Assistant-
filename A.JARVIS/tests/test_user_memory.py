@@ -94,7 +94,7 @@ def test_forget_matching_memory_only_deletes_matching_owned_entries(monkeypatch)
     assert deleted==[("alice","answer_style")]
 
 
-@pytest.mark.parametrize("key",["","A","bad key","../secret","x"*81])
+@pytest.mark.parametrize("key",["","A","../secret","x"*81])
 def test_invalid_memory_keys_are_rejected(key):
     with pytest.raises(ValueError):
         user_memory.normalize_memory_key(key)
@@ -109,3 +109,7 @@ def test_invalid_or_sensitive_memory_values_are_rejected(value):
 def test_memory_is_scoped_and_requires_valid_user():
     with pytest.raises(ValueError):
         user_memory.save_memory(" ","answer_style","Concise")
+
+
+def test_memory_key_normalizes_spaces_to_underscores():
+    assert user_memory.normalize_memory_key("Answer Style")=="answer_style"
