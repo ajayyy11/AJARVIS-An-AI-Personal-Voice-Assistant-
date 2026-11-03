@@ -416,3 +416,19 @@ def cancel_plan(plan_id: str, username: str) -> dict[str, Any]:
                 step["status"] = "cancelled"
     _activity(username, plan, "plan_cancelled")
     return _snapshot(plan)
+
+
+def cancel_user_plans(username: str) -> int:
+    """Invalidate outstanding approvals when a user logs out or deactivates AJARVIS."""
+    owner = _valid_owner(username)
+    with _lock:
+        plan_ids = [
+            plan["plan_id"] for plan in _plans.values()
+            if plan["username"] == owner
+            and plan["status"] not in {"completed", "cancelled", "failed", "expired"}
+        ]
+    cancelled = 0
+    for plan_id in plan_ids:
+        cancel_plan(plan_id, owner)
+        cancelled += 1
+    return cancelled

@@ -6,7 +6,16 @@ from config import Config
 from security.camera import generate_frames
 from security.session_manager import is_authenticated, revoke_access, grant_access
 from security.face_auth import load_known_faces
-from intelligence.command_router import process_command
+from intelligence.command_router import process_command, _get_genai_client
+from intelligence.automation import (
+    AutomationError,
+    advance_plan,
+    cancel_plan,
+    cancel_user_plans,
+    respond_to_approval,
+)
+from intelligence.planner import PlannerError, generate_task_plan
+from intelligence.activity_log import list_recent_activity
 from intelligence.context import classify_intent
 from intelligence.user_state import is_user_active
 from intelligence.user_memory import list_memories, save_memory, delete_memory
@@ -333,6 +342,88 @@ def delete_personal_memory_api(memory_key):
 
 
 # ==========================================
+# PHASE 5 — TASK PLANNING & CONTROLLED AUTOMATION
+# ==========================================
+@app.route("/api/automation/plan", methods=["POST"])
+def create_automation_plan_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+
+    username = session["user"]
+    if not is_user_active(username):
+        return jsonify({"error": "Activate AJARVIS before starting an automation plan."}), 409
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    task = data.get("task")
+    if not isinstance(task, str) or not task.strip() or len(task.strip()) > 1000:
+        return jsonify({"error": "Task must contain 1–1000 characters."}), 400
+
+    try:
+        planned = generate_task_plan(_get_genai_client(), task, username)
+        plan = advance_plan(planned["plan_id"], username)
+        response = jsonify({"plan": plan})
+        response.status_code = 201
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except PlannerError as exc:
+        return jsonify({"error": str(exc)}), 422
+    except AutomationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        app.logger.exception("Automation planning failed")
+        return jsonify({"error": "The automation plan could not be created."}), 503
+
+
+@app.route("/api/automation/approval/<approval_id>", methods=["POST"])
+def respond_automation_approval_api(approval_id):
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    username = session["user"]
+    if not is_user_active(username):
+        return jsonify({"error": "Activate AJARVIS before approving automation."}), 409
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or data.get("decision") not in {"approve", "reject"}:
+        return jsonify({"error": "Decision must be 'approve' or 'reject'."}), 400
+    try:
+        plan = respond_to_approval(approval_id, username, data["decision"])
+        response = jsonify({"plan": plan})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except AutomationError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+
+@app.route("/api/automation/plan/<plan_id>/cancel", methods=["POST"])
+def cancel_automation_plan_api(plan_id):
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    try:
+        plan = cancel_plan(plan_id, session["user"])
+        response = jsonify({"plan": plan})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except AutomationError as exc:
+        return jsonify({"error": str(exc)}), 404
+
+
+@app.route("/api/automation/activity", methods=["GET"])
+def automation_activity_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    response = jsonify({"activity": list_recent_activity(session["user"], limit=30)})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+# ==========================================
 # VOICE COMMAND
 # ==========================================
 @app.route("/voice_command", methods=["POST"])
@@ -364,6 +455,11 @@ def voice_command():
 # ==========================================
 @app.route("/logout")
 def logout():
+    if is_authenticated():
+        try:
+            cancel_user_plans(session["user"])
+        except AutomationError:
+            app.logger.warning("Could not cancel pending automation plans during logout")
     revoke_access()
     return redirect(url_for("home"))
 
