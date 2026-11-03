@@ -12,7 +12,7 @@ From Windows Command Prompt, run:
 mysqldump -u root -p --single-transaction --routines --triggers ajarvis_db > ajarvis_backup_before_phase4.sql
 ```
 
-Replace the MySQL account and database name if yours differ. Confirm the dump file exists and is not empty. Store it securely because it contains biometric face encodings and command history.
+Replace the MySQL account and database name if yours differ. Confirm the dump file exists and is not empty. Store it securely because it contains biometric face encodings, command history, and personal preferences/facts.
 
 ## 2. Update code and settings
 
@@ -44,7 +44,7 @@ After confirming you have a valid backup, run:
 python database/migrate_database.py --apply
 ```
 
-Review the planned changes and type MIGRATE only when the displayed database name is correct. The script adds a nullable username column to `command_history` if missing, creates its supporting index if missing, and creates the `user_memories` table if missing. It does not delete or rewrite existing records. Existing history rows remain `username IS NULL` because their original owners cannot be identified safely. The new memory table starts empty and stores each memory under the currently signed-in username.
+Review the planned changes and type MIGRATE only when the displayed database name is correct. The script adds a nullable username column to `command_history` if missing, creates its supporting index if missing, and creates the `user_memories` table and its unique `(username, memory_key)` constraint if missing. It does not delete or rewrite existing records. Existing history rows remain `username IS NULL` because their original owners cannot be identified safely. The new memory table starts empty and stores each memory under the currently signed-in username.
 
 The script is safe to run again after a successful migration: it should report that no changes are needed. If it reports an error, stop and review the message before attempting manual SQL.
 

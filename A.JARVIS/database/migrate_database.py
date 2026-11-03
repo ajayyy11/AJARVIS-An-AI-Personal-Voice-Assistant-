@@ -57,6 +57,15 @@ def plan_migration(tables, columns, indexes):
             errors.append(
                 "Table user_memories is missing required column(s): " + ", ".join(missing)
             )
+        memory_indexes = indexes.get("user_memories", {})
+        memory_unique = memory_indexes.get("uq_user_memories_username_key")
+        if memory_unique is None:
+            errors.append("user_memories is missing unique index uq_user_memories_username_key.")
+        elif tuple(memory_unique) != ("username", "memory_key"):
+            errors.append(
+                "Index uq_user_memories_username_key must cover (username, memory_key); "
+                "inspect the existing index manually."
+            )
     return actions, errors
 
 
