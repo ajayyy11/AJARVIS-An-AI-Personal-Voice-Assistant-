@@ -277,11 +277,12 @@
     recognitionInstance = recognition;
     recognition.lang = voiceLanguageSelect.value || "en-IN";
     recognition.interimResults = true;
-    recognition.continuous = false;
-    recognition.maxAlternatives = 3;
+    recognition.continuous = true;
+    recognition.maxAlternatives = 1;
     manualStop = false;
     voiceErrorShown = false;
     submittedTranscript = false;
+    let waitingForCommand = false;
     isListening = true;
     syncVoiceControls();
     setAssistantStatus("listening", "LISTENING");
@@ -336,16 +337,38 @@
       if (submittedTranscript || manualStop || voiceErrorShown) return;
 
       const rawTranscript = capturedFinalTranscript || $("commandInput").value.trim();
-      const command = rawTranscript
-        .replace(/^\s*(?:(?:hey|hi|hello|ok|okay)\s+)?jarvis[,.!]?\s*/i, "")
+      const cleanedTranscript = rawTranscript
+        .replace(/^\\s*(?:(?:hey|hi|hello|ok|okay)\\s+)?jarvis[,.!?]?\\s*/i, "")
         .trim();
+      const hasWakeWord = /(?:^|\\s)(?:hey|hi|hello|ok|okay)?\\s*jarvis(?:$|[,.!?\\s])/i.test(rawTranscript);
+      const command = waitingForCommand ? rawTranscript.trim() : cleanedTranscript;
+
+      if (!command && hasWakeWord && !waitingForCommand) {
+        waitingForCommand = true;
+        capturedFinalTranscript = "";
+        $("commandInput").value = "";
+        toast("Yes? I'm listening. Please say your command now.", false, "AJARVIS");
+        if (!manualStop && !voiceErrorShown) {
+          try {
+            recognitionInstance = recognition;
+            isListening = true;
+            recognition.start();
+            syncVoiceControls();
+            setAssistantStatus("listening", "LISTENING");
+            return;
+          } catch (_error) {
+            recognitionInstance = null;
+            isListening = false;
+          }
+        }
+      }
 
       if (!command) {
         $("commandInput").value = "";
         toast(
           rawTranscript
-            ? "I heard “Jarvis”. Please say your command after the wake phrase."
-            : "I didn't catch anything that time. Check microphone permission and try again.",
+            ? "I heard the wake word, but not the command. Tap the microphone and try again."
+            : "I didn't catch anything. Check microphone permission and try again.",
           true,
           "VOICE INPUT"
         );
