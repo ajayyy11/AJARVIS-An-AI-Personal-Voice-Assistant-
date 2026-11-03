@@ -112,8 +112,11 @@ def select_relevant_history(
             command_tokens = _tokens(row["command"])
             response_tokens = _tokens(row["response"])
             overlap = len(query_tokens & command_tokens) * 4 + len(query_tokens & response_tokens)
-            score = overlap * (len(rows) + 1) + row["_index"]
-            ranked.append((score, row["_index"], row))
+            # For a new topic, omit zero-overlap exchanges rather than filling
+            # the context window with unrelated history. Recency breaks ties only.
+            if overlap:
+                score = overlap * (len(rows) + 1) + row["_index"]
+                ranked.append((score, row["_index"], row))
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
         chosen = [item[2] for item in ranked[:max_items]]
         chosen.sort(key=lambda row: row["_index"])
