@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>AJARVIS Control Center</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -450,6 +451,27 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     .telemetry-updated{color:#7899a8;font-size:10px}
     @media(prefers-reduced-motion:reduce){.meter-fill{transition:none}}
 
+
+    /* Phase 4 — editable, user-scoped memory panel */
+    .memory-panel{width:min(94%,1180px);margin:18px auto 32px;position:relative;z-index:10;grid-column:1/-1;border:1px solid rgba(0,240,255,.24);background:rgba(0,15,25,.92);box-shadow:0 0 24px rgba(0,240,255,.08);padding:20px}
+    .memory-heading-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .memory-helper{color:#7899a8;font-size:11px;line-height:1.6;margin:5px 0 12px}
+    .memory-form{display:grid;grid-template-columns:150px minmax(160px,1fr) 90px minmax(220px,2fr) auto;align-items:center;gap:10px;margin:12px 0}
+    .memory-form label{font-size:10px;letter-spacing:1px;color:#80deea}
+    .memory-form input{min-width:0;width:100%;padding:9px 10px;border:1px solid rgba(0,240,255,.24);border-radius:4px;background:rgba(0,240,255,.05);color:#e0f7fa;font:inherit;font-size:12px}
+    .memory-form input:focus{outline:1px solid #00f0ff}
+    .memory-action{border:1px solid rgba(0,240,255,.45);background:rgba(0,240,255,.08);color:#00f0ff;border-radius:4px;padding:9px 12px;font-size:10px;letter-spacing:1px;cursor:pointer}
+    .memory-action:disabled{opacity:.5;cursor:wait}
+    .memory-status{min-height:20px;color:#80deea;font-size:11px;margin:8px 0}
+    .memory-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+    .memory-entry{border:1px solid rgba(0,240,255,.16);border-left:2px solid #00bcd4;background:rgba(0,240,255,.035);padding:11px;min-width:0}
+    .memory-entry-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .memory-entry strong{font-size:11px;color:#00f0ff;overflow-wrap:anywhere}
+    .memory-entry p{font-size:12px;color:#d7edf2;line-height:1.5;margin:7px 0;overflow-wrap:anywhere}
+    .memory-entry small{font-size:9px;color:#7899a8}
+    .memory-delete{border:1px solid rgba(255,90,90,.35);background:transparent;color:#ff9a9a;border-radius:3px;padding:4px 7px;font-size:9px;cursor:pointer}
+    @media(max-width:760px){.memory-panel{width:100%;margin:12px 0;padding:14px}.memory-form{grid-template-columns:1fr}.memory-form label{margin-top:6px}}
+
 </style>
 
 <body>
@@ -549,7 +571,120 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
 
   </div>
 
+    <section class="panel memory-panel" aria-labelledby="memory-heading">
+      <div class="memory-heading-row">
+        <div>
+          <h3 id="memory-heading">PERSONAL MEMORY</h3>
+          <p class="memory-helper">Explicit facts and preferences AJARVIS can use to personalize Gemini replies.</p>
+        </div>
+        <button type="button" id="refresh-memory-btn" class="memory-action">REFRESH</button>
+      </div>
+      <form id="memory-form" class="memory-form">
+        <label for="memory-key">MEMORY KEY</label>
+        <input id="memory-key" name="key" maxlength="80" pattern="[A-Za-z][A-Za-z0-9_. -]{1,79}" placeholder="e.g. answer_style" required>
+        <label for="memory-value">VALUE</label>
+        <input id="memory-value" name="value" maxlength="1000" placeholder="e.g. concise answers with examples" required>
+        <button type="submit" id="save-memory-btn" class="memory-action">SAVE MEMORY</button>
+      </form>
+      <p class="memory-helper">You can also say “remember my answer style is concise” or “forget my answer style”. Never save passwords, API keys or tokens.</p>
+      <div id="memory-status" class="memory-status" role="status" aria-live="polite">Loading saved memories…</div>
+      <div id="memory-list" class="memory-list"></div>
+    </section>
+
   <script>
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+
+    /* PHASE 4 — PERSONAL MEMORY MANAGER */
+    const memoryForm = document.getElementById("memory-form");
+    const memoryList = document.getElementById("memory-list");
+    const memoryStatus = document.getElementById("memory-status");
+    const saveMemoryButton = document.getElementById("save-memory-btn");
+
+    async function loadPersonalMemories() {
+      memoryStatus.textContent = "Loading saved memories…";
+      memoryList.replaceChildren();
+      try {
+        const response = await fetch("/api/memories", { cache: "no-store" });
+        if (response.status === 401) { window.location.replace("/login"); return; }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not load personal memories.");
+        const memories = Array.isArray(data.memories) ? data.memories : [];
+        if (!memories.length) {
+          memoryStatus.textContent = "No saved memories yet. Add a preference above or tell AJARVIS to remember something.";
+          return;
+        }
+        memoryStatus.textContent = memories.length + " saved memor" + (memories.length === 1 ? "y" : "ies");
+        memories.forEach((entry) => {
+          const card = document.createElement("article");
+          card.className = "memory-entry";
+          const head = document.createElement("div");
+          head.className = "memory-entry-head";
+          const key = document.createElement("strong");
+          key.textContent = entry.key;
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "memory-delete";
+          remove.textContent = "DELETE";
+          remove.setAttribute("aria-label", "Delete memory " + entry.key);
+          remove.addEventListener("click", () => deletePersonalMemory(entry.key, remove));
+          const value = document.createElement("p");
+          value.textContent = entry.value;
+          const updated = document.createElement("small");
+          updated.textContent = entry.updated_at ? "Updated " + new Date(entry.updated_at).toLocaleString() : "Saved memory";
+          head.append(key, remove);
+          card.append(head, value, updated);
+          memoryList.appendChild(card);
+        });
+      } catch (error) {
+        memoryStatus.textContent = error.message || "Personal memory is unavailable.";
+      }
+    }
+
+    async function deletePersonalMemory(key, button) {
+      if (!window.confirm("Delete the saved memory '" + key + "'?")) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/memories/" + encodeURIComponent(key), {
+          method: "DELETE",
+          headers: { "X-CSRF-Token": csrfToken }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not delete memory.");
+        memoryStatus.textContent = "Memory deleted.";
+        await loadPersonalMemories();
+      } catch (error) {
+        memoryStatus.textContent = error.message || "Could not delete memory.";
+        button.disabled = false;
+      }
+    }
+
+    memoryForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (saveMemoryButton.disabled) return;
+      const key = document.getElementById("memory-key").value.trim();
+      const value = document.getElementById("memory-value").value.trim();
+      saveMemoryButton.disabled = true;
+      memoryStatus.textContent = "Saving memory…";
+      try {
+        const response = await fetch("/api/memories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+          body: JSON.stringify({ key, value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not save memory.");
+        memoryForm.reset();
+        memoryStatus.textContent = "Saved '" + data.memory.key + "'.";
+        await loadPersonalMemories();
+      } catch (error) {
+        memoryStatus.textContent = error.message || "Could not save memory.";
+      } finally {
+        saveMemoryButton.disabled = false;
+      }
+    });
+
+    document.getElementById("refresh-memory-btn").addEventListener("click", loadPersonalMemories);
+    loadPersonalMemories();
 
     /* CLOCK */
     function updateClock() {
@@ -769,7 +904,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       try {
         const res = await fetch('/command', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify({ command })
         });
         const data = await res.json();
