@@ -2,12 +2,19 @@ name: Python CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ajarvis-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   session-tests:
@@ -22,6 +29,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: A.JARVIS/requirements-web.txt
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
