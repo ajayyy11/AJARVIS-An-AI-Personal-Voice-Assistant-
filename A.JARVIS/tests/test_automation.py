@@ -146,10 +146,16 @@ def test_url_tool_accepts_public_https_destinations():
 def test_action_registry_marks_mutating_tools_as_confirmation_required():
     registry=automation.build_automation_registry()
     actions={item["name"]:item for item in registry.list_tools()}
-    for name in ("open_website","launch_application","lock_workstation"):
-        assert actions[name]["requires_confirmation"] is True
-    assert actions["lock_workstation"]["risk_level"]=="destructive"
+    assert actions["open_website"]["requires_confirmation"] is True
+    assert actions["open_website"]["risk_level"]=="reversible"
     assert actions["read_user_memories"]["risk_level"]=="read_only"
+    if automation.os.name == "nt":
+        assert actions["launch_application"]["requires_confirmation"] is True
+        assert actions["lock_workstation"]["requires_confirmation"] is True
+        assert actions["lock_workstation"]["risk_level"]=="destructive"
+    else:
+        assert "launch_application" not in actions
+        assert "lock_workstation" not in actions
 
 
 def test_execution_failure_stops_plan_and_does_not_run_later_steps():
