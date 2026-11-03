@@ -87,6 +87,11 @@ def process_command(command, username):
     if "system deactivate" in command or "system shut down" in command or "system shutdown" in command:
         deactivate_user(username)
         clear_pending_power_action(username)
+        try:
+            from intelligence.automation import cancel_user_plans
+            cancel_user_plans(username)
+        except Exception:
+            logger.warning("Could not cancel automation plans during deactivation", exc_info=True)
         reply = f"System deactivating. Until next time, {username}."
         add_memory(command, reply, username)
         return reply

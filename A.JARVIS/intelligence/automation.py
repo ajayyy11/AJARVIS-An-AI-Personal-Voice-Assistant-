@@ -41,11 +41,11 @@ def _valid_owner(username: str) -> str:
     return username.strip()
 
 
-def _open_website(*, username: str, url: str) -> dict[str, Any]:
-    """Open one explicit HTTPS website; never evaluate a command or file path."""
+def _validate_website_url(url: str) -> str:
     if not isinstance(url, str) or len(url) > 2000:
         raise ToolArgumentError("Website URL is invalid.")
-    parts = urlsplit(url.strip())
+    normalized = url.strip()
+    parts = urlsplit(normalized)
     if parts.scheme.lower() != "https" or not parts.hostname:
         raise ToolArgumentError("Only HTTPS website URLs are allowed.")
     if parts.username or parts.password:
@@ -59,7 +59,13 @@ def _open_website(*, username: str, url: str) -> dict[str, Any]:
             raise ToolArgumentError("Private or local IP destinations are not allowed.")
     except ValueError:
         pass
-    opened = webbrowser.open(url.strip(), new=2)
+    return normalized
+
+
+def _open_website(*, username: str, url: str) -> dict[str, Any]:
+    """Open one explicit HTTPS website; never evaluate a command or file path."""
+    normalized = _validate_website_url(url)
+    opened = webbrowser.open(normalized, new=2)
     return {"opened": bool(opened), "message": "Browser request submitted." if opened else "Browser did not confirm opening."}
 
 
@@ -237,6 +243,8 @@ def create_plan(
             raise AutomationError(f"Step {index + 1} summary must contain 1–180 characters.")
         if not isinstance(reason, str) or not reason.strip() or len(reason) > 240:
             raise AutomationError(f"Step {index + 1} reason must contain 1–240 characters.")
+        if spec.name == "open_website":
+            _validate_website_url(str(arguments.get("url", "")))
         needs_confirmation = spec.risk_level != "read_only" or spec.confirmation_required
         steps.append({
             "step_id": uuid.uuid4().hex,
