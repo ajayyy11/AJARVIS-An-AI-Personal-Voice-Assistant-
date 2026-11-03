@@ -85,3 +85,18 @@ def test_words_containing_time_or_date_substrings_do_not_trigger_clock_commands(
     assert "AI responses are not configured" in reply
     assert not reply.startswith("Today is ")
     assert not reply.startswith("The current time is ")
+
+
+
+def test_system_status_uses_the_same_telemetry_source_as_hud(monkeypatch):
+    user_state.activate_user("alice")
+    monkeypatch.setattr(
+        command_router,
+        "get_stats",
+        lambda: {"cpu": 12.5, "memory": 41.0, "disk": 63.0, "uptime": "2d 4h 10m"},
+    )
+    reply = command_router.process_command("system status", "alice")
+    assert "CPU usage is 12.5%" in reply
+    assert "Memory usage is 41.0%" in reply
+    assert "Disk usage is 63.0%" in reply
+    assert "2d 4h 10m" in reply
