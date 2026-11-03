@@ -55,10 +55,10 @@ def _validate_website_url(url: str) -> str:
         raise ToolArgumentError("Local network destinations are not allowed.")
     try:
         address = ipaddress.ip_address(hostname)
-        if not address.is_global:
-            raise ToolArgumentError("Private or local IP destinations are not allowed.")
     except ValueError:
-        pass
+        address = None
+    if address is not None and not address.is_global:
+        raise ToolArgumentError("Private or local IP destinations are not allowed.")
     return normalized
 
 
@@ -173,6 +173,7 @@ def _snapshot(plan: dict[str, Any]) -> dict[str, Any]:
             }
             for step in plan["steps"]
         ],
+        "cancel_requested": bool(plan.get("cancel_requested", False)),
         "approval": (
             {
                 "approval_id": plan["approval_id"],
@@ -189,13 +190,16 @@ def _activity(username: str, plan: dict[str, Any], event: str, step: dict[str, A
     try:
         from intelligence.activity_log import record_activity
 
+        # Keep audit data metadata-only. Planner-generated summaries, user goals,
+        # URLs, arguments and tool results are never persisted to this table.
+        safe_summary = f"{step['tool']} {event}" if step else f"Automation {event}"
         record_activity(
             username=username,
             plan_id=plan["plan_id"],
             step_number=(plan["steps"].index(step) + 1) if step in plan["steps"] else None,
             event_type=event,
             tool_name=step["tool"] if step else None,
-            summary=(summary or (step["summary"] if step else plan["goal"]))[:240],
+            summary=safe_summary[:240],
         )
     except Exception:
         logger.warning("Could not write automation activity event", exc_info=True)
@@ -270,6 +274,7 @@ def create_plan(
         "approval_id": None,
         "approval_expires_at": None,
         "expires_at": current_time + PLAN_TTL_SECONDS,
+        "cancel_requested": False,
         "created_at": time.time(),
     }
     with _lock:
@@ -302,12 +307,19 @@ def advance_plan(plan_id: str, username: str, *, registry: ToolRegistry | None =
     with _lock:
         if plan["status"] in {"awaiting_approval", "completed", "cancelled", "failed", "expired"}:
             return _snapshot(plan)
-        if plan["status"] == "executing":
+        if plan["status"] in {"running", "executing"}:
             raise AutomationError("This plan is already being executed.")
         plan["status"] = "running"
 
     while True:
         with _lock:
+            if plan.get("cancel_requested"):
+                plan["status"] = "cancelled"
+                for pending_step in plan["steps"][plan["current_step"]:]:
+                    if pending_step["status"] == "pending":
+                        pending_step["status"] = "cancelled"
+                _activity(username, plan, "plan_cancelled")
+                return _snapshot(plan)
             if plan["current_step"] >= len(plan["steps"]):
                 plan["status"] = "completed"
                 _activity(username, plan, "plan_completed")
@@ -331,7 +343,15 @@ def advance_plan(plan_id: str, username: str, *, registry: ToolRegistry | None =
                 step["status"] = "completed"
                 step["result"] = _safe_preview(result)
                 plan["current_step"] += 1
+                if plan.get("cancel_requested"):
+                    plan["status"] = "cancelled"
+                    for pending_step in plan["steps"][plan["current_step"]:]:
+                        if pending_step["status"] == "pending":
+                            pending_step["status"] = "cancelled"
             _activity(username, plan, "step_completed", step)
+            if plan["status"] == "cancelled":
+                _activity(username, plan, "plan_cancelled")
+                return _snapshot(plan)
         except Exception as exc:
             with _lock:
                 step["status"] = "failed"
@@ -398,7 +418,11 @@ def respond_to_approval(
             step["status"] = "completed"
             step["result"] = _safe_preview(result)
             plan["current_step"] += 1
-            plan["status"] = "ready"
+            plan["status"] = "cancelled" if plan.get("cancel_requested") else "ready"
+            if plan["status"] == "cancelled":
+                for pending_step in plan["steps"][plan["current_step"]:]:
+                    if pending_step["status"] == "pending":
+                        pending_step["status"] = "cancelled"
         _activity(owner, plan, "step_completed", step)
     except Exception as exc:
         with _lock:
@@ -407,6 +431,9 @@ def respond_to_approval(
             plan["status"] = "failed"
         _activity(owner, plan, "step_failed", step, type(exc).__name__)
         logger.warning("Approved automation step failed: %s", step["tool"], exc_info=True)
+        return _snapshot(plan)
+    if plan["status"] == "cancelled":
+        _activity(owner, plan, "plan_cancelled")
         return _snapshot(plan)
     return advance_plan(plan["plan_id"], owner, registry=tools, now=current_time)
 
@@ -418,6 +445,12 @@ def cancel_plan(plan_id: str, username: str) -> dict[str, Any]:
             return _snapshot(plan)
         plan["approval_id"] = None
         plan["approval_expires_at"] = None
+        if plan["status"] in {"running", "executing"}:
+            # Do not claim that an already-started operation was undone. The
+            # current step may finish, but the executor will not start another.
+            plan["cancel_requested"] = True
+            _activity(username, plan, "cancel_requested")
+            return _snapshot(plan)
         plan["status"] = "cancelled"
         for step in plan["steps"][plan["current_step"]:]:
             if step["status"] in {"pending", "awaiting_approval"}:
