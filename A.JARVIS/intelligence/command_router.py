@@ -92,7 +92,7 @@ def process_command(command, username):
         return "System is offline for this user. Say 'system activate' to begin."
 
     # ── EXPLICIT PERSONAL MEMORY ──
-    if re.match(r"^(?:what do you remember|show my memories|list my memories|read my preferences)\\b", command):
+    if re.match(r"^(?:what do you remember|show my memories|list my memories|read my preferences)\b", command):
         try:
             memories = list_memories(username)
             if memories:
@@ -106,22 +106,22 @@ def process_command(command, username):
         add_memory(command, reply, username)
         return reply
 
-    if re.match(r"^(?:remember|save to memory)\\b", command):
+    if re.match(r"^(?:remember|save to memory)\b", command):
         text_to_remember = re.sub(
-            r"^(?:remember(?:\\s+that)?|save to memory)\\s*",
+            r"^(?:remember(?:\s+that)?|save to memory)\s*",
             "",
             original_command,
             count=1,
             flags=re.IGNORECASE,
         ).strip()
         assignment = re.match(
-            r"^(?:my\\s+)?([a-zA-Z][a-zA-Z0-9 _.-]{1,60}?)\\s*(?:=|:|\\bis\\b)\\s*(.+)$",
+            r"^(?:my\s+)?([a-zA-Z][a-zA-Z0-9 _.-]{1,60}?)\s*(?:=|:|\bis\b)\s*(.+)$",
             text_to_remember,
             flags=re.IGNORECASE,
         )
         try:
             if assignment and not text_to_remember.lower().startswith(("i ", "i'm ", "i am ")):
-                key = re.sub(r"^my\\s+", "", assignment.group(1).strip(), flags=re.IGNORECASE)
+                key = re.sub(r"^my\s+", "", assignment.group(1).strip(), flags=re.IGNORECASE)
                 saved = save_memory(username, key, assignment.group(2).strip())
             else:
                 saved = remember_fact(username, text_to_remember)
@@ -134,15 +134,15 @@ def process_command(command, username):
         add_memory(command, reply, username)
         return reply
 
-    if re.match(r"^(?:forget|remove from memory)\\b", command):
+    if re.match(r"^(?:forget|remove from memory)\b", command):
         phrase = re.sub(
-            r"^(?:forget|remove from memory)\\s*",
+            r"^(?:forget|remove from memory)\s*",
             "",
             original_command,
             count=1,
             flags=re.IGNORECASE,
         ).strip()
-        phrase = re.sub(r"^(?:my|the)\\s+", "", phrase, flags=re.IGNORECASE)
+        phrase = re.sub(r"^(?:my|the)\s+", "", phrase, flags=re.IGNORECASE)
         if not phrase or phrase.lower() in {"everything", "all", "all memories"}:
             reply = "Tell me the specific memory to forget, or delete individual memories in the dashboard."
         else:
