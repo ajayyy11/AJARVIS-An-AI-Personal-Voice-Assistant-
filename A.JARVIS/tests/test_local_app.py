@@ -15,6 +15,7 @@ def login(client,username="alice"):
     with client.session_transaction() as session:
         session["user"]=username
         session["login_time"]=datetime.now(timezone.utc).isoformat()
+        session["csrf_token"]="test-csrf-token"
 
 
 def test_local_command_requires_authentication(client):
@@ -26,7 +27,7 @@ def test_typed_and_spoken_routes_share_backend_and_authoritative_state(client,mo
     login(client); calls=[]
     monkeypatch.setattr(local_app,"process_command",lambda command,username:calls.append((command,username)) or "Command received.")
     monkeypatch.setattr(local_app,"is_user_active",lambda _username:True)
-    response=client.post(path,json={"command":"open Chrome"})
+    response=client.post(path,json={"command":"open Chrome"},headers={"X-CSRF-Token":"test-csrf-token"})
     assert response.status_code==200
     assert response.get_json()=={"response":"Command received.","active":True,"intent":"command"}
     assert calls==[("open Chrome","alice")]
@@ -34,9 +35,10 @@ def test_typed_and_spoken_routes_share_backend_and_authoritative_state(client,mo
 
 def test_local_command_rejects_invalid_payloads(client):
     login(client)
-    assert client.post("/command",json=["open Chrome"]).status_code==400
-    assert client.post("/command",json={"command":" "}).status_code==400
-    assert client.post("/command",json={"command":"x"*2001}).status_code==400
+    headers={"X-CSRF-Token":"test-csrf-token"}
+    assert client.post("/command",json=["open Chrome"],headers=headers).status_code==400
+    assert client.post("/command",json={"command":" "},headers=headers).status_code==400
+    assert client.post("/command",json={"command":"x"*2001},headers=headers).status_code==400
 
 
 def test_face_access_grants_only_detected_user(client,monkeypatch):
@@ -77,3 +79,67 @@ def test_dashboard_uses_server_activation_state(client,monkeypatch):
     login(client); monkeypatch.setattr(local_app,"is_user_active",lambda _username:True)
     response=client.get("/dashboard")
     assert response.status_code==200 and b"const initialActive = true" in response.data
+
+
+def test_command_route_rejects_missing_csrf_token(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"process_command",lambda *_args:"must not execute")
+    response=client.post("/command",json={"command":"what time is it?"})
+    assert response.status_code==403
+
+
+def test_memory_api_requires_authentication(client):
+    assert client.get("/api/memories").status_code==401
+    assert client.post("/api/memories",json={"key":"answer_style","value":"concise"}).status_code==401
+
+
+def test_memory_api_lists_only_authenticated_users_memories(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"list_memories",lambda username:calls.append(username) or [{"key":"answer_style","value":"concise"}])
+    response=client.get("/api/memories")
+    assert response.status_code==200
+    assert response.get_json()["memories"][0]["key"]=="answer_style"
+    assert calls==["alice"]
+    assert response.headers["Cache-Control"]=="no-store"
+
+
+def test_memory_api_requires_csrf_before_save_or_delete(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"save_memory",lambda *_args:pytest.fail("Save must be blocked without CSRF"))
+    monkeypatch.setattr(local_app,"delete_memory",lambda *_args:pytest.fail("Delete must be blocked without CSRF"))
+    assert client.post("/api/memories",json={"key":"answer_style","value":"concise"}).status_code==403
+    assert client.delete("/api/memories/answer_style").status_code==403
+
+
+def test_memory_api_saves_and_deletes_only_current_users_memory(client,monkeypatch):
+    login(client)
+    saves=[]; deletes=[]
+    monkeypatch.setattr(local_app,"save_memory",lambda username,key,value:saves.append((username,key,value)) or {"key":key,"value":value})
+    monkeypatch.setattr(local_app,"delete_memory",lambda username,key:deletes.append((username,key)) or True)
+    headers={"X-CSRF-Token":"test-csrf-token"}
+    saved=client.post("/api/memories",json={"key":"answer_style","value":"concise"},headers=headers)
+    removed=client.delete("/api/memories/answer_style",headers=headers)
+    assert saved.status_code==200 and saved.get_json()["memory"]["key"]=="answer_style"
+    assert removed.status_code==200 and removed.get_json()["ok"] is True
+    assert saves==[("alice","answer_style","concise")]
+    assert deletes==[("alice","answer_style")]
+
+
+def test_memory_api_validates_input_and_reports_missing_memory(client,monkeypatch):
+    login(client)
+    headers={"X-CSRF-Token":"test-csrf-token"}
+    monkeypatch.setattr(local_app,"save_memory",lambda *_args:(_ for _ in ()).throw(ValueError("invalid memory")))
+    monkeypatch.setattr(local_app,"delete_memory",lambda *_args:False)
+    assert client.post("/api/memories",json={"key":"bad","value":"x"},headers=headers).status_code==400
+    assert client.delete("/api/memories/no_such_memory",headers=headers).status_code==404
+
+
+def test_dashboard_includes_csrf_token_for_api_calls(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"is_user_active",lambda _username:False)
+    response=client.get("/dashboard")
+    assert response.status_code==200
+    with client.session_transaction() as session:
+        assert len(session["csrf_token"])>=32
+    assert b'<meta name="csrf-token"' in response.data

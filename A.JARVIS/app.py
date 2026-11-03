@@ -1,4 +1,6 @@
 from flask import Flask, render_template, Response, redirect, url_for, jsonify, request, session
+import hmac
+import secrets
 import threading
 from config import Config
 from security.camera import generate_frames
@@ -7,6 +9,7 @@ from security.face_auth import load_known_faces
 from intelligence.command_router import process_command
 from intelligence.context import classify_intent
 from intelligence.user_state import is_user_active
+from intelligence.user_memory import list_memories, save_memory, delete_memory
 from intelligence.memory import get_all_recent
 from system.stats import get_stats
 from database.db import get_connection
@@ -38,6 +41,18 @@ def _refresh_face_cache():
     with _face_cache_lock:
         load_known_faces()
         _face_cache_loaded = True
+
+
+def _csrf_is_valid():
+    expected = session.get("csrf_token")
+    supplied = request.headers.get("X-CSRF-Token", "")
+    return (
+        isinstance(expected, str)
+        and bool(expected)
+        and isinstance(supplied, str)
+        and bool(supplied)
+        and hmac.compare_digest(expected, supplied)
+    )
 
 
 # ==========================================
@@ -191,8 +206,16 @@ def check_access():
 def dashboard():
     if not is_authenticated():
         return redirect(url_for("home"))
-    return render_template("dashboard.html", user=session["user"],
-                           is_active=is_user_active(session["user"]))
+    csrf_token = session.get("csrf_token")
+    if not isinstance(csrf_token, str) or len(csrf_token) < 32:
+        csrf_token = secrets.token_urlsafe(32)
+        session["csrf_token"] = csrf_token
+    return render_template(
+        "dashboard.html",
+        user=session["user"],
+        is_active=is_user_active(session["user"]),
+        csrf_token=csrf_token,
+    )
 
 
 # ==========================================
@@ -259,6 +282,57 @@ def analytics():
 
 
 # ==========================================
+# PERSONAL MEMORY API
+# ==========================================
+@app.route("/api/memories", methods=["GET", "POST"])
+def personal_memories_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    username = session["user"]
+    if request.method == "GET":
+        try:
+            response = jsonify({"memories": list_memories(username)})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except Exception:
+            app.logger.exception("Could not list personal memories")
+            return jsonify({"error": "Personal memory is unavailable."}), 503
+
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        saved = save_memory(username, data.get("key"), data.get("value"))
+        return jsonify({"memory": saved}), 200
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        app.logger.exception("Could not save personal memory")
+        return jsonify({"error": "Personal memory could not be saved. Check the database migration."}), 503
+
+
+@app.route("/api/memories/<memory_key>", methods=["DELETE"])
+def delete_personal_memory_api(memory_key):
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    try:
+        deleted = delete_memory(session["user"], memory_key)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        app.logger.exception("Could not delete personal memory")
+        return jsonify({"error": "Personal memory could not be deleted."}), 503
+    if not deleted:
+        return jsonify({"error": "Memory not found."}), 404
+    return jsonify({"ok": True})
+
+
+# ==========================================
 # VOICE COMMAND
 # ==========================================
 @app.route("/voice_command", methods=["POST"])
@@ -266,6 +340,8 @@ def analytics():
 def voice_command():
     if not is_authenticated():
         return jsonify({"response": "Unauthorized access."}), 401
+    if not _csrf_is_valid():
+        return jsonify({"response": "CSRF validation failed."}), 403
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"response": "A JSON object is required."}), 400
