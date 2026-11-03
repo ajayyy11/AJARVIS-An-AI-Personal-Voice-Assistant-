@@ -19,12 +19,17 @@
 
     body {
       background: radial-gradient(circle at center, #08121d 20%, #02050a 80%);
-      height: 100vh;
+      min-height: 100vh;
+      height: auto;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
+      flex-wrap: wrap;
+      gap: 18px;
+      padding: 24px 0 48px;
       color: #e0f7fa;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
       position: relative;
     }
 
@@ -46,7 +51,9 @@
 
     .frame {
       width: 96%;
-      height: 92vh;
+      min-height: 92vh;
+      height: auto;
+      flex: 0 0 96%;
       border: 1px solid rgba(0, 240, 255, 0.2);
       border-radius: 10px;
       padding: 30px;
@@ -472,6 +479,31 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     .memory-delete{border:1px solid rgba(255,90,90,.35);background:transparent;color:#ff9a9a;border-radius:3px;padding:4px 7px;font-size:9px;cursor:pointer}
     @media(max-width:760px){.memory-panel{width:100%;margin:12px 0;padding:14px}.memory-form{grid-template-columns:1fr}.memory-form label{margin-top:6px}}
 
+
+    /* Phase 5 — task planning and approval controls */
+    .automation-panel{width:min(94%,1180px);margin:0 auto 28px;position:relative;z-index:10;border:1px solid rgba(0,240,255,.28);background:rgba(0,15,25,.94);box-shadow:0 0 26px rgba(0,240,255,.09);padding:20px}
+    .automation-intro{font-size:11px;color:#8eabb7;line-height:1.6;margin:-10px 0 14px}
+    .automation-form{display:flex;gap:12px;align-items:stretch}
+    .automation-form textarea{flex:1;min-height:76px;resize:vertical;background:rgba(0,240,255,.045);border:1px solid rgba(0,240,255,.28);border-radius:4px;padding:11px;color:#e0f7fa;font:12px/1.5 'Courier New',monospace}
+    .automation-form textarea:focus{outline:1px solid #00f0ff}
+    .automation-action{border:1px solid rgba(0,240,255,.5);background:rgba(0,240,255,.09);color:#00f0ff;border-radius:4px;padding:10px 14px;font-size:10px;letter-spacing:1px;cursor:pointer}
+    .automation-action:disabled{opacity:.5;cursor:wait}
+    .automation-status{min-height:20px;color:#80deea;font-size:11px;margin:12px 0}
+    .automation-step-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:12px 0}
+    .automation-step{padding:12px;border:1px solid rgba(0,240,255,.19);border-left:2px solid #00bcd4;background:rgba(0,240,255,.035);min-width:0}
+    .automation-step h4{font-size:11px;color:#00f0ff;margin:0 0 7px;overflow-wrap:anywhere}
+    .automation-step p{font-size:11px;color:#d5e9ef;line-height:1.5;margin:6px 0;overflow-wrap:anywhere}
+    .automation-step pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#9fb7c2;font-size:10px;line-height:1.5;margin-top:8px}
+    .automation-badge{display:inline-block;border:1px solid rgba(0,240,255,.25);padding:3px 6px;color:#9cebf2;font-size:9px;text-transform:uppercase;letter-spacing:.7px;margin-right:5px}
+    .automation-approval{border:1px solid rgba(255,193,7,.45);background:rgba(255,193,7,.06);padding:13px;margin:12px 0}
+    .automation-approval strong{color:#ffe082;font-size:12px}
+    .automation-approval p{color:#d9e5e8;font-size:11px;line-height:1.6;margin:7px 0}
+    .automation-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .automation-activity{display:grid;grid-template-columns:1fr;gap:6px;margin-top:14px}
+    .automation-event{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(0,240,255,.09);padding:7px 0;color:#a9c3ce;font-size:10px}
+    .automation-event span:first-child{overflow-wrap:anywhere}
+    @media(max-width:860px){.frame{grid-template-columns:1fr;height:auto;min-height:0;padding:18px}.automation-panel{width:96%;padding:14px}.automation-form{flex-direction:column}.automation-form textarea{min-height:90px}}
+
 </style>
 
 <body>
@@ -591,8 +623,176 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       <div id="memory-list" class="memory-list"></div>
     </section>
 
+    <section class="panel automation-panel" aria-labelledby="automation-heading">
+      <h3 id="automation-heading">TASK PLANNER & CONTROLLED AUTOMATION</h3>
+      <p class="automation-intro">Describe a task. AJARVIS will prepare up to five validated steps. Read-only checks may run automatically; every computer-changing action pauses for your approval. No arbitrary shell commands or unrestricted file operations are available.</p>
+      <form id="automation-form" class="automation-form">
+        <textarea id="automation-task" maxlength="1000" required placeholder="Example: Check my battery and system status, then open https://openai.com"></textarea>
+        <button type="submit" class="automation-action" id="automation-plan-button">PLAN TASK</button>
+      </form>
+      <div id="automation-status" class="automation-status" role="status" aria-live="polite">Waiting for a task.</div>
+      <div id="automation-plan" aria-live="polite"></div>
+      <h3 style="margin-top:24px">AUTOMATION ACTIVITY</h3>
+      <div id="automation-activity" class="automation-activity"></div>
+    </section>
+
   <script>
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+
+
+    /* PHASE 5 — CONTROLLED TASK PLANNING */
+    const automationForm = document.getElementById("automation-form");
+    const automationTask = document.getElementById("automation-task");
+    const automationPlan = document.getElementById("automation-plan");
+    const automationStatus = document.getElementById("automation-status");
+    const automationPlanButton = document.getElementById("automation-plan-button");
+    const automationActivity = document.getElementById("automation-activity");
+    let currentAutomationPlanId = null;
+
+    function automationNode(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = String(text);
+      return node;
+    }
+
+    async function automationRequest(url, method, payload) {
+      const response = await fetch(url, {
+        method,
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+          "Accept": "application/json"
+        },
+        body: payload ? JSON.stringify(payload) : undefined
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Automation request failed.");
+      return data;
+    }
+
+    function renderAutomationPlan(plan) {
+      automationPlan.replaceChildren();
+      currentAutomationPlanId = plan.plan_id || null;
+      const headline = automationNode("p", "automation-intro", plan.goal + " · " + plan.status.toUpperCase());
+      automationPlan.appendChild(headline);
+      const list = automationNode("div", "automation-step-list");
+      plan.steps.forEach((step, index) => {
+        const card = automationNode("article", "automation-step");
+        card.appendChild(automationNode("h4", "", (index + 1) + ". " + step.summary));
+        card.appendChild(automationNode("span", "automation-badge", step.risk_level + " risk"));
+        card.appendChild(automationNode("span", "automation-badge", step.status.replaceAll("_", " ")));
+        card.appendChild(automationNode("p", "", step.reason));
+        if (step.arguments && Object.keys(step.arguments).length) {
+          card.appendChild(automationNode("pre", "", "Action details: " + JSON.stringify(step.arguments, null, 2)));
+        }
+        if (step.result !== null && step.result !== undefined) {
+          card.appendChild(automationNode("pre", "", "Result: " + JSON.stringify(step.result)));
+        }
+        if (step.error) card.appendChild(automationNode("p", "", step.error));
+        list.appendChild(card);
+      });
+      automationPlan.appendChild(list);
+
+      if (plan.approval) {
+        const activeStep = plan.steps.find((step) => step.step_id === plan.approval.step_id);
+        const approval = automationNode("div", "automation-approval");
+        approval.appendChild(automationNode("strong", "", "YOUR APPROVAL IS REQUIRED"));
+        approval.appendChild(automationNode("p", "", (activeStep ? activeStep.summary : "A computer-changing action") + ". Review the action details above. Approval expires in about " + plan.approval.expires_in_seconds + " seconds."));
+        const actions = automationNode("div", "automation-actions");
+        const approve = automationNode("button", "automation-action", "APPROVE THIS STEP");
+        approve.type = "button";
+        approve.addEventListener("click", () => respondAutomationApproval(plan.approval.approval_id, "approve", approve));
+        const reject = automationNode("button", "automation-action", "REJECT & STOP");
+        reject.type = "button";
+        reject.addEventListener("click", () => respondAutomationApproval(plan.approval.approval_id, "reject", reject));
+        actions.append(approve, reject);
+        approval.appendChild(actions);
+        automationPlan.appendChild(approval);
+      } else if (!["completed", "cancelled", "failed", "expired"].includes(plan.status)) {
+        const cancel = automationNode("button", "automation-action", "CANCEL PLAN");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => cancelAutomationPlan(plan.plan_id, cancel));
+        automationPlan.appendChild(cancel);
+      }
+    }
+
+    async function createAutomationPlan(event) {
+      event.preventDefault();
+      const task = automationTask.value.trim();
+      if (!task || automationPlanButton.disabled) return;
+      automationPlanButton.disabled = true;
+      automationStatus.textContent = "Planning and validating steps…";
+      automationPlan.replaceChildren();
+      try {
+        const data = await automationRequest("/api/automation/plan", "POST", { task });
+        renderAutomationPlan(data.plan);
+        automationStatus.textContent = data.plan.status === "awaiting_approval"
+          ? "Read-only checks are complete. Review the pending action before approving."
+          : "Plan status: " + data.plan.status + ".";
+        await refreshAutomationActivity();
+      } catch (error) {
+        automationStatus.textContent = error.message || "Could not create the task plan.";
+      } finally {
+        automationPlanButton.disabled = false;
+      }
+    }
+
+    async function respondAutomationApproval(approvalId, decision, button) {
+      button.disabled = true;
+      automationStatus.textContent = decision === "approve" ? "Executing the approved step…" : "Rejecting the pending step…";
+      try {
+        const data = await automationRequest("/api/automation/approval/" + encodeURIComponent(approvalId), "POST", { decision });
+        renderAutomationPlan(data.plan);
+        automationStatus.textContent = data.plan.status === "awaiting_approval"
+          ? "Next computer-changing step needs your approval."
+          : "Plan status: " + data.plan.status + ".";
+        await refreshAutomationActivity();
+      } catch (error) {
+        automationStatus.textContent = error.message || "Approval could not be processed.";
+        button.disabled = false;
+      }
+    }
+
+    async function cancelAutomationPlan(planId, button) {
+      button.disabled = true;
+      try {
+        const data = await automationRequest("/api/automation/plan/" + encodeURIComponent(planId) + "/cancel", "POST", {});
+        renderAutomationPlan(data.plan);
+        automationStatus.textContent = "Plan cancelled.";
+        await refreshAutomationActivity();
+      } catch (error) {
+        automationStatus.textContent = error.message || "Plan could not be cancelled.";
+        button.disabled = false;
+      }
+    }
+
+    async function refreshAutomationActivity() {
+      try {
+        const response = await fetch("/api/automation/activity", { cache: "no-store" });
+        if (response.status === 401) { window.location.replace("/login"); return; }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Activity is unavailable.");
+        automationActivity.replaceChildren();
+        const events = Array.isArray(data.activity) ? data.activity : [];
+        if (!events.length) {
+          automationActivity.appendChild(automationNode("p", "automation-intro", "No automation activity recorded yet."));
+          return;
+        }
+        events.slice(0, 12).forEach((entry) => {
+          const row = automationNode("div", "automation-event");
+          row.appendChild(automationNode("span", "", entry.event_type.replaceAll("_", " ") + (entry.tool_name ? " · " + entry.tool_name : "") + " — " + entry.summary));
+          row.appendChild(automationNode("span", "", entry.created_at ? new Date(entry.created_at).toLocaleTimeString() : ""));
+          automationActivity.appendChild(row);
+        });
+      } catch (error) {
+        automationActivity.replaceChildren(automationNode("p", "automation-intro", error.message || "Activity history is unavailable."));
+      }
+    }
+
+    automationForm.addEventListener("submit", createAutomationPlan);
+    refreshAutomationActivity();
 
     /* PHASE 4 — PERSONAL MEMORY MANAGER */
     const memoryForm = document.getElementById("memory-form");

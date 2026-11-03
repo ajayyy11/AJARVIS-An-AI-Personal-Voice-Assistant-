@@ -14,6 +14,7 @@ REQUIRED_COLUMNS = {
     "users": {"username", "face_encoding"},
     "command_history": {"id", "username", "command", "response"},
     "user_memories": {"id", "username", "memory_key", "memory_value", "created_at", "updated_at"},
+    "automation_activity": {"id", "username", "plan_id", "step_number", "event_type", "tool_name", "summary", "created_at"},
 }
 
 
@@ -59,6 +60,16 @@ def verify_schema():
             )
             if not cursor.fetchone()[0]:
                 errors.append("user_memories is missing the unique username/key index.")
+
+        if "automation_activity" in tables:
+            cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'automation_activity' "
+                "AND INDEX_NAME = 'idx_automation_activity_user_id'",
+                (Config.MYSQL_DB,),
+            )
+            if not cursor.fetchone()[0]:
+                errors.append("automation_activity is missing the per-user activity index.")
 
         if "users" in tables:
             cursor.execute(

@@ -15,6 +15,11 @@ REQUIRED_COLUMNS = {
 USER_MEMORY_COLUMNS = {
     "id", "username", "memory_key", "memory_value", "created_at", "updated_at"
 }
+AUTOMATION_ACTIVITY_COLUMNS = {
+    "id", "username", "plan_id", "step_number", "event_type",
+    "tool_name", "summary", "created_at"
+}
+AUTOMATION_ACTIVITY_INDEX = "idx_automation_activity_user_id"
 HISTORY_INDEX_NAME = "idx_command_history_username_id"
 HISTORY_INDEX_COLUMNS = ("username", "id")
 
@@ -66,6 +71,21 @@ def plan_migration(tables, columns, indexes):
                 "Index uq_user_memories_username_key must cover (username, memory_key); "
                 "inspect the existing index manually."
             )
+    if "automation_activity" not in tables:
+        actions.append("create_automation_activity_table")
+    else:
+        missing = sorted(AUTOMATION_ACTIVITY_COLUMNS - columns.get("automation_activity", set()))
+        if missing:
+            errors.append(
+                "Table automation_activity is missing required column(s): " + ", ".join(missing)
+            )
+        activity_index = indexes.get("automation_activity", {}).get(AUTOMATION_ACTIVITY_INDEX)
+        if activity_index is None:
+            actions.append("add_automation_activity_index")
+        elif tuple(activity_index) != ("username", "id"):
+            errors.append(
+                f"Index {AUTOMATION_ACTIVITY_INDEX} must cover (username, id); inspect it manually."
+            )
     return actions, errors
 
 
@@ -77,7 +97,7 @@ def read_schema(cursor, database_name):
     )
     tables = {row[0] for row in cursor.fetchall()}
     columns, indexes = {}, {}
-    inspected_tables = [*REQUIRED_COLUMNS, "user_memories"]
+    inspected_tables = [*REQUIRED_COLUMNS, "user_memories", "automation_activity"]
     for table_name in inspected_tables:
         if table_name not in tables:
             continue
@@ -125,6 +145,8 @@ def migrate_database(apply=False, confirm=input):
             "add_nullable_username_column": "Add nullable command_history.username (legacy rows remain NULL)",
             "add_user_history_index": "Create index idx_command_history_username_id (username, id)",
             "create_user_memories_table": "Create user_memories for editable, user-scoped preferences and facts",
+            "create_automation_activity_table": "Create privacy-minimal automation activity history",
+            "add_automation_activity_index": "Create index idx_automation_activity_user_id (username, id)",
         }
         print(f"Database: {Config.MYSQL_DB}")
         print("Planned schema changes:")
@@ -162,6 +184,26 @@ def migrate_database(apply=False, confirm=input):
                     "UNIQUE KEY uq_user_memories_username_key (username, memory_key),"
                     "KEY idx_user_memories_username_updated (username, updated_at)"
                     ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "create_automation_activity_table":
+                cursor.execute(
+                    "CREATE TABLE automation_activity ("
+                    "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,"
+                    "username VARCHAR(100) NOT NULL,"
+                    "plan_id CHAR(32) NOT NULL,"
+                    "step_number INT NULL,"
+                    "event_type VARCHAR(40) NOT NULL,"
+                    "tool_name VARCHAR(64) NULL,"
+                    "summary VARCHAR(240) NOT NULL,"
+                    "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                    "PRIMARY KEY (id),"
+                    "KEY idx_automation_activity_user_id (username, id)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "add_automation_activity_index":
+                cursor.execute(
+                    "CREATE INDEX idx_automation_activity_user_id "
+                    "ON automation_activity (username, id)"
                 )
         print("Migration completed. Existing history rows remain unassigned (username IS NULL).")
         return 0

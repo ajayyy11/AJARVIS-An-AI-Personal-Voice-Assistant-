@@ -143,3 +143,55 @@ def test_dashboard_includes_csrf_token_for_api_calls(client,monkeypatch):
     with client.session_transaction() as session:
         assert len(session["csrf_token"])>=32
     assert b'<meta name="csrf-token"' in response.data
+
+
+def test_automation_plan_endpoint_requires_authentication_and_csrf(client,monkeypatch):
+    assert client.post("/api/automation/plan",json={"task":"Check status"}).status_code==401
+    login(client)
+    monkeypatch.setattr(local_app,"is_user_active",lambda _username:True)
+    monkeypatch.setattr(local_app,"generate_task_plan",lambda *_args:pytest.fail("Must reject without CSRF"))
+    assert client.post("/api/automation/plan",json={"task":"Check status"}).status_code==403
+
+
+def test_automation_plan_endpoint_requires_active_assistant(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"is_user_active",lambda _username:False)
+    response=client.post("/api/automation/plan",json={"task":"Check status"},headers={"X-CSRF-Token":"test-csrf-token"})
+    assert response.status_code==409
+
+
+def test_automation_plan_endpoint_validates_task_and_advances_plan(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"is_user_active",lambda _username:True)
+    calls=[]
+    monkeypatch.setattr(local_app,"_get_genai_client",lambda:"fake-client")
+    monkeypatch.setattr(local_app,"generate_task_plan",lambda client,task,username:calls.append((client,task,username)) or {"plan_id":"plan-1"})
+    monkeypatch.setattr(local_app,"advance_plan",lambda plan_id,username:{"plan_id":plan_id,"status":"awaiting_approval","steps":[],"approval":{"approval_id":"a1"}})
+    headers={"X-CSRF-Token":"test-csrf-token"}
+    bad=client.post("/api/automation/plan",json={"task":" "},headers=headers)
+    good=client.post("/api/automation/plan",json={"task":"Open a site"},headers=headers)
+    assert bad.status_code==400
+    assert good.status_code==201
+    assert good.get_json()["plan"]["status"]=="awaiting_approval"
+    assert calls==[("fake-client","Open a site","alice")]
+
+
+def test_automation_approval_endpoint_is_csrf_and_owner_protected(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"is_user_active",lambda _username:True)
+    monkeypatch.setattr(local_app,"respond_to_approval",lambda approval_id,username,decision:{"status":decision,"approval_id":approval_id,"username":username})
+    assert client.post("/api/automation/approval/a1",json={"decision":"approve"}).status_code==403
+    response=client.post("/api/automation/approval/a1",json={"decision":"approve"},headers={"X-CSRF-Token":"test-csrf-token"})
+    assert response.status_code==200
+    assert response.get_json()["plan"]["username"]=="alice"
+
+
+def test_automation_cancel_activity_endpoints_are_authenticated_and_scoped(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"cancel_plan",lambda plan_id,username:{"plan_id":plan_id,"status":"cancelled","owner":username})
+    monkeypatch.setattr(local_app,"list_recent_activity",lambda username,limit:{"rows":[],"owner":username})
+    headers={"X-CSRF-Token":"test-csrf-token"}
+    cancelled=client.post("/api/automation/plan/p1/cancel",json={},headers=headers)
+    activity=client.get("/api/automation/activity")
+    assert cancelled.status_code==200 and cancelled.get_json()["plan"]["owner"]=="alice"
+    assert activity.status_code==200 and activity.get_json()["activity"]["owner"]=="alice"
