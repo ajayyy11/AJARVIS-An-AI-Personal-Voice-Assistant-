@@ -114,31 +114,33 @@ def build_automation_registry() -> ToolRegistry:
             "additionalProperties": False,
         },
     )
-    registry.register(
-        "launch_application",
-        "Launch one application from the fixed Windows allow-list.",
-        _launch_application,
-        risk_level="reversible",
-        requires_confirmation=True,
-        parameters={
-            "type": "object",
-            "properties": {
-                "application": {
-                    "type": "string",
-                    "enum": ["calculator", "notepad", "file_explorer", "chrome", "vscode"],
-                }
+    # Do not let the model propose Windows-only actions on unsupported hosts.
+    if os.name == "nt":
+        registry.register(
+            "launch_application",
+            "Launch one application from the fixed Windows allow-list.",
+            _launch_application,
+            risk_level="reversible",
+            requires_confirmation=True,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "application": {
+                        "type": "string",
+                        "enum": ["calculator", "notepad", "file_explorer", "chrome", "vscode"],
+                    }
+                },
+                "required": ["application"],
+                "additionalProperties": False,
             },
-            "required": ["application"],
-            "additionalProperties": False,
-        },
-    )
-    registry.register(
-        "lock_workstation",
-        "Lock the current Windows workstation.",
-        _lock_workstation,
-        risk_level="destructive",
-        requires_confirmation=True,
-    )
+        )
+        registry.register(
+            "lock_workstation",
+            "Lock the current Windows workstation.",
+            _lock_workstation,
+            risk_level="destructive",
+            requires_confirmation=True,
+        )
     return registry
 
 
