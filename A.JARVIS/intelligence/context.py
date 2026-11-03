@@ -10,12 +10,14 @@ from collections.abc import Mapping, Sequence
 
 MAX_CONTEXT_ITEMS = 5
 MAX_CONTEXT_CHARS = 6000
+
+# Follow-ups should be short, context-dependent phrases—not general questions.
 _FOLLOW_UP_RE = re.compile(
-    r"^(?:and\b|also\b|it\b|that\b|this\b|they\b|them\b|those\b|these\b|"
-    r"continue\b|go on\b|do that\b|do it\b|repeat that\b|again\b|"
-    r"explain more\b|tell me more\b|what about that\b|why is that\b|how about it\b|"
-    r"open it\b|run it\b|search it\b|find it\b|summarize that\b|"
-    r"what about it\b|why\b|how\b)",
+    r"^(?:and\\b|also\\b|it\\b|that\\b|this\\b|they\\b|them\\b|those\\b|these\\b|"
+    r"continue\\b|go on\\b|do that\\b|do it\\b|repeat that\\b|again\\b|"
+    r"explain more\\b|tell me more\\b|what about that\\b|why is that\\b|how about it\\b|"
+    r"open it\\b|run it\\b|search it\\b|find it\\b|summarize that\\b|"
+    r"what about it\\b|(?:why|how)\\s+(?:is that|about it|does that|did that)\\b)",
     re.I,
 )
 _TOKEN_RE = re.compile(r"[a-z0-9]{2,}", re.I)
@@ -23,12 +25,12 @@ _STOP_WORDS = {
     "the", "and", "for", "with", "you", "your", "that", "this", "what",
     "how", "why", "can", "could", "would", "should", "please", "tell",
     "about", "from", "have", "has", "are", "was", "were", "into", "then",
-    "again", "more", "same", "make", "help", "want", "need",
+    "again", "more", "same", "make", "help", "want", "need", "me",
 }
 
 
 def _normalise(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    return re.sub(r"\\s+", " ", str(value or "")).strip().lower()
 
 
 def _tokens(value: str) -> set[str]:
@@ -38,7 +40,7 @@ def _tokens(value: str) -> set[str]:
 def is_follow_up(command: str) -> bool:
     """Detect short elliptical requests that depend on conversation context."""
     text = _normalise(command)
-    return bool(text and _FOLLOW_UP_RE.search(text))
+    return bool(text and _FOLLOW_UP_RE.match(text))
 
 
 def classify_intent(command: str) -> str:
@@ -48,18 +50,25 @@ def classify_intent(command: str) -> str:
         return "unknown"
     if is_follow_up(text):
         return "follow_up"
+
+    # Search requests should be recognized before generic action verbs such as
+    # "search" or "find", while elliptical "search it" is already a follow-up.
+    if re.match(r"^(?:search|look up|research)\\b", text) or re.search(
+        r"\\b(?:latest|news|find information)\\b", text
+    ):
+        return "search"
+
     if re.match(
         r"^(?:open|launch|close|lock|shutdown|restart|turn|set|create|delete|save|"
-        r"take|find|search|play|pause|mute|unmute|increase|decrease|volume|"
-        r"system activate|system deactivate)\b",
+        r"take|find|play|pause|mute|unmute|increase|decrease|volume|"
+        r"system activate|system deactivate)\\b",
         text,
     ):
         return "command"
-    if re.search(r"\b(?:search|look up|research|latest|news|find information)\b", text):
-        return "search"
+
     if text.endswith("?") or re.match(
         r"^(?:who|what|when|where|why|how|is|are|am|do|does|did|can|could|"
-        r"would|should|will|tell me|explain|describe)\b",
+        r"would|should|will|tell me|explain|describe)\\b",
         text,
     ):
         return "question"
@@ -103,8 +112,11 @@ def select_relevant_history(
         query_tokens = _tokens(command)
         ranked = []
         for row in rows:
-            overlap = len(query_tokens & _tokens(row["command"] + " " + row["response"]))
-            score = overlap * 3 + row["_index"] / max(1, len(rows))
+            command_tokens = _tokens(row["command"])
+            response_tokens = _tokens(row["response"])
+            overlap = len(query_tokens & command_tokens) * 4 + len(query_tokens & response_tokens)
+            # Recency is a tie-breaker, not a substitute for topical relevance.
+            score = overlap * (len(rows) + 1) + row["_index"]
             ranked.append((score, row["_index"], row))
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
         chosen = [item[2] for item in ranked[:max_items]]
