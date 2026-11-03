@@ -39,7 +39,7 @@ Shutdown and restart requests need an exact confirmation within 30 seconds: say 
 
 ## Automated Tests
 
-From this directory, set `SECRET_KEY` and run `python -m pip install Flask python-dotenv pytest mysql-connector-python`, followed by `pytest -q tests`. GitHub Actions also checks the dashboard's inline JavaScript syntax and compiles the Python modules.
+From this directory, set `SECRET_KEY` and run `python -m pip install -r requirements-web.txt mysql-connector-python`, followed by `pytest -q tests`. GitHub Actions checks both dashboard JavaScript surfaces, the Render Blueprint, Python compilation, telemetry, and local authentication/command integration. Camera hardware and biometric accuracy still require testing on the target Windows device.
 
 ## User-Scoped History
 
@@ -50,7 +50,8 @@ Command history, AI context, analytics, notes, and activation state are scoped t
 - Keep `.env` out of version control; never publish API keys or database credentials.
 - Do not use a predictable fallback secret key in a deployed environment.
 - Disable Flask debug mode outside local development and configure secure session-cookie settings.
-- Face recognition may produce false matches or rejections and this project does not implement liveness detection. Use informed consent and do not treat face recognition alone as infallible identity verification. `FACE_MATCH_THRESHOLD` defaults to 0.55; lower values are stricter, and the threshold must be validated with consented samples under the target camera and lighting conditions.
+- Local face login now requires exactly one detected face, a fresh camera frame, and the same identity matched on two distinct frames. Stale frames, multiple faces, unknown faces, and recognition errors fail closed.
+- Face recognition still has no liveness detection and can be spoofed with a suitable photo/video. Use informed consent, protect the biometric database, and do not treat face recognition alone as high-assurance identity verification. `FACE_MATCH_THRESHOLD` defaults to 0.55; lower values are stricter and must be validated with consented samples under the target camera and lighting conditions.
 
 ## Main Components
 

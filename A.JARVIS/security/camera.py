@@ -1,165 +1,111 @@
+"""Threaded local camera with fresh-frame and stable-match authentication gates."""
+import logging, threading, time
 import cv2
-import threading
-import time
 from security.face_auth import check_face
-
+logger=logging.getLogger(__name__)
+FRAME_MAX_AGE_SECONDS=2.0
+RECOGNITION_MAX_AGE_SECONDS=1.5
+REQUIRED_STABLE_MATCHES=2
 class Camera:
-    def __init__(self):
-        self.video = cv2.VideoCapture(0)
-        self.latest_frame = None
-        self.detected_results = []  # List of (username, location)
-        self.is_running = True
-        self.lock = threading.Lock()
-        
-        # Start capture thread
-        self.capture_thread = threading.Thread(target=self._capture_frames, daemon=True)
-        self.capture_thread.start()
-        
-        # Start recognition thread
-        self.recognition_thread = threading.Thread(target=self._recognize_faces, daemon=True)
-        self.recognition_thread.start()
-
+    def __init__(self,source=0):
+        self.video=cv2.VideoCapture(source)
+        try: self.camera_available=bool(self.video and self.video.isOpened())
+        except Exception: self.camera_available=False
+        self.latest_frame=None; self.latest_frame_at=0.0; self.detected_results=[]
+        self.last_recognition_at=0.0; self._last_recognition_frame_at=0.0
+        self._candidate_username=None; self._candidate_count=0; self._stable_username=None
+        self.is_running=True; self.lock=threading.RLock()
+        self.capture_thread=threading.Thread(target=self._capture_frames,daemon=True,name="ajarvis-camera")
+        self.recognition_thread=threading.Thread(target=self._recognize_faces,daemon=True,name="ajarvis-face")
+        self.capture_thread.start(); self.recognition_thread.start()
     def _capture_frames(self):
         while self.is_running:
-            success, frame = self.video.read()
-            if success:
-                with self.lock:
-                    self.latest_frame = frame
+            try: success,frame=self.video.read() if self.camera_available else (False,None)
+            except Exception:
+                logger.exception("Camera capture failed"); success,frame=False,None
+            if success and frame is not None:
+                with self.lock: self.latest_frame=frame; self.latest_frame_at=time.monotonic()
+            else: time.sleep(.1)
+    def _record_recognition(self,results,*,recognized_at=None,frame_timestamp=None):
+        recognized_at=time.monotonic() if recognized_at is None else recognized_at
+        with self.lock:
+            if frame_timestamp is not None:
+                if frame_timestamp<=self._last_recognition_frame_at: return
+                self._last_recognition_frame_at=frame_timestamp
+            self.detected_results=list(results or []); self.last_recognition_at=recognized_at
+            name=self.detected_results[0][0] if len(self.detected_results)==1 else None
+            if name:
+                if name==self._candidate_username: self._candidate_count+=1
+                else: self._candidate_username,self._candidate_count=name,1
+                self._stable_username=name if self._candidate_count>=REQUIRED_STABLE_MATCHES else None
             else:
-                time.sleep(0.1)
-
+                self._candidate_username=None; self._candidate_count=0; self._stable_username=None
     def _recognize_faces(self):
         while self.is_running:
-            frame_to_process = None
+            frame=None; timestamp=0.0
             with self.lock:
-                if self.latest_frame is not None:
-                    frame_to_process = self.latest_frame.copy()
-            
-            if frame_to_process is not None:
-                # results is a list of (username, location)
-                try:
-                    results = check_face(frame_to_process)
-                    with self.lock:
-                        self.detected_results = results
-                except Exception as e:
-                    print(f"Recognition error: {e}")
-            
-            # Run recognition a few times per second to save CPU
-            time.sleep(0.4)
-
+                if self.latest_frame is not None and self.latest_frame_at>self._last_recognition_frame_at:
+                    frame=self.latest_frame.copy(); timestamp=self.latest_frame_at
+            if frame is None: time.sleep(.05); continue
+            try: results=check_face(frame)
+            except Exception:
+                logger.exception("Face recognition failed"); results=[]
+            self._record_recognition(results,recognized_at=time.monotonic(),frame_timestamp=timestamp)
+            time.sleep(.05)
+    def get_detected_user(self):
+        now=time.monotonic()
+        with self.lock:
+            fresh=now-self.last_recognition_at<=RECOGNITION_MAX_AGE_SECONDS and now-self.latest_frame_at<=FRAME_MAX_AGE_SECONDS
+            if fresh and self._stable_username and self._candidate_count>=REQUIRED_STABLE_MATCHES: return self._stable_username
+        return None
+    def reset_detected_user(self):
+        with self.lock:
+            self.detected_results=[]; self._candidate_username=None; self._candidate_count=0
+            self._stable_username=None; self.last_recognition_at=0.0
+    def get_latest_frame(self):
+        with self.lock:
+            if self.latest_frame is None or time.monotonic()-self.latest_frame_at>FRAME_MAX_AGE_SECONDS: return None
+            return self.latest_frame.copy()
+    def is_camera_ready(self): return bool(self.camera_available)
     def get_display_frame(self):
         with self.lock:
-            if self.latest_frame is None:
-                return None
-            frame = self.latest_frame.copy()
-            results = self.detected_results
-            
-        # Draw bounding boxes and labels
-        for username, (top, right, bottom, left) in results:
-            # Color: Green for known, Red for unknown
-            color = (0, 255, 0) if username else (0, 0, 255)
-            
-            # Draw the box around the face
-            cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
-            
-            # Draw the label block
-            label = username if username else "Unknown"
-            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), color, cv2.FILLED)
-            font = cv2.FONT_HERSHEY_DUPLEX
-            cv2.putText(frame, label, (left + 6, bottom - 6), font, 0.8, (255, 255, 255), 1)
-            
-        if not results:
-            cv2.putText(frame, "Scanning...", (30, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        
+            if self.latest_frame is None: return None
+            frame=self.latest_frame.copy(); results=list(self.detected_results)
+        for username,(top,right,bottom,left) in results:
+            color=(0,255,0) if username else (0,0,255)
+            cv2.rectangle(frame,(left,top),(right,bottom),color,2)
+            label=username if username else "Unknown"
+            cv2.rectangle(frame,(left,bottom-35),(right,bottom),color,cv2.FILLED)
+            cv2.putText(frame,label,(left+6,bottom-6),cv2.FONT_HERSHEY_DUPLEX,.8,(255,255,255),1)
+        if not results: cv2.putText(frame,"Scanning...",(30,40),cv2.FONT_HERSHEY_SIMPLEX,.8,(0,255,255),2)
         return frame
-
     def generate_frames(self):
         while self.is_running:
-            frame = self.get_display_frame()
-            if frame is None:
-                time.sleep(0.1)
-                continue
-            
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame_bytes = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
-# Global instance for backward compatibility
-_cam_instance = None
-
+            frame=self.get_display_frame()
+            if frame is None: time.sleep(.1); continue
+            try:
+                ok,buffer=cv2.imencode(".jpg",frame)
+                if not ok: time.sleep(.05); continue
+                payload=buffer.tobytes()
+            except Exception:
+                logger.exception("Camera frame encoding failed"); time.sleep(.1); continue
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"+payload+b"\r\n"
+    def close(self):
+        self.is_running=False
+        try: self.video.release()
+        except Exception: logger.debug("Camera release failed",exc_info=True)
+        for thread in (self.capture_thread,self.recognition_thread):
+            if thread.is_alive(): thread.join(timeout=1.0)
+_cam_instance=None
+_camera_lock=threading.Lock()
 def get_camera():
     global _cam_instance
-    if _cam_instance is None:
-        _cam_instance = Camera()
+    if _cam_instance is None or not _cam_instance.is_running:
+        with _camera_lock:
+            if _cam_instance is None or not _cam_instance.is_running: _cam_instance=Camera()
     return _cam_instance
-
-# Global variables for app.py
-@property
-def detected_user():
-    cam = get_camera()
-    with cam.lock:
-        for user, _ in cam.detected_results:
-            if user: return user
-    return None
-
-@detected_user.setter
-def detected_user(value):
-    # This is to support camera.detected_user = None in app.py
-    cam = get_camera()
-    with cam.lock:
-        if value is None:
-            cam.detected_results = []
-
-@property
-def latest_frame():
-    return get_camera().latest_frame
-
-def generate_frames():
-    return get_camera().generate_frames()
-
-# For app.py to access these as if they were simple variables
-import sys
-class _ModuleProxy(object):
-    def __init__(self, original_module):
-        self.original_module = original_module
-    def __getattr__(self, name):
-        if name == 'detected_user':
-            cam = get_camera()
-            with cam.lock:
-                for user, _ in cam.detected_results:
-                    if user: return user
-            return None
-        if name == 'latest_frame':
-            return get_camera().latest_frame
-        return getattr(self.original_module, name)
-    def __setattr__(self, name, value):
-        if name == 'original_module':
-            super().__setattr__(name, value)
-            return
-        if name == 'detected_user' and value is None:
-            cam = get_camera()
-            with cam.lock:
-                cam.detected_results = []
-            return
-        setattr(self.original_module, name, value)
-
-# Note: The proxy trick might be complex, let's just use regular functions or update app.py.
-# Actually, I'll update app.py to use camera.get_detected_user() etc. It's cleaner.
-# But I'll keep generate_frames() as it is.
-
-def get_detected_user():
-    cam = get_camera()
-    with cam.lock:
-        for user, _ in cam.detected_results:
-            if user: return user
-    return None
-
-def reset_detected_user():
-    cam = get_camera()
-    with cam.lock:
-        cam.detected_results = []
-
-def get_latest_frame():
-    return get_camera().latest_frame
+def generate_frames(): return get_camera().generate_frames()
+def get_detected_user(): return get_camera().get_detected_user()
+def reset_detected_user(): get_camera().reset_detected_user()
+def get_latest_frame(): return get_camera().get_latest_frame()
+def is_camera_ready(): return get_camera().is_camera_ready()

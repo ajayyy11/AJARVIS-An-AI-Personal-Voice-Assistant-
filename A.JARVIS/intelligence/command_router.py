@@ -16,6 +16,7 @@ from intelligence.agent import generate_agent_response
 from intelligence.context import build_context_messages, classify_intent
 from intelligence.power_actions import clear_pending_power_action, handle_power_command
 from intelligence.user_state import activate_user, deactivate_user, is_user_active
+from system.stats import get_stats
 
 logger = logging.getLogger(__name__)
 client = None
@@ -199,9 +200,11 @@ def process_command(command, username):
 
     # ── SYSTEM STATS ──
     if "system status" in command:
-        cpu = psutil.cpu_percent()
-        ram = psutil.virtual_memory().percent
-        reply = f"CPU usage is {cpu}%. RAM usage is {ram}%."
+        stats = get_stats()
+        reply = (
+            f"CPU usage is {stats['cpu']}%. Memory usage is {stats['memory']}%. "
+            f"Disk usage is {stats['disk']}%. System uptime is {stats['uptime']}."
+        )
         add_memory(command, reply, username)
         return reply
 

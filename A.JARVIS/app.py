@@ -1,17 +1,18 @@
 from flask import Flask, render_template, Response, redirect, url_for, jsonify, request, session
+import threading
 from config import Config
 from security.camera import generate_frames
 from security.session_manager import is_authenticated, revoke_access, grant_access
 from security.face_auth import load_known_faces
 from intelligence.command_router import process_command
+from intelligence.context import classify_intent
+from intelligence.user_state import is_user_active
 from intelligence.memory import get_all_recent
 from system.stats import get_stats
 from database.db import get_connection
 import security.camera as camera
 
 import face_recognition
-import numpy as np
-import base64
 import cv2
 import os
 
@@ -23,6 +24,20 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower()
         in {"1", "true", "yes", "on"},
 )
+
+_face_cache_loaded = False
+_face_cache_lock = threading.Lock()
+def _ensure_face_cache_loaded():
+    global _face_cache_loaded
+    with _face_cache_lock:
+        if not _face_cache_loaded:
+            load_known_faces()
+            _face_cache_loaded = True
+def _refresh_face_cache():
+    global _face_cache_loaded
+    with _face_cache_lock:
+        load_known_faces()
+        _face_cache_loaded = True
 
 
 # ==========================================
@@ -118,7 +133,7 @@ def register():
             conn.close()
 
     try:
-        load_known_faces()
+        _refresh_face_cache()
     except Exception:
         # The new record is committed already; don't report it as an insertion
         # failure. Explain that recognition needs a successful cache refresh.
@@ -144,12 +159,29 @@ def video_feed():
 # ==========================================
 @app.route("/check_access")
 def check_access():
-    detected = camera.get_detected_user()
+    if is_authenticated():
+        response = jsonify({"access": True, "user": session.get("user")})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    try:
+        _ensure_face_cache_loaded()
+        detected = camera.get_detected_user()
+        camera_ready = camera.is_camera_ready()
+    except Exception:
+        app.logger.exception("Face authentication unavailable")
+        response = jsonify({"access": False, "camera_ready": False,
+                            "error": "Face authentication is temporarily unavailable."})
+        response.status_code = 503
+        response.headers["Cache-Control"] = "no-store"
+        return response
     if detected:
         grant_access(detected)
         camera.reset_detected_user()
-        return jsonify({"access": True})
-    return jsonify({"access": is_authenticated()})
+        response = jsonify({"access": True, "user": detected, "camera_ready": camera_ready})
+    else:
+        response = jsonify({"access": False, "camera_ready": camera_ready})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ==========================================
@@ -159,7 +191,8 @@ def check_access():
 def dashboard():
     if not is_authenticated():
         return redirect(url_for("home"))
-    return render_template("dashboard.html", user=session["user"])
+    return render_template("dashboard.html", user=session["user"],
+                           is_active=is_user_active(session["user"]))
 
 
 # ==========================================
@@ -169,7 +202,14 @@ def dashboard():
 def system_stats():
     if not is_authenticated():
         return jsonify({"error": "Unauthorized"}), 401
-    return jsonify(get_stats())
+    try:
+        response = jsonify(get_stats())
+    except Exception:
+        app.logger.exception("System telemetry collection failed")
+        response = jsonify({"error": "System telemetry is temporarily unavailable."})
+        response.status_code = 503
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ==========================================
@@ -222,19 +262,25 @@ def analytics():
 # VOICE COMMAND
 # ==========================================
 @app.route("/voice_command", methods=["POST"])
+@app.route("/command", methods=["POST"])
 def voice_command():
     if not is_authenticated():
         return jsonify({"response": "Unauthorized access."}), 401
-
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"response": "A JSON object is required."}), 400
     command = data.get("command")
     if not isinstance(command, str) or not command.strip():
         return jsonify({"response": "A non-empty command is required."}), 400
+    command = command.strip()
     if len(command) > 2000:
         return jsonify({"response": "Command is too long."}), 400
-
-    username = session.get("user", "User")
-    return jsonify({"response": process_command(command.strip(), username)})
+    username = session["user"]
+    reply = process_command(command, username)
+    response = jsonify({"response": reply, "active": is_user_active(username),
+                        "intent": classify_intent(command)})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ==========================================
@@ -250,5 +296,5 @@ def logout():
 # START APP
 # ==========================================
 if __name__ == "__main__":
-    load_known_faces()
+    _ensure_face_cache_loaded()
     app.run(host="127.0.0.1", port=5000, debug=False)
