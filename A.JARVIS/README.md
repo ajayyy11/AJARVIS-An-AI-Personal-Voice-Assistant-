@@ -9,6 +9,8 @@ A local Windows-focused assistant application using Flask, Google Gemini integra
 - Face-authentication and camera-streaming components
 - MySQL persistence and command/memory-related modules
 - System resource statistics
+- Explicit, editable, user-scoped personal memory for facts and answer preferences
+- Relevant conversation context, follow-up resolution, and read-only memory retrieval tools
 
 ## Tech Stack
 
@@ -26,7 +28,7 @@ Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL · python
    ```
 
 4. Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` is needed for free-form Gemini answers but is no longer required just to start local commands; `WEATHER_API_KEY` is optional.
-5. For a new database, create the tables using `database/schema.sql`. To safely upgrade an existing database while preserving users and face encodings, follow [the database upgrade runbook](database/migrations/README.md) before starting the updated app.
+5. For a new database, create the tables using `database/schema.sql`. For an existing database, back it up and follow [the database upgrade runbook](database/migrations/README.md) to add user-scoped history and personal memory while preserving users and face encodings.
 6. Start the app:
 
    ```bash
@@ -43,7 +45,7 @@ From this directory, set `SECRET_KEY` and run `python -m pip install -r requirem
 
 ## User-Scoped History
 
-Command history, AI context, analytics, notes, and activation state are scoped to the authenticated username. The current schema stores each new history entry with its username; legacy rows remain unassigned after migration so they are not exposed to another account.
+Command history, AI context, analytics, notes, activation state, and explicit personal memories are scoped to the authenticated username. Saved memories can be created, reviewed, updated, and deleted in the local dashboard or with commands such as `remember my answer style is concise`, `what do you remember about me?`, and `forget my answer style`. A memory is sent to the configured Gemini model as contextual data during free-form AI requests; it is not authorization or executable instruction. Never store credentials. Legacy history rows remain unassigned after migration so they are not exposed to another account.
 
 ## Security and Privacy
 
@@ -72,7 +74,7 @@ The AI fallback now uses manual Gemini function calling through an explicit allo
 
 The initial agent can read the current date/time, CPU and memory usage, home-disk usage, battery status, and the signed-in user's saved notes (recent notes or phrase search). Calls are validated against registered argument schemas, and the agent limits the number of tool calls and the amount of returned data. Automatic SDK function execution is disabled so the application, not the model, decides whether a requested tool can run.
 
-Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. When the note tools are used, matching note content is sent to the configured Gemini model for an answer; do not store passwords, API keys, or other secrets in notes or personalization preferences. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
+Only read-only tools are automatically eligible. Unknown tools, invalid arguments, and tools marked as side-effecting or destructive are rejected. When the note or memory tools are used, matching content is sent to the configured Gemini model for an answer; do not store passwords, API keys, tokens, or other secrets in notes or personalization memory. The model cannot execute arbitrary Python, shell commands, or file paths through this interface. General desktop automation remains disabled until a trusted approval flow is implemented and tested.
 
 Requests containing wording such as `search the web`, `latest`, `current`, or `recent` are routed through `intelligence/web_research.py`, a separate Google Search-grounded Gemini request. The response includes up to five validated HTTP(S) source links when grounding metadata is available. This requires `GEMINI_API_KEY`; the default model is `gemini-2.5-flash`, and `GEMINI_WEB_MODEL` can override it. Gemini API usage charges may apply. When no source metadata is returned, AJARVIS says it could not verify source links.
 

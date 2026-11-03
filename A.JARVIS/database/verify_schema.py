@@ -13,6 +13,7 @@ from database.db import get_connection
 REQUIRED_COLUMNS = {
     "users": {"username", "face_encoding"},
     "command_history": {"id", "username", "command", "response"},
+    "user_memories": {"id", "username", "memory_key", "memory_value", "created_at", "updated_at"},
 }
 
 
@@ -48,6 +49,16 @@ def verify_schema():
                 errors.append(
                     f"Table {table_name} is missing column(s): {', '.join(missing)}"
                 )
+
+        if "user_memories" in tables:
+            cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'user_memories' "
+                "AND INDEX_NAME = 'uq_user_memories_username_key'",
+                (Config.MYSQL_DB,),
+            )
+            if not cursor.fetchone()[0]:
+                errors.append("user_memories is missing the unique username/key index.")
 
         if "users" in tables:
             cursor.execute(
