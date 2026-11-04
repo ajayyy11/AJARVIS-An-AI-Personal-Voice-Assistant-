@@ -27,15 +27,34 @@ class MultimodalError(ValueError):
 
 
 def detect_image_mime(data: bytes) -> str:
-    """Identify supported image formats from their bytes, not the client MIME."""
+    """Identify and decode supported images using their actual bytes."""
     if not isinstance(data, bytes) or not data:
         raise MultimodalError("Choose a non-empty JPG, PNG, or WEBP image.")
-    for signature, mime_type in _IMAGE_SIGNATURES:
+    mime_type = ""
+    for signature, candidate_mime in _IMAGE_SIGNATURES:
         if data.startswith(signature):
-            return mime_type
-    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    raise MultimodalError("Supported image formats are JPG, PNG, and WEBP.")
+            mime_type = candidate_mime
+            break
+    if not mime_type and len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        mime_type = "image/webp"
+    if not mime_type:
+        raise MultimodalError("Supported image formats are JPG, PNG, and WEBP.")
+
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as image:
+            width, height = image.size
+            if width < 1 or height < 1 or width * height > 25_000_000:
+                raise MultimodalError("Images must be no larger than 25 megapixels.")
+            if image.format not in {"JPEG", "PNG", "WEBP"}:
+                raise MultimodalError("Supported image formats are JPG, PNG, and WEBP.")
+            image.verify()
+    except MultimodalError:
+        raise
+    except Exception as exc:
+        raise MultimodalError("The image is invalid or corrupted.") from exc
+    return mime_type
 
 
 def _pdf_page_count(data: bytes) -> int:
