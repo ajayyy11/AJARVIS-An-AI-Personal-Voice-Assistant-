@@ -14,6 +14,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 - Multi-step task planning with a controlled allow-list and per-step user approval for computer-changing actions
 - Persistent reminders, opt-in browser notifications, and workflow recovery history
 - User-owned projects, transparent task prioritisation, and a personal focus brief
+- User-triggered multimodal visual understanding for image/PDF analysis, one-shot camera/screen snapshots, and scanned-PDF text extraction
 - Session management and system-statistics modules
 
 ## Tech Stack
