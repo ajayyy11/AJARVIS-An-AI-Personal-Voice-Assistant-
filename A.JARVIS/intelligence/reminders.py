@@ -217,7 +217,8 @@ def collect_due_notifications(username: str, limit: int = 20) -> list[dict[str, 
         for reminder_id, title in due:
             cursor.execute(
                 "INSERT IGNORE INTO assistant_notifications "
-                "(username, reminder_id, title, body) VALUES (%s, %s, %s, %s)",
+                "(username, reminder_id, title, body, created_at) "
+                "VALUES (%s, %s, %s, %s, UTC_TIMESTAMP())",
                 (owner, reminder_id, "AJARVIS reminder", title),
             )
             cursor.execute(
