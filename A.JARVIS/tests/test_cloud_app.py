@@ -643,3 +643,41 @@ def test_visual_analysis_uses_shared_ai_quota(client, monkeypatch):
     )
     assert response.status_code == 429
     assert response.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
+
+
+def test_scanned_pdf_document_upload_falls_back_to_visual_transcription(client, monkeypatch):
+    from io import BytesIO
+    from intelligence.documents import DocumentError
+
+    login_session(client, username="scan_user", csrf="visual-token")
+    connection = FakeConnection(FakeCursor(fetchone_value=(91, datetime.now(timezone.utc))))
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    monkeypatch.setattr(cloud_app, "_genai", lambda: object())
+    monkeypatch.setattr(cloud_app, "_assistant_rate_limited", lambda _username: False)
+    monkeypatch.setattr(
+        cloud_app, "extract_document_text",
+        lambda _filename, _raw: (_ for _ in ()).throw(
+            DocumentError("No readable text was found. Scanned PDFs need OCR before they can be analyzed.")
+        ),
+    )
+    transcribed = []
+    monkeypatch.setattr(
+        cloud_app, "extract_scanned_pdf_text",
+        lambda **kwargs: transcribed.append(kwargs) or ("[Page 1] Scanned checklist", 1),
+    )
+    monkeypatch.setattr(
+        cloud_app, "answer_document_question",
+        lambda **_kwargs: "Summary of the scanned checklist.",
+    )
+
+    response = client.post(
+        "/api/documents",
+        headers={"X-CSRF-Token": "visual-token"},
+        data={"file": (BytesIO(b"%PDF-test"), "scan.pdf")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 201
+    assert response.get_json()["summary"] == "Summary of the scanned checklist."
+    assert transcribed[0]["filename"] == "scan.pdf"
+    assert transcribed[0]["data"] == b"%PDF-test"
+    assert connection.committed
