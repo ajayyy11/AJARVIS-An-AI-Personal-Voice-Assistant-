@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 import os
+from pathlib import Path
 import re
 import secrets
 import time
@@ -41,6 +42,12 @@ from intelligence.cloud_tasks import (
     update_user_task,
 )
 from intelligence.memory import add_memory, get_recent
+from intelligence.multimodal import (
+    MultimodalError,
+    analyze_visual_input,
+    extract_scanned_pdf_text,
+    validate_visual_input,
+)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config.from_object(Config)
@@ -70,6 +77,7 @@ MAX_REGISTRATION_ATTEMPTS = 5
 REGISTRATION_WINDOW_SECONDS = 60 * 60
 MAX_NOTE_CHARS = 4000
 MAX_DOCUMENT_QUESTION_CHARS = 1500
+MAX_VISUAL_PROMPT_CHARS = 1200
 
 
 def ensure_cloud_schema() -> None:
@@ -209,7 +217,7 @@ def prepare_cloud_storage():
 
 @app.errorhandler(413)
 def upload_too_large(_error):
-    return jsonify({"error": "Request too large. Document uploads are limited to 8 MB."}), 413
+    return jsonify({"error": "Request too large. Documents and PDFs are limited to 8 MB; images are limited to 5 MB."}), 413
 
 
 def _database():
@@ -337,7 +345,7 @@ def add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self), geolocation=()")
     return response
 
 
@@ -1266,6 +1274,63 @@ def claim_reminders_api():
         return jsonify({"error": "Reminders are temporarily unavailable."}), 503
 
 
+@app.post("/api/visual/analyze")
+def analyze_visual_api():
+    """Analyze one explicitly supplied image or PDF; never persist media bytes."""
+    auth_error = _require_login()
+    if auth_error:
+        return auth_error
+    csrf_error = _require_csrf()
+    if csrf_error:
+        return csrf_error
+
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "Choose an image or PDF to analyze."}), 400
+
+    filename = secure_filename(upload.filename)[:255] or "visual-input"
+    raw = upload.read(8 * 1024 * 1024 + 1)
+    if not raw:
+        return jsonify({"error": "The selected file is empty."}), 400
+    if len(raw) > 8 * 1024 * 1024:
+        return jsonify({"error": "PDF uploads are limited to 8 MB."}), 413
+
+    try:
+        mime_type, page_count = validate_visual_input(filename, raw)
+    except MultimodalError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    prompt = request.form.get("prompt", "")
+    if not isinstance(prompt, str) or len(prompt) > MAX_VISUAL_PROMPT_CHARS:
+        return jsonify({"error": "Visual questions must be 1,200 characters or fewer."}), 400
+
+    client = _genai()
+    if client is None:
+        return jsonify({"error": "Visual Intelligence needs GEMINI_API_KEY. Add it in Render hosting settings."}), 503
+    if _assistant_rate_limited(session["user"]):
+        return _ai_quota_response()
+
+    try:
+        answer = analyze_visual_input(
+            client=client,
+            filename=filename,
+            data=raw,
+            prompt=prompt,
+        )
+        return jsonify({
+            "filename": filename,
+            "mime_type": mime_type,
+            "page_count": page_count,
+            "answer": answer,
+            "stored": False,
+        })
+    except MultimodalError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        logger.warning("Visual analysis failed for user %s.", session["user"])
+        return jsonify({"error": "AJARVIS could not analyze this visual input. Please retry with a clearer or smaller file."}), 503
+
+
 @app.get("/api/documents")
 def documents_api():
     auth_error = _require_login()
@@ -1315,7 +1380,29 @@ def upload_document_api():
     try:
         extracted, page_count = extract_document_text(filename, raw)
     except DocumentError as exc:
-        return jsonify({"error": str(exc)}), 400
+        is_scanned_pdf = (
+            Path(filename).suffix.lower() == ".pdf"
+            and "No readable text was found" in str(exc)
+        )
+        if not is_scanned_pdf:
+            return jsonify({"error": str(exc)}), 400
+        if client is None:
+            return jsonify({
+                "error": "This PDF appears to be scanned. Add GEMINI_API_KEY to enable visual text extraction."
+            }), 503
+        if _assistant_rate_limited(session["user"]):
+            return _ai_quota_response()
+        try:
+            extracted, page_count = extract_scanned_pdf_text(
+                client=client,
+                filename=filename,
+                data=raw,
+            )
+        except MultimodalError as visual_exc:
+            return jsonify({"error": str(visual_exc)}), 400
+        except Exception:
+            logger.warning("Scanned PDF transcription failed for user %s.", session["user"])
+            return jsonify({"error": "AJARVIS could not read this scanned PDF. Try a clearer or smaller PDF."}), 503
 
     conn = cursor = None
     try:
