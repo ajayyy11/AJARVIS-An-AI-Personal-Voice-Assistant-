@@ -716,6 +716,212 @@
     }
   });
 
+  const visualFileInput = $("visualFile");
+  const visualCameraButton = $("visualCameraButton");
+  const visualScreenButton = $("visualScreenButton");
+  const visualCaptureButton = $("visualCaptureButton");
+  const visualCancelCapture = $("visualCancelCapture");
+  const visualClearButton = $("visualClearButton");
+  const visualAnalyzeButton = $("visualAnalyzeButton");
+  const visualCameraPreview = $("visualCameraPreview");
+  const visualImagePreview = $("visualImagePreview");
+  const visualSelection = $("visualSelection");
+  const visualPrompt = $("visualPrompt");
+  const visualResult = $("visualResult");
+  const visualCanvas = document.createElement("canvas");
+  let visualFile = null;
+  let visualPreviewUrl = null;
+  let visualCameraStream = null;
+
+  function stopVisualCamera() {
+    if (visualCameraStream) {
+      visualCameraStream.getTracks().forEach((track) => track.stop());
+      visualCameraStream = null;
+    }
+    visualCameraPreview.pause();
+    visualCameraPreview.srcObject = null;
+    visualCameraPreview.hidden = true;
+    visualCaptureButton.hidden = true;
+    visualCancelCapture.hidden = true;
+    visualCameraButton.textContent = "Open camera";
+  }
+
+  function clearVisualPreviewUrl() {
+    if (visualPreviewUrl) {
+      URL.revokeObjectURL(visualPreviewUrl);
+      visualPreviewUrl = null;
+    }
+  }
+
+  function setVisualFile(file, sourceLabel) {
+    clearVisualPreviewUrl();
+    visualFile = file || null;
+    visualImagePreview.hidden = true;
+    visualImagePreview.removeAttribute("src");
+    if (visualFile && visualFile.type.startsWith("image/")) {
+      visualPreviewUrl = URL.createObjectURL(visualFile);
+      visualImagePreview.src = visualPreviewUrl;
+      visualImagePreview.hidden = false;
+    }
+    visualAnalyzeButton.disabled = !visualFile;
+    visualClearButton.hidden = !visualFile;
+    visualSelection.textContent = visualFile
+      ? sourceLabel + ": " + visualFile.name + " · " + (visualFile.size / 1024).toFixed(0) + " KB · not uploaded yet"
+      : "No visual selected. Camera and screen access start only when you press their buttons.";
+    visualResult.textContent = "";
+  }
+
+  function captureVisualFrame(video, namePrefix) {
+    if (!video.videoWidth || !video.videoHeight) {
+      throw new Error("The selected camera or screen has no video frame yet. Try again.");
+    }
+    const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
+    visualCanvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    visualCanvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const context = visualCanvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("This browser cannot capture a visual frame.");
+    context.drawImage(video, 0, 0, visualCanvas.width, visualCanvas.height);
+    return new Promise((resolve, reject) => {
+      visualCanvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("Could not create the visual snapshot."));
+          return;
+        }
+        resolve(new File([blob], namePrefix + "-" + Date.now() + ".jpg", { type: "image/jpeg" }));
+      }, "image/jpeg", 0.86);
+    });
+  }
+
+  visualFileInput.addEventListener("change", () => {
+    stopVisualCamera();
+    const file = visualFileInput.files && visualFileInput.files[0];
+    setVisualFile(file || null, "Selected file");
+  });
+
+  visualCameraButton.addEventListener("click", async () => {
+    if (visualCameraStream) {
+      stopVisualCamera();
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast("Camera capture is not supported in this browser. Choose an image instead.", true, "CAMERA UNAVAILABLE");
+      return;
+    }
+    try {
+      visualCameraStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      visualCameraPreview.srcObject = visualCameraStream;
+      visualCameraPreview.hidden = false;
+      await visualCameraPreview.play();
+      visualCaptureButton.hidden = false;
+      visualCancelCapture.hidden = false;
+      visualCameraButton.textContent = "Camera active";
+      visualSelection.textContent = "Camera preview is local. Press Capture photo to select one frame.";
+    } catch (error) {
+      stopVisualCamera();
+      toast(error.message || "Camera permission was not granted.", true, "CAMERA ACCESS");
+    }
+  });
+
+  visualCaptureButton.addEventListener("click", async () => {
+    try {
+      const snapshot = await captureVisualFrame(visualCameraPreview, "ajarvis-camera");
+      stopVisualCamera();
+      setVisualFile(snapshot, "Camera snapshot");
+      toast("One camera frame captured locally. It has not been uploaded.", false, "VISUAL CAPTURE");
+    } catch (error) {
+      toast(error.message, true, "CAMERA CAPTURE");
+    }
+  });
+
+  visualCancelCapture.addEventListener("click", stopVisualCamera);
+
+  visualScreenButton.addEventListener("click", async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      toast("Screen capture is not supported in this browser. Choose an image instead.", true, "SCREEN CAPTURE UNAVAILABLE");
+      return;
+    }
+    let stream = null;
+    try {
+      // The browser opens its native picker. Only one frame is captured and the stream is stopped.
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      visualCameraPreview.srcObject = stream;
+      visualCameraPreview.hidden = false;
+      await visualCameraPreview.play();
+      await new Promise((resolve) => {
+        if (typeof visualCameraPreview.requestVideoFrameCallback === "function") {
+          visualCameraPreview.requestVideoFrameCallback(() => resolve());
+        } else {
+          window.setTimeout(resolve, 150);
+        }
+      });
+      const snapshot = await captureVisualFrame(visualCameraPreview, "ajarvis-screen");
+      stream.getTracks().forEach((track) => track.stop());
+      stream = null;
+      visualCameraPreview.pause();
+      visualCameraPreview.srcObject = null;
+      visualCameraPreview.hidden = true;
+      setVisualFile(snapshot, "Screen snapshot");
+      toast("One screen frame captured. Screen sharing has stopped.", false, "VISUAL CAPTURE");
+    } catch (error) {
+      toast(error.message || "Screen capture was cancelled or unavailable.", true, "SCREEN CAPTURE");
+    } finally {
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      if (!visualCameraStream) {
+        visualCameraPreview.pause();
+        visualCameraPreview.srcObject = null;
+        visualCameraPreview.hidden = true;
+      }
+    }
+  });
+
+  visualClearButton.addEventListener("click", () => {
+    stopVisualCamera();
+    clearVisualPreviewUrl();
+    visualFile = null;
+    visualFileInput.value = "";
+    setVisualFile(null, "");
+  });
+
+  visualAnalyzeButton.addEventListener("click", async () => {
+    if (!visualFile) {
+      toast("Choose an image or PDF first.", true, "VISUAL INTELLIGENCE");
+      return;
+    }
+    const isPdf = visualFile.name.toLowerCase().endsWith(".pdf");
+    const sizeLimit = isPdf ? 8 * 1024 * 1024 : 5 * 1024 * 1024;
+    if (visualFile.size > sizeLimit) {
+      toast(isPdf ? "PDF uploads are limited to 8 MB." : "Image uploads are limited to 5 MB.", true, "FILE TOO LARGE");
+      return;
+    }
+    const payload = new FormData();
+    payload.append("file", visualFile);
+    payload.append("prompt", visualPrompt.value.trim());
+    visualAnalyzeButton.disabled = true;
+    visualAnalyzeButton.textContent = "Analyzing…";
+    visualResult.textContent = "AJARVIS is examining the selected visual input. Media is processed for this request and is not saved.";
+    try {
+      const result = await api("/api/visual/analyze", { method: "POST", body: payload });
+      visualResult.textContent = result.answer || "No visual answer was returned.";
+      if (result.page_count) visualResult.textContent += "\nPDF pages: " + result.page_count;
+      visualSelection.textContent = result.filename + " · " + result.mime_type + " · processed transiently";
+      toast("Visual analysis completed. The media was not saved.", false, "VISUAL INTELLIGENCE");
+    } catch (error) {
+      visualResult.textContent = error.message;
+      toast(error.message, true, "VISUAL ANALYSIS");
+    } finally {
+      visualAnalyzeButton.disabled = !visualFile;
+      visualAnalyzeButton.textContent = "Analyze visual input";
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    stopVisualCamera();
+    clearVisualPreviewUrl();
+  });
+
   async function loadSystemStatus() {
     try {
       const result = await api("/api/system");
