@@ -624,6 +624,16 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
         <button type="button" id="local-stop-speech" disabled>STOP VOICE</button>
       </div>
 
+        <div class="local-voice-controls" aria-label="Microphone input diagnostics">
+          <label for="local-microphone-input">MICROPHONE INPUT (VISUALIZER)</label>
+          <select id="local-microphone-input" aria-label="Select audio input for microphone visualizer">
+            <option value="">System default microphone</option>
+          </select>
+          <button type="button" id="local-microphone-refresh">REFRESH INPUTS</button>
+          <div id="local-microphone-status" role="status" aria-live="polite" style="font-size:10px;color:#80deea;">Detecting audio inputs…</div>
+          <div style="font-size:10px;color:#78909c;">Speech capture follows your Windows/browser default input. To use Bluetooth earbuds, set them as the Windows default microphone.</div>
+        </div>
+
       <div class="wave" style="margin-top: 15px;">
         <div class="bar"></div>
         <div class="bar"></div>
@@ -1691,6 +1701,62 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     const stopSpeechButton = document.getElementById("local-stop-speech");
     let recognition = null;
     let shouldListen = true;
+    let recognitionStarting = false;
+    let lastHandledResultIndex = -1;
+    let lastAcceptedTranscript = "";
+    let lastAcceptedTranscriptAt = 0;
+    let recognitionRestartTimer = null;
+    const microphoneSelect = document.getElementById("local-microphone-input");
+    const microphoneRefresh = document.getElementById("local-microphone-refresh");
+    const microphoneStatus = document.getElementById("local-microphone-status");
+    let selectedVisualizerDeviceId = "";
+    let visualizerStream = null;
+
+    async function refreshMicrophoneDevices() {
+      if (!navigator.mediaDevices?.enumerateDevices) {
+        if (microphoneStatus) microphoneStatus.textContent = "Microphone device listing is not supported.";
+        return;
+      }
+      try {
+        const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput");
+        if (microphoneSelect) {
+          const previous = microphoneSelect.value;
+          microphoneSelect.replaceChildren();
+          inputs.forEach((device,index) => {
+            const option=document.createElement("option");
+            option.value=device.deviceId;
+            option.textContent=device.label||("Microphone "+(index+1));
+            microphoneSelect.appendChild(option);
+          });
+          if(inputs.some(d=>d.deviceId===previous)) microphoneSelect.value=previous;
+          selectedVisualizerDeviceId=microphoneSelect.value||"";
+        }
+        if(microphoneStatus) microphoneStatus.textContent=inputs.length
+          ? inputs.length+" input device(s) found. SpeechRecognition follows the system/browser default."
+          : "No input listed. Start microphone permission, then refresh.";
+      } catch(error) {
+        if(microphoneStatus) microphoneStatus.textContent="Could not list microphones: "+String(error.message||error);
+      }
+    }
+    if(microphoneRefresh) microphoneRefresh.addEventListener("click",refreshMicrophoneDevices);
+    if(microphoneSelect) microphoneSelect.addEventListener("change",()=>{
+      selectedVisualizerDeviceId=microphoneSelect.value||"";
+      showToast("Visualizer input selected. Set this microphone as Windows/browser default for speech capture.");
+      restartMicVisualizer().catch(error=>{
+        if(microphoneStatus) microphoneStatus.textContent="Visualizer unavailable: "+String(error.message||error);
+      });
+    });
+    async function restartMicVisualizer() {
+      if(!navigator.mediaDevices?.getUserMedia) return;
+      if(visualizerStream) visualizerStream.getTracks().forEach(track=>track.stop());
+      const audio=selectedVisualizerDeviceId?{deviceId:{exact:selectedVisualizerDeviceId}}:true;
+      visualizerStream=await navigator.mediaDevices.getUserMedia({audio,video:false});
+      if(audioContext&&audioContext.state!=="closed"){
+        microphone=audioContext.createMediaStreamSource(visualizerStream);
+        microphone.connect(analyser);
+      }
+    }
+
     let recognitionBlocked = false;
     let speechHold = false;
     let speechGeneration = 0;
@@ -1838,6 +1904,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
         aiStatus.textContent = state === "activated" ? "System Active" : (state === "greeted" ? "Awaiting Activation" : "Standby");
         const statusText = document.getElementById('mic-status');
         if(statusText) statusText.style.display = 'none';
+        refreshMicrophoneDevices();
         
         // Prevent WebRTC visualizer from locking the mic on mobile devices
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -1880,103 +1947,46 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       };
 
       recognition.onend = () => {
+        recognitionStarting = false;
         if (!shouldListen || recognitionBlocked || speechHold) return;
-        window.setTimeout(() => {
-          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
-          try {
-            recognition.start();
-          } catch (_error) {
-            // The browser can still be transitioning between listening states.
-          }
-        }, 450);
+        if (recognitionRestartTimer) window.clearTimeout(recognitionRestartTimer);
+        recognitionRestartTimer = window.setTimeout(() => {
+          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress || recognitionStarting) return;
+          startRecognitionSafely();
+        }, 500);
       };
 
-      recognition.onresult = async (event) => {
+      function startRecognitionSafely() {
+        if (!recognition || !shouldListen || recognitionBlocked || speechHold
+            || commandInProgress || recognitionStarting) return false;
+        recognitionStarting = true;
+        try {
+          recognition.start();
+          return true;
+        } catch (error) {
+          recognitionStarting = false;
+          if (error && error.name !== "InvalidStateError") console.warn("Speech recognition start failed:", error);
+          return false;
+        }
+      }
 
-        const transcript =
-          event.results[event.results.length - 1][0].transcript.toLowerCase();
+      recognition.onresult = async (event) => {
+        const resultIndex = Number.isInteger(event.resultIndex)
+          ? event.resultIndex
+          : Math.max(0, event.results.length - 1);
+        const result = event.results[resultIndex];
+        if (!result || !result.isFinal || resultIndex <= lastHandledResultIndex) return;
+        lastHandledResultIndex = resultIndex;
+
+        const transcript = String(result[0]?.transcript || "").trim().toLowerCase();
+        if (!transcript) return;
+        const now = Date.now();
+        if (transcript === lastAcceptedTranscript && now - lastAcceptedTranscriptAt < 1800) return;
+        lastAcceptedTranscript = transcript;
+        lastAcceptedTranscriptAt = now;
 
         console.log("Heard:", transcript);
         transcriptBox.textContent = `"${transcript}"`;
-
-        /* =========================
-           STATE 1 — IDLE
-        ==========================*/
-        if (state === "idle") {
-          const startsWithWakePhrase =
-            /^(?:(?:hey|hi|hello|okay|ok)[,]?\s+)?(?:ajarvis|jarvis)\b/i.test(transcript);
-
-          if (startsWithWakePhrase) {
-            const wakeCommand = stripWakePhrase(transcript);
-
-            // Preserve the activation gate, but don't discard activation when
-            // it is spoken in the same utterance as the wake phrase.
-            if (/^system activate\b/i.test(wakeCommand)) {
-              const activationReply = await processCommand(wakeCommand);
-              if (activationReply && activationReply.toLowerCase().includes("activating system")) {
-                state = "activated";
-                core.classList.add("activate-ring");
-                setTimeout(() => core.classList.remove("activate-ring"), 3600);
-                aiStatus.textContent = "System Active";
-                core.style.boxShadow = "0 0 140px #00ffff";
-              }
-            } else {
-              state = "greeted";
-              aiStatus.textContent = "Awaiting Activation";
-              speak("Hello " + username + ". Awaiting system activation.");
-              core.style.boxShadow = "0 0 100px #00ffff";
-            }
-          }
-
-          return;
-        }
-
-        /* =========================
-           STATE 2 — GREETED
-        ==========================*/
-        if (state === "greeted") {
-          const activationCommand = stripWakePhrase(transcript) || transcript;
-          if (/system activate/i.test(activationCommand)) {
-            const activationReply = await processCommand("system activate");
-            if (activationReply && activationReply.toLowerCase().includes("activating system")) {
-              state = "activated";
-              core.classList.add("activate-ring");
-              setTimeout(() => core.classList.remove("activate-ring"), 3600);
-              aiStatus.textContent = "System Active";
-              core.style.boxShadow = "0 0 140px #00ffff";
-            }
-          }
-          return;
-        }
-
-        /* =========================
-           STATE 3 — ACTIVATED
-        ==========================*/
-        if (state === "activated") {
-
-          // 🔴 Shutdown
-          if (transcript.includes("system deactivate") ||
-            transcript.includes("system shutdown") ||
-            transcript.includes("system shut down")) {
-            core.classList.add("shutdown-effect");
-            setTimeout(() => {
-              core.classList.remove("shutdown-effect");
-            }, 1000);
-
-            // Keep the browser state and server authorization in sync.
-            await processCommand("system deactivate");
-            state = "idle";
-            aiStatus.textContent = "Standby";
-            core.style.boxShadow = "0 0 40px #00ffff";
-            return;
-          }
-
-          // 🔵 Normal Commands
-          processCommand(transcript);
-
-        }
-
-      };
 
       // Handle mobile browsers requiring a physical tap to start audio
       document.getElementById('ai-core').addEventListener('click', () => {
@@ -1989,13 +1999,9 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
           if ("speechSynthesis" in window) window.speechSynthesis.cancel();
           if (stopSpeechButton) stopSpeechButton.disabled = true;
         }
-        try {
-          recognition.start();
-          const statusText = document.getElementById('mic-status');
-          if (statusText) statusText.textContent = 'INITIALIZING...';
-        } catch (_error) {
-          console.log("Mic already listening");
-        }
+        startRecognitionSafely();
+        const statusText = document.getElementById('mic-status');
+        if (statusText) statusText.textContent = 'INITIALIZING...';
 
         // Also resume AudioContext for the visualizer if suspended.
         if (audioContext && audioContext.state === 'suspended') {
@@ -2085,11 +2091,12 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     let dataArray;
 
     async function startMicReactiveSystem() {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audio = selectedVisualizerDeviceId ? { deviceId: { exact: selectedVisualizerDeviceId } } : true;
+      visualizerStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
 
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       analyser = audioContext.createAnalyser();
-      microphone = audioContext.createMediaStreamSource(stream);
+      microphone = audioContext.createMediaStreamSource(visualizerStream);
 
       analyser.fftSize = 256;
       const bufferLength = analyser.frequencyBinCount;
