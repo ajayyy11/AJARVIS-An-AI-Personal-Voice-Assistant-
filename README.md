@@ -13,6 +13,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 - User-scoped command history, AI context, notes, activation state, and editable personal memory
 - Multi-step task planning with a controlled allow-list and per-step user approval for computer-changing actions
 - Persistent reminders, opt-in browser notifications, and workflow recovery history
+- User-owned projects, transparent task prioritisation, and a personal focus brief
 - Session management and system-statistics modules
 
 ## Tech Stack
@@ -103,6 +104,11 @@ pytest -q tests
 ```
 
 Command history, AI context, analytics, notes, and activation state are scoped to the signed-in username. Existing database installations must apply the migration in the setup instructions before persistent history will work. These tests cover session validation, database history fallback/cleanup, and power-action confirmation. They do not replace full integration testing of the camera, face-recognition accuracy, MySQL schema, or external AI services.
+
+
+## Personal Projects and Explainable Task Prioritisation
+
+The local AJARVIS dashboard provides user-scoped projects and tasks, including objectives, due dates, estimated effort, and explicit priority selection. A deterministic 0–100 suggestion score explains its inputs (chosen priority, deadline urgency, quick-win estimate, and in-progress status). The assistant's personal-focus tool is read-only: it can review active projects and the next tasks but cannot modify their status or priority. Existing MySQL installations must apply the Phase 7 schema migration described in [the database upgrade runbook](A.JARVIS/database/migrations/README.md).
 
 
 ## Proactive Reminders and Workflow Recovery
