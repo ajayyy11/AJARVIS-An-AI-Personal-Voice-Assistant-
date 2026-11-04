@@ -9,3 +9,4 @@ openpyxl>=3.1
 gunicorn>=23.0
 pytest>=9.2.0
 numpy>=1.24,<3
+Pillow>=10,<13
