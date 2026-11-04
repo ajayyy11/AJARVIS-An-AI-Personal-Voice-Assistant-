@@ -333,3 +333,25 @@ def test_project_and_task_status_routes_require_csrf_and_scope_owner(client,monk
     assert client.post("/api/projects/2/status",headers=headers,json={"status":"paused"}).status_code == 200
     assert client.post("/api/tasks/8/status",headers=headers,json={"status":"completed"}).status_code == 200
     assert calls == [("project","alice",2,"paused"),("task","alice",8,"completed")]
+
+
+def test_dashboard_voice_capture_deduplicates_final_results_and_has_safe_restart():
+    dashboard = Path(local_app.__file__).parent / "templates" / "dashboard.html"
+    source = dashboard.read_text(encoding="utf-8")
+    assert "lastHandledResultIndex" in source
+    assert "lastAcceptedTranscriptAt" in source
+    assert "resultIndex <= lastHandledResultIndex" in source
+    assert "if (!result || !result.isFinal" in source
+    assert "function startRecognitionSafely()" in source
+    assert "recognitionStarting" in source
+
+
+def test_dashboard_exposes_audio_input_diagnostics_and_bluetooth_guidance():
+    dashboard = Path(local_app.__file__).parent / "templates" / "dashboard.html"
+    source = dashboard.read_text(encoding="utf-8")
+    assert 'id="local-microphone-input"' in source
+    assert 'id="local-microphone-refresh"' in source
+    assert "enumerateDevices()" in source
+    assert "deviceId: { exact: selectedVisualizerDeviceId }" in source
+    assert "Speech recognition uses your browser/Windows default input." in source
+    assert "Bluetooth earbuds" in source
