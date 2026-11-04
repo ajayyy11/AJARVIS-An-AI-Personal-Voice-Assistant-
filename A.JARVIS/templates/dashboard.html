@@ -1692,9 +1692,71 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     let recognition = null;
     let shouldListen = true;
     let recognitionBlocked = false;
+    let recognitionStarting = false;
+    let recognitionActive = false;
+    let recognitionStartWatchdog = null;
+    let recognitionRestartTimer = null;
+    let lastHandledResultIndex = -1;
+    let lastAcceptedTranscript = "";
+    let lastAcceptedTranscriptAt = 0;
     let speechHold = false;
     let speechGeneration = 0;
     let state = initialActive ? "activated" : "idle";
+
+    // Keep every recognition start behind one guarded entry point. This prevents
+    // overlapping starts from onend, TTS completion, command completion, and taps.
+    function startRecognitionSafely() {
+      if (!recognition || !shouldListen || recognitionBlocked || speechHold
+          || commandInProgress || recognitionStarting || recognitionActive) return false;
+
+      if (recognitionRestartTimer) {
+        window.clearTimeout(recognitionRestartTimer);
+        recognitionRestartTimer = null;
+      }
+
+      recognitionStarting = true;
+      try {
+        recognition.start();
+        if (recognitionStartWatchdog) window.clearTimeout(recognitionStartWatchdog);
+        recognitionStartWatchdog = window.setTimeout(() => {
+          if (recognitionStarting && !recognitionActive) {
+            recognitionStarting = false;
+            aiStatus.textContent = "Voice input did not start";
+            const statusText = document.getElementById("mic-status");
+            if (statusText) {
+              statusText.style.display = "block";
+              statusText.textContent = "VOICE INPUT DID NOT START — CHECK BROWSER MICROPHONE PERMISSION";
+            }
+          }
+        }, 5000);
+        return true;
+      } catch (error) {
+        recognitionStarting = false;
+        if (recognitionStartWatchdog) {
+          window.clearTimeout(recognitionStartWatchdog);
+          recognitionStartWatchdog = null;
+        }
+        if (error && error.name !== "InvalidStateError") {
+          console.warn("Speech recognition start failed:", error);
+          aiStatus.textContent = "Voice input failed to start";
+          const statusText = document.getElementById("mic-status");
+          if (statusText) {
+            statusText.style.display = "block";
+            statusText.textContent = "VOICE INPUT FAILED — CHECK MICROPHONE PERMISSION";
+          }
+        }
+        return false;
+      }
+    }
+
+    function scheduleRecognitionRestart(delay = 450) {
+      if (!recognition || !shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
+      if (recognitionRestartTimer) window.clearTimeout(recognitionRestartTimer);
+      recognitionRestartTimer = window.setTimeout(() => {
+        recognitionRestartTimer = null;
+        startRecognitionSafely();
+      }, delay);
+    }
 
     try {
       const savedLanguage = window.localStorage.getItem("ajarvis.local.voice.language");
@@ -1714,7 +1776,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
         recognitionBlocked = false;
         shouldListen = true;
         if (shouldRestart) {
-          try { recognition.start(); } catch (_error) {}
+          startRecognitionSafely();
         } else if (!speechHold) {
           try { recognition.stop(); } catch (_error) {}
         }
@@ -1741,10 +1803,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       if (stopSpeechButton) stopSpeechButton.disabled = true;
       if (recognition && shouldListen && !recognitionBlocked) {
-        window.setTimeout(() => {
-          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
-          try { recognition.start(); } catch (_error) {}
-        }, 350);
+        scheduleRecognitionRestart(350);
       }
     }
 
@@ -1795,10 +1854,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       } finally {
         commandInProgress = false;
         if (!speechHold && recognition && shouldListen && !recognitionBlocked) {
-          window.setTimeout(() => {
-            if (commandInProgress || speechHold || !shouldListen || recognitionBlocked) return;
-            try { recognition.start(); } catch (_error) {}
-          }, 450);
+          scheduleRecognitionRestart(450);
         }
       }
     }
@@ -1833,6 +1889,13 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       // idle → greeted → activated
 
       recognition.onstart = () => {
+        recognitionStarting = false;
+        recognitionActive = true;
+        lastHandledResultIndex = -1;
+        if (recognitionStartWatchdog) {
+          window.clearTimeout(recognitionStartWatchdog);
+          recognitionStartWatchdog = null;
+        }
         aiStatus.textContent = state === "activated" ? "System Active" : (state === "greeted" ? "Awaiting Activation" : "Standby");
         const statusText = document.getElementById('mic-status');
         if(statusText) statusText.style.display = 'none';
@@ -1845,6 +1908,12 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       };
 
       recognition.onerror = (event) => {
+        recognitionStarting = false;
+        recognitionActive = false;
+        if (recognitionStartWatchdog) {
+          window.clearTimeout(recognitionStartWatchdog);
+          recognitionStartWatchdog = null;
+        }
         const errorCode = String(event.error || "unknown");
         const statusText = document.getElementById("mic-status");
         if (errorCode === "not-allowed" || errorCode === "service-not-allowed") {
@@ -1878,22 +1947,41 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       };
 
       recognition.onend = () => {
-        if (!shouldListen || recognitionBlocked || speechHold) return;
-        window.setTimeout(() => {
-          if (!shouldListen || recognitionBlocked || speechHold || commandInProgress) return;
-          try {
-            recognition.start();
-          } catch (_error) {
-            // The browser can still be transitioning between listening states.
-          }
-        }, 450);
+        recognitionStarting = false;
+        recognitionActive = false;
+        if (recognitionStartWatchdog) {
+          window.clearTimeout(recognitionStartWatchdog);
+          recognitionStartWatchdog = null;
+        }
+        scheduleRecognitionRestart(450);
       };
 
       recognition.onresult = async (event) => {
+        const results = event.results;
+        const startIndex = Number.isInteger(event.resultIndex)
+          ? Math.max(0, event.resultIndex)
+          : Math.max(0, results.length - 1);
+        let transcript = "";
 
-        const transcript =
-          event.results[event.results.length - 1][0].transcript.toLowerCase();
+        for (let resultIndex = startIndex; resultIndex < results.length; resultIndex += 1) {
+          const result = results[resultIndex];
+          if (!result || !result.isFinal || resultIndex <= lastHandledResultIndex) continue;
+          lastHandledResultIndex = resultIndex;
 
+          const candidate = String(result[0]?.transcript || "")
+            .trim()
+            .replace(/\s+/g, " ")
+            .toLowerCase();
+          if (!candidate) continue;
+
+          const now = Date.now();
+          if (candidate === lastAcceptedTranscript && now - lastAcceptedTranscriptAt < 1800) continue;
+          lastAcceptedTranscript = candidate;
+          lastAcceptedTranscriptAt = now;
+          transcript = candidate;
+        }
+
+        if (!transcript) return;
         console.log("Heard:", transcript);
         transcriptBox.textContent = `"${transcript}"`;
 
@@ -1987,13 +2075,9 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
           if ("speechSynthesis" in window) window.speechSynthesis.cancel();
           if (stopSpeechButton) stopSpeechButton.disabled = true;
         }
-        try {
-          recognition.start();
-          const statusText = document.getElementById('mic-status');
-          if (statusText) statusText.textContent = 'INITIALIZING...';
-        } catch (_error) {
-          console.log("Mic already listening");
-        }
+        startRecognitionSafely();
+        const statusText = document.getElementById('mic-status');
+        if (statusText) statusText.textContent = 'INITIALIZING...';
 
         // Also resume AudioContext for the visualizer if suspended.
         if (audioContext && audioContext.state === 'suspended') {
@@ -2038,10 +2122,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
         speechHold = false;
         if (stopSpeechButton) stopSpeechButton.disabled = true;
         if (recognition && shouldListen && !recognitionBlocked) {
-          window.setTimeout(() => {
-            if (!shouldListen || recognitionBlocked || speechHold) return;
-            try { recognition.start(); } catch (_error) {}
-          }, 450);
+          scheduleRecognitionRestart(450);
         }
       };
       speech.onstart = () => {
