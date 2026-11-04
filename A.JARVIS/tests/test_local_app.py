@@ -283,3 +283,53 @@ def test_workflow_history_api_requires_auth_and_scopes_results(client,monkeypatc
     assert response.status_code==200
     assert response.get_json()["workflows"][0]["status"]=="interrupted"
     assert calls==[("alice",30)]
+
+
+def test_personal_intelligence_focus_api_requires_authentication_and_scopes_user(client,monkeypatch):
+    assert client.get("/api/personal-intelligence/focus").status_code == 401
+    login(client)
+    calls=[]
+    monkeypatch.setattr(
+        local_app, "build_personal_focus",
+        lambda username: calls.append(username) or {"metrics": {"open_tasks": 2}},
+    )
+    response=client.get("/api/personal-intelligence/focus")
+    assert response.status_code == 200
+    assert response.get_json()["focus"]["metrics"]["open_tasks"] == 2
+    assert calls == ["alice"]
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_project_creation_requires_csrf_and_uses_signed_in_owner(client,monkeypatch):
+    assert client.post("/api/projects",json={"name":"AJARVIS"}).status_code == 401
+    login(client)
+    monkeypatch.setattr(local_app,"create_project",lambda *_args:pytest.fail("Must check CSRF before creation"))
+    assert client.post("/api/projects",json={"name":"AJARVIS"}).status_code == 403
+
+
+def test_project_and_task_creation_are_user_scoped_and_csrf_protected(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"create_project",lambda username,name,objective:calls.append(("project",username,name,objective)) or {"id":2,"name":name})
+    monkeypatch.setattr(local_app,"create_task",lambda username,title,**kwargs:calls.append(("task",username,title,kwargs)) or {"id":8,"title":title})
+    headers={"X-CSRF-Token":"test-csrf-token"}
+    project=client.post("/api/projects",headers=headers,json={"name":"AJARVIS","objective":"Assistant roadmap"})
+    task=client.post("/api/tasks",headers=headers,json={"title":"Run tests","project_id":2,"priority":"urgent"})
+    assert project.status_code == 201 and task.status_code == 201
+    assert calls[0] == ("project","alice","AJARVIS","Assistant roadmap")
+    assert calls[1][1:3] == ("alice","Run tests")
+    assert calls[1][3]["project_id"] == 2
+    assert calls[1][3]["priority"] == "urgent"
+
+
+def test_project_and_task_status_routes_require_csrf_and_scope_owner(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"update_project_status",lambda username,project_id,status:calls.append(("project",username,project_id,status)) or True)
+    monkeypatch.setattr(local_app,"update_task_status",lambda username,task_id,status:calls.append(("task",username,task_id,status)) or True)
+    assert client.post("/api/projects/2/status",json={"status":"paused"}).status_code == 403
+    assert client.post("/api/tasks/8/status",json={"status":"completed"}).status_code == 403
+    headers={"X-CSRF-Token":"test-csrf-token"}
+    assert client.post("/api/projects/2/status",headers=headers,json={"status":"paused"}).status_code == 200
+    assert client.post("/api/tasks/8/status",headers=headers,json={"status":"completed"}).status_code == 200
+    assert calls == [("project","alice",2,"paused"),("task","alice",8,"completed")]
