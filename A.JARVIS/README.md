@@ -111,6 +111,31 @@ The agent chat tool-call path remains read-only. The planner is a separate, serv
 
 For existing MySQL installations, back up the database, review the dry run, and apply `python database/migrate_database.py --apply` as described in [the database upgrade runbook](database/migrations/README.md). The migration creates the privacy-minimal `automation_activity` table and its per-user index if they are missing.
 
+
+## Phase 6 — Proactive Intelligence & Workflow Memory
+
+The local dashboard now supports persistent scheduled reminders, opt-in notifications, and durable workflow status history.
+
+### Reminders and notifications
+
+- Create reminders with a title and a timezone-aware future date/time (up to one year ahead). AJARVIS stores the due time in UTC and displays it in the browser's local timezone.
+- Reminders are stored in MySQL and remain available across application restarts.
+- Reminder alerts and browser notifications are both disabled by default. Enable reminder alerts in the dashboard; browser notifications require a separate opt-in and the browser's site permission.
+- When the dashboard is open, it checks for due reminders once per minute. Due reminders also surface in the in-app Notification Centre. If AJARVIS is closed when a reminder becomes due, it is collected the next time the dashboard is opened; native browser pop-ups are not delivered while the dashboard is closed.
+- Mark reminders completed or cancelled, and mark delivered notifications read. Notification and reminder APIs are scoped to the authenticated account and write endpoints require CSRF validation.
+
+### Durable workflow history and recovery
+
+- Automation workflow metadata (workflow status, step count, safe tool identifiers and timestamps) is stored separately from the detailed execution plan.
+- The system deliberately does not persist user prompts, URLs, raw tool arguments, note contents, model outputs, approval tokens or executable parameters.
+- When the local app starts, workflows left ready/running/awaiting approval by an older process are marked `interrupted`.
+- Interrupted workflows are review-only. Create a fresh plan rather than automatically replaying actions after a crash or restart. This prevents duplicate browser launches or other side effects.
+- Completed and interrupted workflow status remains available in the dashboard's Durable Workflow History panel.
+
+### Existing MySQL installation
+
+Back up the database, review the read-only migration preview, then apply the Phase 6 schema changes with `python database/migrate_database.py --apply` and type `MIGRATE` after checking the target database name. Verify with `python database/verify_schema.py` and run `pytest -q tests`. The migration adds durable workflow, reminder, notification preference and notification tables without dropping existing users, face encodings, personal memory or automation audit history.
+
 ## Local Voice Command Flow
 
 The local Windows dashboard follows a guarded activation flow: say "Hey Jarvis" to wake it, then say "system activate" before desktop commands. You can also say "Hey Jarvis, system activate" in one utterance. Once activated, leading wake phrases are removed before command routing so "Hey Jarvis, what time is it?" and "Hey Jarvis, take a note: ..." still reach the intended command handler.

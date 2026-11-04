@@ -12,6 +12,7 @@ A local assistant project for Windows built with Flask, Google Gemini integratio
 - MySQL database connection layer
 - User-scoped command history, AI context, notes, activation state, and editable personal memory
 - Multi-step task planning with a controlled allow-list and per-step user approval for computer-changing actions
+- Persistent reminders, opt-in browser notifications, and workflow recovery history
 - Session management and system-statistics modules
 
 ## Tech Stack
@@ -102,6 +103,13 @@ pytest -q tests
 ```
 
 Command history, AI context, analytics, notes, and activation state are scoped to the signed-in username. Existing database installations must apply the migration in the setup instructions before persistent history will work. These tests cover session validation, database history fallback/cleanup, and power-action confirmation. They do not replace full integration testing of the camera, face-recognition accuracy, MySQL schema, or external AI services.
+
+
+## Proactive Reminders and Workflow Recovery
+
+The local Windows dashboard supports scheduled reminders and a Notification Centre. Reminder alerts are opt-in, and browser notifications require a separate browser permission. Due reminders are checked while the dashboard is open and surfaced in-app; if AJARVIS was closed at the due time, they are collected when the dashboard is opened again. Browser pop-ups are not sent while the dashboard is closed.
+
+Workflow history stores status metadata without prompts, URLs, action arguments, private note contents, or approval tokens. On restart, unfinished workflows are marked interrupted and must be reviewed and replanned rather than automatically replayed. Existing MySQL installations must apply the Phase 6 migration in [the database upgrade runbook](A.JARVIS/database/migrations/README.md).
 
 ## Repository Layout
 
