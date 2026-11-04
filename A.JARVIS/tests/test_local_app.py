@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from datetime import datetime,timezone
 import pytest
 os.environ["SECRET_KEY"]="test-only-secret-key-for-automated-tests-123456"
@@ -333,3 +334,24 @@ def test_project_and_task_status_routes_require_csrf_and_scope_owner(client,monk
     assert client.post("/api/projects/2/status",headers=headers,json={"status":"paused"}).status_code == 200
     assert client.post("/api/tasks/8/status",headers=headers,json={"status":"completed"}).status_code == 200
     assert calls == [("project","alice",2,"paused"),("task","alice",8,"completed")]
+
+def test_dashboard_voice_capture_handles_only_new_final_results_and_preserves_wake_flow():
+    dashboard = Path(local_app.__file__).parent / "templates" / "dashboard.html"
+    source = dashboard.read_text(encoding="utf-8")
+    assert "result.isFinal" in source
+    assert "resultIndex <= lastHandledResultIndex" in source
+    assert "lastAcceptedTranscriptAt" in source
+    assert "startsWithWakePhrase" in source
+    assert "STATE 2 — GREETED" in source
+    assert "processCommand(transcript)" in source
+
+
+def test_dashboard_voice_capture_uses_one_guarded_start_and_recovery_timer():
+    dashboard = Path(local_app.__file__).parent / "templates" / "dashboard.html"
+    source = dashboard.read_text(encoding="utf-8")
+    assert "function startRecognitionSafely()" in source
+    assert "function scheduleRecognitionRestart(" in source
+    assert "recognitionStartWatchdog" in source
+    assert "recognitionActive" in source
+    assert source.count("recognition.start()") == 1
+
