@@ -63,3 +63,64 @@ CREATE TABLE IF NOT EXISTS automation_activity (
 ) ENGINE=InnoDB
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
+
+
+-- Durable metadata for workflow recovery. Sensitive prompts, URLs, and arguments
+-- are deliberately not stored here; interrupted workflows require replanning.
+CREATE TABLE IF NOT EXISTS automation_workflows (
+  plan_id CHAR(32) NOT NULL,
+  username VARCHAR(100) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  step_count INT NOT NULL DEFAULT 0,
+  tools_summary VARCHAR(320) NOT NULL DEFAULT '',
+  process_instance_id CHAR(32) NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  finished_at DATETIME NULL,
+  PRIMARY KEY (plan_id),
+  KEY idx_automation_workflows_user_updated (username, updated_at)
+) ENGINE=InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+-- Reminder preferences are opt-in. Browser notifications require a second opt-in.
+CREATE TABLE IF NOT EXISTS user_notification_preferences (
+  username VARCHAR(100) NOT NULL,
+  reminders_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  browser_notifications_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (username)
+) ENGINE=InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS assistant_reminders (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(100) NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  due_at DATETIME NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  completed_at DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_assistant_reminders_user_status_due (username, status, due_at)
+) ENGINE=InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS assistant_notifications (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(100) NOT NULL,
+  reminder_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  body VARCHAR(240) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  presented_at DATETIME NULL,
+  read_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_assistant_notifications_user_reminder (username, reminder_id),
+  KEY idx_assistant_notifications_user_read (username, read_at, id)
+) ENGINE=InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;

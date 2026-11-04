@@ -23,6 +23,27 @@ AUTOMATION_ACTIVITY_INDEX = "idx_automation_activity_user_id"
 HISTORY_INDEX_NAME = "idx_command_history_username_id"
 HISTORY_INDEX_COLUMNS = ("username", "id")
 
+WORKFLOW_COLUMNS = {
+    "plan_id", "username", "status", "step_count", "tools_summary",
+    "process_instance_id", "created_at", "updated_at", "finished_at"
+}
+PREFERENCE_COLUMNS = {
+    "username", "reminders_enabled", "browser_notifications_enabled", "updated_at"
+}
+REMINDER_COLUMNS = {
+    "id", "username", "title", "due_at", "status", "created_at",
+    "updated_at", "completed_at"
+}
+NOTIFICATION_COLUMNS = {
+    "id", "username", "reminder_id", "title", "body", "created_at",
+    "presented_at", "read_at"
+}
+PHASE6_INDEXES = {
+    "automation_workflows": ("idx_automation_workflows_user_updated", ("username", "updated_at")),
+    "assistant_reminders": ("idx_assistant_reminders_user_status_due", ("username", "status", "due_at")),
+    "assistant_notifications": ("idx_assistant_notifications_user_read", ("username", "read_at", "id")),
+}
+
 
 def plan_migration(tables, columns, indexes):
     """Return planned actions and errors without making schema changes."""
@@ -86,6 +107,42 @@ def plan_migration(tables, columns, indexes):
             errors.append(
                 f"Index {AUTOMATION_ACTIVITY_INDEX} must cover (username, id); inspect it manually."
             )
+    phase6_tables = {
+        "automation_workflows": WORKFLOW_COLUMNS,
+        "user_notification_preferences": PREFERENCE_COLUMNS,
+        "assistant_reminders": REMINDER_COLUMNS,
+        "assistant_notifications": NOTIFICATION_COLUMNS,
+    }
+    for table_name, required_columns in phase6_tables.items():
+        if table_name not in tables:
+            actions.append(f"create_{table_name}_table")
+            continue
+        missing = sorted(required_columns - columns.get(table_name, set()))
+        if missing:
+            errors.append(
+                f"Table {table_name} is missing required column(s): " + ", ".join(missing)
+            )
+    for table_name, (index_name, expected_columns) in PHASE6_INDEXES.items():
+        if table_name not in tables:
+            continue
+        actual = indexes.get(table_name, {}).get(index_name)
+        if actual is None:
+            actions.append(f"add_{table_name}_index")
+        elif tuple(actual) != expected_columns:
+            errors.append(
+                f"Index {index_name} must cover {expected_columns!r}; inspect it manually."
+            )
+    notification_unique = indexes.get("assistant_notifications", {}).get(
+        "uq_assistant_notifications_user_reminder"
+    )
+    if "assistant_notifications" in tables:
+        if notification_unique is None:
+            actions.append("add_assistant_notifications_unique")
+        elif tuple(notification_unique) != ("username", "reminder_id"):
+            errors.append(
+                "Index uq_assistant_notifications_user_reminder must cover "
+                "(username, reminder_id); inspect it manually."
+            )
     return actions, errors
 
 
@@ -97,7 +154,11 @@ def read_schema(cursor, database_name):
     )
     tables = {row[0] for row in cursor.fetchall()}
     columns, indexes = {}, {}
-    inspected_tables = [*REQUIRED_COLUMNS, "user_memories", "automation_activity"]
+    inspected_tables = [
+        *REQUIRED_COLUMNS, "user_memories", "automation_activity",
+        "automation_workflows", "user_notification_preferences",
+        "assistant_reminders", "assistant_notifications",
+    ]
     for table_name in inspected_tables:
         if table_name not in tables:
             continue
@@ -147,6 +208,15 @@ def migrate_database(apply=False, confirm=input):
             "create_user_memories_table": "Create user_memories for editable, user-scoped preferences and facts",
             "create_automation_activity_table": "Create privacy-minimal automation activity history",
             "add_automation_activity_index": "Create index idx_automation_activity_user_id (username, id)",
+
+            "create_automation_workflows_table": "Create durable per-user workflow status history",
+            "create_user_notification_preferences_table": "Create opt-in reminder/browser notification preferences",
+            "create_assistant_reminders_table": "Create persistent scheduled reminders",
+            "create_assistant_notifications_table": "Create durable in-app reminder notifications",
+            "add_automation_workflows_index": "Create workflow history index",
+            "add_assistant_reminders_index": "Create reminder due-date index",
+            "add_assistant_notifications_index": "Create unread notification index",
+            "add_assistant_notifications_unique": "Create unique notification-per-reminder constraint",
         }
         print(f"Database: {Config.MYSQL_DB}")
         print("Planned schema changes:")
@@ -205,6 +275,72 @@ def migrate_database(apply=False, confirm=input):
                     "CREATE INDEX idx_automation_activity_user_id "
                     "ON automation_activity (username, id)"
                 )
+
+            elif action == "create_automation_workflows_table":
+                cursor.execute(
+                    "CREATE TABLE automation_workflows ("
+                    "plan_id CHAR(32) NOT NULL, username VARCHAR(100) NOT NULL, "
+                    "status VARCHAR(32) NOT NULL, step_count INT NOT NULL DEFAULT 0, "
+                    "tools_summary VARCHAR(320) NOT NULL DEFAULT '', "
+                    "process_instance_id CHAR(32) NOT NULL, created_at DATETIME NOT NULL, "
+                    "updated_at DATETIME NOT NULL, finished_at DATETIME NULL, "
+                    "PRIMARY KEY (plan_id), "
+                    "KEY idx_automation_workflows_user_updated (username, updated_at)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "create_user_notification_preferences_table":
+                cursor.execute(
+                    "CREATE TABLE user_notification_preferences ("
+                    "username VARCHAR(100) NOT NULL, reminders_enabled TINYINT(1) NOT NULL DEFAULT 0, "
+                    "browser_notifications_enabled TINYINT(1) NOT NULL DEFAULT 0, "
+                    "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                    "PRIMARY KEY (username)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "create_assistant_reminders_table":
+                cursor.execute(
+                    "CREATE TABLE assistant_reminders ("
+                    "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, username VARCHAR(100) NOT NULL, "
+                    "title VARCHAR(180) NOT NULL, due_at DATETIME NOT NULL, "
+                    "status VARCHAR(20) NOT NULL DEFAULT 'pending', "
+                    "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                    "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                    "completed_at DATETIME NULL, PRIMARY KEY (id), "
+                    "KEY idx_assistant_reminders_user_status_due (username, status, due_at)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "create_assistant_notifications_table":
+                cursor.execute(
+                    "CREATE TABLE assistant_notifications ("
+                    "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, username VARCHAR(100) NOT NULL, "
+                    "reminder_id BIGINT UNSIGNED NOT NULL, title VARCHAR(180) NOT NULL, "
+                    "body VARCHAR(240) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                    "presented_at DATETIME NULL, read_at DATETIME NULL, PRIMARY KEY (id), "
+                    "UNIQUE KEY uq_assistant_notifications_user_reminder (username, reminder_id), "
+                    "KEY idx_assistant_notifications_user_read (username, read_at, id)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "add_automation_workflows_index":
+                cursor.execute(
+                    "CREATE INDEX idx_automation_workflows_user_updated "
+                    "ON automation_workflows (username, updated_at)"
+                )
+            elif action == "add_assistant_reminders_index":
+                cursor.execute(
+                    "CREATE INDEX idx_assistant_reminders_user_status_due "
+                    "ON assistant_reminders (username, status, due_at)"
+                )
+            elif action == "add_assistant_notifications_index":
+                cursor.execute(
+                    "CREATE INDEX idx_assistant_notifications_user_read "
+                    "ON assistant_notifications (username, read_at, id)"
+                )
+            elif action == "add_assistant_notifications_unique":
+                cursor.execute(
+                    "CREATE UNIQUE INDEX uq_assistant_notifications_user_reminder "
+                    "ON assistant_notifications (username, reminder_id)"
+                )
+        connection.commit()
         print("Migration completed. Existing history rows remain unassigned (username IS NULL).")
         return 0
     except Exception as exc:
