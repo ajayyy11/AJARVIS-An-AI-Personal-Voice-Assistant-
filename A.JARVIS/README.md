@@ -13,6 +13,8 @@ A local Windows-focused assistant application using Flask, Google Gemini integra
 - Relevant conversation context, follow-up resolution, and read-only memory retrieval tools
 - Bounded multi-step task planning with per-step approvals for computer-changing actions
 - User-scoped automation activity history that omits raw arguments and tool outputs
+- Project context, task management, and transparent, explainable priority suggestions
+- A personal focus brief and read-only assistant access to the user's active projects and next tasks
 
 ## Tech Stack
 
@@ -135,6 +137,26 @@ The local dashboard now supports persistent scheduled reminders, opt-in notifica
 ### Existing MySQL installation
 
 Back up the database, review the read-only migration preview, then apply the Phase 6 schema changes with `python database/migrate_database.py --apply` and type `MIGRATE` after checking the target database name. Verify with `python database/verify_schema.py` and run `pytest -q tests`. The migration adds durable workflow, reminder, notification preference and notification tables without dropping existing users, face encodings, personal memory or automation audit history.
+
+
+## Phase 7 — Advanced Reasoning & Personal Intelligence
+
+The local dashboard includes a **Personal Intelligence** workspace for user-owned projects and tasks.
+
+### Projects and context
+- Create projects with a short objective/context statement.
+- Pause and resume projects without deleting their history.
+- Create tasks with optional project, details, due date/time, estimated effort, and a user-selected priority.
+- Move tasks between pending and in-progress, complete them, and review completed tasks.
+- Project and task APIs are scoped to the signed-in account; all writes require CSRF validation.
+
+### Explainable task prioritisation
+AJARVIS calculates a 0–100 suggestion score when tasks are listed. The score starts from the user's selected priority (low, normal, high, urgent), then adds bounded bonuses for due-date urgency, a quick-win estimate of 30 minutes or less, and work already in progress. Each task shows the reasons behind its score. This is a transparent suggestion—not a prediction of personal value, and it never changes a task's selected priority or status automatically.
+
+### Assistant reasoning
+A read-only `get_personal_focus` tool allows the assistant to inspect the signed-in user's active projects, top open tasks, and basic workload counts. This helps answer questions such as "What should I work on next?" or "Which tasks are overdue?" The tool can read only explicitly stored project/task context; it cannot create, complete, reprioritise, or otherwise change tasks.
+
+Project and task text is treated as user data, not executable instruction. Do not store credentials, passwords, API keys or other secrets in project descriptions or task details.
 
 ## Local Voice Command Flow
 

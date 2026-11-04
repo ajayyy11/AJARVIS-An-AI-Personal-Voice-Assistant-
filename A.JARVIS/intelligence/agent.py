@@ -15,6 +15,7 @@ from typing import Any, Mapping
 
 from intelligence.notes import read_recent_notes, search_personal_notes
 from intelligence.user_memory import list_memories, search_memories
+from intelligence.personal_intelligence import build_personal_focus
 from intelligence.tool_registry import (
     ToolArgumentError,
     ToolNotFoundError,
@@ -146,6 +147,17 @@ def build_default_registry() -> ToolRegistry:
                 "limit": {"type": "integer", "minimum": 1, "maximum": 10},
             },
             "required": ["query"],
+            "additionalProperties": False,
+        },
+    )
+    registry.register(
+        "get_personal_focus",
+        "Read the signed-in user's active projects and explainably prioritised open tasks.",
+        lambda *, username: build_personal_focus(username),
+        parameters={
+            "type": "object",
+            "properties": {},
+            "required": [],
             "additionalProperties": False,
         },
     )
