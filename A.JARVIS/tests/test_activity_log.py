@@ -56,3 +56,51 @@ def test_activity_log_handles_database_errors_without_crashing(monkeypatch):
         tool_name=None,summary="A plan",
     ) is False
     assert activity_log.list_recent_activity("alice")==[]
+
+
+def test_workflow_status_is_upserted_with_metadata_not_prompt_or_arguments(monkeypatch):
+    cursor = FakeCursor()
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(activity_log, "get_connection", lambda: connection)
+    assert activity_log.record_activity(
+        username="alice",
+        plan_id="a" * 32,
+        step_number=1,
+        event_type="step_started",
+        tool_name="get_system_status",
+        summary="get_system_status step_started",
+        workflow_status="running",
+        step_count=3,
+        tools_summary="get_system_status, open_website",
+    )
+    workflow_sql, params = cursor.executed[1]
+    assert "automation_workflows" in workflow_sql
+    assert "ON DUPLICATE KEY UPDATE" in workflow_sql
+    assert params[:5] == (
+        "a" * 32, "alice", "running", 3,
+        "get_system_status, open_website"
+    )
+    assert connection.committed
+
+
+def test_workflow_history_is_scoped_and_interrupted_recovery_uses_process_id(monkeypatch):
+    stamp = datetime(2026, 11, 4, tzinfo=timezone.utc)
+    cursor = FakeCursor(rows=[
+        ("a" * 32, "interrupted", 2, "get_system_status", stamp, stamp, stamp)
+    ])
+    cursor.rowcount = 2
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(activity_log, "get_connection", lambda: connection)
+    history = activity_log.list_recent_workflows("alice", limit=200)
+    assert history[0]["status"] == "interrupted"
+    assert history[0]["created_at"] == stamp.isoformat()
+    assert cursor.executed[0][1] == ("alice", 100)
+
+    cursor.executed.clear()
+    recovered = activity_log.recover_interrupted_workflows("current-process")
+    assert recovered == 2
+    query, params = cursor.executed[0]
+    assert "status = 'interrupted'" in query
+    assert "process_instance_id <> %s" in query
+    assert params == ("current-process",)
+    assert connection.committed

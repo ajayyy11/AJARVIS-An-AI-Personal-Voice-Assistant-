@@ -195,3 +195,91 @@ def test_automation_cancel_activity_endpoints_are_authenticated_and_scoped(clien
     activity=client.get("/api/automation/activity")
     assert cancelled.status_code==200 and cancelled.get_json()["plan"]["owner"]=="alice"
     assert activity.status_code==200 and activity.get_json()["activity"]["owner"]=="alice"
+
+
+def test_reminder_api_requires_authentication_and_csrf(client,monkeypatch):
+    assert client.get("/api/reminders").status_code==401
+    assert client.post("/api/reminders",json={"title":"Check","due_at":"2030-01-01T10:00:00Z"}).status_code==401
+    login(client)
+    monkeypatch.setattr(local_app,"create_reminder",lambda *_args:pytest.fail("CSRF must be checked first"))
+    assert client.post("/api/reminders",json={"title":"Check","due_at":"2030-01-01T10:00:00Z"}).status_code==403
+
+
+def test_reminder_api_creates_user_scoped_reminder(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"create_reminder",lambda username,title,due_at:calls.append((username,title,due_at)) or {"id":4,"title":title,"due_at":due_at,"status":"pending"})
+    response=client.post(
+        "/api/reminders",
+        headers={"X-CSRF-Token":"test-csrf-token"},
+        json={"title":"Review the checklist","due_at":"2030-01-01T10:00:00Z"},
+    )
+    assert response.status_code==201
+    assert response.get_json()["reminder"]["id"]==4
+    assert calls==[("alice","Review the checklist","2030-01-01T10:00:00Z")]
+
+
+def test_reminder_status_route_requires_csrf_and_uses_session_username(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"update_reminder_status",lambda username,reminder_id,status:calls.append((username,reminder_id,status)) or True)
+    assert client.post("/api/reminders/4/status",json={"status":"completed"}).status_code==403
+    response=client.post("/api/reminders/4/status",headers={"X-CSRF-Token":"test-csrf-token"},json={"status":"completed"})
+    assert response.status_code==200
+    assert calls==[("alice",4,"completed")]
+
+
+def test_notification_preferences_are_authenticated_csrf_protected_and_opt_in(client,monkeypatch):
+    assert client.get("/api/notification-preferences").status_code==401
+    login(client)
+    monkeypatch.setattr(local_app,"set_notification_preferences",lambda *_args,**_kwargs:pytest.fail("CSRF must be checked first"))
+    assert client.put("/api/notification-preferences",json={"reminders_enabled":True}).status_code==403
+
+
+def test_notification_preferences_api_saves_explicit_opt_in(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(
+        local_app,"set_notification_preferences",
+        lambda username,**kwargs:calls.append((username,kwargs)) or kwargs
+    )
+    response=client.put(
+        "/api/notification-preferences",
+        headers={"X-CSRF-Token":"test-csrf-token"},
+        json={"reminders_enabled":True,"browser_notifications_enabled":False},
+    )
+    assert response.status_code==200
+    assert calls==[("alice",{"reminders_enabled":True,"browser_notifications_enabled":False})]
+
+
+def test_notifications_api_returns_user_owned_unread_and_due_items(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"get_notification_preferences",lambda username:{"reminders_enabled":True,"browser_notifications_enabled":False})
+    monkeypatch.setattr(local_app,"collect_due_notifications",lambda username,limit:calls.append((username,limit)) or [{"id":5,"title":"AJARVIS reminder","body":"Review checklist"}])
+    monkeypatch.setattr(local_app,"list_unread_notifications",lambda username,limit:[{"id":5,"title":"AJARVIS reminder","body":"Review checklist"}])
+    response=client.get("/api/notifications")
+    assert response.status_code==200
+    assert response.get_json()["newly_due"][0]["id"]==5
+    assert calls==[("alice",20)]
+
+
+def test_notification_mark_read_route_is_csrf_protected_and_scoped(client,monkeypatch):
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"mark_notification_read",lambda username,notification_id:calls.append((username,notification_id)) or True)
+    assert client.post("/api/notifications/5/read").status_code==403
+    response=client.post("/api/notifications/5/read",headers={"X-CSRF-Token":"test-csrf-token"})
+    assert response.status_code==200
+    assert calls==[("alice",5)]
+
+
+def test_workflow_history_api_requires_auth_and_scopes_results(client,monkeypatch):
+    assert client.get("/api/automation/workflows").status_code==401
+    login(client)
+    calls=[]
+    monkeypatch.setattr(local_app,"list_recent_workflows",lambda username,limit:calls.append((username,limit)) or [{"status":"interrupted"}])
+    response=client.get("/api/automation/workflows")
+    assert response.status_code==200
+    assert response.get_json()["workflows"][0]["status"]=="interrupted"
+    assert calls==[("alice",30)]
