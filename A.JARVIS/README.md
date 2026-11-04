@@ -168,6 +168,20 @@ The local dashboard offers voice-language selection for English (India), English
 
 Use cloud_app.py and requirements-web.txt for the Render-hosted workspace. The cloud version uses password accounts and PostgreSQL storage for notes, editable user preferences, tasks, reminders, document text, and history. Personal preferences are visible and removable from the dashboard. The Agent Activity panel records executed tool names, outcome and duration without recording tool arguments or private note/document contents. It does not import the camera or Windows desktop-control entry points used by app.py. Deployment is configured by the repository-root render.yaml file.
 
+## Phase 8 — Multimodal Intelligence (Hosted Cloud)
+
+The hosted workspace includes an opt-in **Visual Intelligence** panel for image and PDF understanding.
+
+- Upload JPG, PNG, or WEBP images (up to 5 MB) or PDFs (up to 8 MB and 80 pages). Image bytes are decoded and validated server-side, with a 25-megapixel dimension cap.
+- **Open camera** requests camera permission only after the user clicks it. A local preview appears; the user must press **Capture photo** to select a single frame.
+- **Capture screen** opens the browser's native screen-share picker and captures a single frame. It does not record or stream the screen continuously.
+- The user supplies a question and explicitly presses **Analyze visual input** before the selected image or PDF is sent to Gemini. The visual endpoint requires an authenticated session and CSRF token and uses the same per-account AI quota as chat and document Q&A.
+- Images, camera snapshots, and screen snapshots are processed in memory for that request and are not added to the document library. Clear the selection or leave the page to discard the local preview.
+- PDFs can be analyzed visually for text, diagrams, tables, charts, and page context. When a PDF uploaded to Document Intelligence has no extractable text, the app can use Gemini to transcribe its visible text (up to 50,000 characters) and then save that extracted text for later document search and Q&A. The raw scanned PDF is not retained.
+- Visual content and text inside images/documents are treated as untrusted reference material, not instructions. The visual model cannot run commands or control the user's computer.
+
+Visual understanding requires `GEMINI_API_KEY`, an available Gemini API quota, and a supported browser. Camera and screen capture require a secure context (the hosted Render URL uses HTTPS) and browser/device permission. Visual processing sends selected content to the configured Gemini service; do not upload confidential, sensitive, or company-restricted material. No database migration is required for Phase 8.
+
 ### Voice command console
 
 The hosted dashboard uses browser-based speech recognition and speech synthesis. Press the microphone button to start a voice session, select English (India), English (US), Tamil, or Hindi, and use the status indicator to see when AJARVIS is listening, analyzing, or speaking. Spoken replies can be muted or stopped. Simple commands can save/read notes and create/list tasks. A leading "Hey Jarvis" phrase is accepted after the mic has been pressed; there is no always-on wake-word listener in cloud mode. Voice support depends on browser/device support and microphone permissions. A spoken "remind me to ..." request creates a task without a scheduled time; set a date and time in Tasks & Reminders to schedule a notification.

@@ -139,6 +139,35 @@
         <div id="activityList" class="activity-list"><p class="empty-state">Loading agent activity…</p></div>
       </div>
 
+      <section class="panel visual-panel" aria-labelledby="visualHeading">
+        <div class="panel-heading">
+          <div class="panel-symbol">◉</div>
+          <div><h2 id="visualHeading">Visual intelligence</h2><p>Understand images, camera snapshots, screens and scanned PDFs</p></div>
+          <span class="panel-status">USER CONTROLLED</span>
+        </div>
+        <div class="visual-content">
+          <div class="visual-actions">
+            <button id="visualCameraButton" class="secondary-button" type="button">Open camera</button>
+            <button id="visualScreenButton" class="secondary-button" type="button">Capture screen</button>
+            <label class="visual-file-button" for="visualFile">Choose image or PDF</label>
+            <input id="visualFile" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+          </div>
+          <video id="visualCameraPreview" class="visual-preview" playsinline autoplay muted hidden></video>
+          <img id="visualImagePreview" class="visual-preview" alt="Local preview of the selected visual input" hidden>
+          <p id="visualSelection" class="visual-selection" aria-live="polite">No visual selected. Camera and screen access start only when you press their buttons.</p>
+          <div class="visual-capture-actions">
+            <button id="visualCaptureButton" class="secondary-button" type="button" hidden>Capture photo</button>
+            <button id="visualCancelCapture" class="text-button" type="button" hidden>Close camera</button>
+            <button id="visualClearButton" class="text-button" type="button" hidden>Clear selection</button>
+          </div>
+          <label class="visual-question-label" for="visualPrompt">WHAT SHOULD AJARVIS LOOK FOR?</label>
+          <textarea id="visualPrompt" rows="2" maxlength="1200" placeholder="Describe this image, read the diagram, compare visible values, or summarize this PDF…"></textarea>
+          <button id="visualAnalyzeButton" class="primary-button" type="button" disabled>Analyze visual input</button>
+          <div id="visualResult" class="visual-result" aria-live="polite"></div>
+          <p class="visual-privacy-note">One snapshot is sent to Gemini only when you analyze it. Images and screen captures are not saved in your account. Screen sharing is selected and controlled by your browser.</p>
+        </div>
+      </section>
+
       <div class="panel documents-panel">
         <div class="panel-heading">
           <div class="panel-symbol">▧</div>
