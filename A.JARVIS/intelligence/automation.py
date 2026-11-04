@@ -202,6 +202,9 @@ def _activity(username: str, plan: dict[str, Any], event: str, step: dict[str, A
             event_type=event,
             tool_name=step["tool"] if step else None,
             summary=safe_summary[:240],
+            workflow_status=plan["status"],
+            step_count=len(plan["steps"]),
+            tools_summary=", ".join(dict.fromkeys(item["tool"] for item in plan["steps"]))[:320],
         )
     except Exception:
         logger.warning("Could not write automation activity event", exc_info=True)

@@ -15,6 +15,10 @@ REQUIRED_COLUMNS = {
     "command_history": {"id", "username", "command", "response"},
     "user_memories": {"id", "username", "memory_key", "memory_value", "created_at", "updated_at"},
     "automation_activity": {"id", "username", "plan_id", "step_number", "event_type", "tool_name", "summary", "created_at"},
+    "automation_workflows": {"plan_id", "username", "status", "step_count", "tools_summary", "process_instance_id", "created_at", "updated_at", "finished_at"},
+    "user_notification_preferences": {"username", "reminders_enabled", "browser_notifications_enabled", "updated_at"},
+    "assistant_reminders": {"id", "username", "title", "due_at", "status", "created_at", "updated_at", "completed_at"},
+    "assistant_notifications": {"id", "username", "reminder_id", "title", "body", "created_at", "presented_at", "read_at"},
 }
 
 
@@ -70,6 +74,35 @@ def verify_schema():
             )
             if not cursor.fetchone()[0]:
                 errors.append("automation_activity is missing the per-user activity index.")
+
+
+        phase6_indexes = {
+            "automation_workflows": ("idx_automation_workflows_user_updated", ("username", "updated_at")),
+            "assistant_reminders": ("idx_assistant_reminders_user_status_due", ("username", "status", "due_at")),
+            "assistant_notifications": ("idx_assistant_notifications_user_read", ("username", "read_at", "id")),
+        }
+        for table_name, (index_name, expected_columns) in phase6_indexes.items():
+            if table_name in tables:
+                cursor.execute(
+                    "SELECT COLUMN_NAME FROM information_schema.STATISTICS "
+                    "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = %s "
+                    "ORDER BY SEQ_IN_INDEX",
+                    (Config.MYSQL_DB, table_name, index_name),
+                )
+                actual_columns = tuple(row[0] for row in cursor.fetchall())
+                if actual_columns != expected_columns:
+                    errors.append(f"{table_name} is missing or has an incorrect {index_name} index.")
+
+        if "assistant_notifications" in tables:
+            cursor.execute(
+                "SELECT COLUMN_NAME FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'assistant_notifications' "
+                "AND INDEX_NAME = 'uq_assistant_notifications_user_reminder' "
+                "ORDER BY SEQ_IN_INDEX",
+                (Config.MYSQL_DB,),
+            )
+            if tuple(row[0] for row in cursor.fetchall()) != ("username", "reminder_id"):
+                errors.append("assistant_notifications is missing its unique user/reminder index.")
 
         if "users" in tables:
             cursor.execute(

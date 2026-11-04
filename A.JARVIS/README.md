@@ -30,7 +30,7 @@ Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL · python
    ```
 
 4. Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` is needed for free-form Gemini answers but is no longer required just to start local commands; `WEATHER_API_KEY` is optional.
-5. For a new database, create the tables using `database/schema.sql`. For an existing database, back it up and follow [the database upgrade runbook](database/migrations/README.md) to add user-scoped history and personal memory while preserving users and face encodings.
+5. For a new database, create the tables using `database/schema.sql`. For an existing database, back it up and follow [the database upgrade runbook](database/migrations/README.md) to add user-scoped history, personal memory, automation history, scheduled reminders, and notification settings while preserving users and face encodings.
 6. Start the app:
 
    ```bash
@@ -110,6 +110,31 @@ AJARVIS asks Gemini for a structured plan of at most five steps, then validates 
 The agent chat tool-call path remains read-only. The planner is a separate, server-validated workflow; it does not offer arbitrary shell execution, unrestricted file editing, email sending, or autonomous background operation. Use the dashboard's activity panel to review recent planner events.
 
 For existing MySQL installations, back up the database, review the dry run, and apply `python database/migrate_database.py --apply` as described in [the database upgrade runbook](database/migrations/README.md). The migration creates the privacy-minimal `automation_activity` table and its per-user index if they are missing.
+
+
+## Phase 6 — Proactive Intelligence & Workflow Memory
+
+The local dashboard now supports persistent scheduled reminders, opt-in notifications, and durable workflow status history.
+
+### Reminders and notifications
+
+- Create reminders with a title and a timezone-aware future date/time (up to one year ahead). AJARVIS stores the due time in UTC and displays it in the browser's local timezone.
+- Reminders are stored in MySQL and remain available across application restarts.
+- Reminder alerts and browser notifications are both disabled by default. Enable reminder alerts in the dashboard; browser notifications require a separate opt-in and the browser's site permission.
+- When the dashboard is open, it checks for due reminders once per minute. Due reminders also surface in the in-app Notification Centre. If AJARVIS is closed when a reminder becomes due, it is collected the next time the dashboard is opened; native browser pop-ups are not delivered while the dashboard is closed.
+- Mark reminders completed or cancelled, and mark delivered notifications read. Notification and reminder APIs are scoped to the authenticated account and write endpoints require CSRF validation.
+
+### Durable workflow history and recovery
+
+- Automation workflow metadata (workflow status, step count, safe tool identifiers and timestamps) is stored separately from the detailed execution plan.
+- The system deliberately does not persist user prompts, URLs, raw tool arguments, note contents, model outputs, approval tokens or executable parameters.
+- When the local app starts, workflows left ready/running/awaiting approval by an older process are marked `interrupted`.
+- Interrupted workflows are review-only. Create a fresh plan rather than automatically replaying actions after a crash or restart. This prevents duplicate browser launches or other side effects.
+- Completed and interrupted workflow status remains available in the dashboard's Durable Workflow History panel.
+
+### Existing MySQL installation
+
+Back up the database, review the read-only migration preview, then apply the Phase 6 schema changes with `python database/migrate_database.py --apply` and type `MIGRATE` after checking the target database name. Verify with `python database/verify_schema.py` and run `pytest -q tests`. The migration adds durable workflow, reminder, notification preference and notification tables without dropping existing users, face encodings, personal memory or automation audit history.
 
 ## Local Voice Command Flow
 

@@ -15,7 +15,22 @@ from intelligence.automation import (
     respond_to_approval,
 )
 from intelligence.planner import PlannerError, generate_task_plan
-from intelligence.activity_log import list_recent_activity
+from intelligence.activity_log import (
+    list_recent_activity,
+    list_recent_workflows,
+    recover_interrupted_workflows,
+)
+from intelligence.reminders import (
+    ReminderError,
+    create_reminder,
+    list_reminders,
+    set_notification_preferences,
+    get_notification_preferences,
+    collect_due_notifications,
+    list_unread_notifications,
+    mark_notification_read,
+    update_reminder_status,
+)
 from intelligence.context import classify_intent
 from intelligence.user_state import is_user_active
 from intelligence.user_memory import list_memories, save_memory, delete_memory
@@ -424,6 +439,122 @@ def automation_activity_api():
 
 
 # ==========================================
+# PHASE 6 — PROACTIVE REMINDERS & WORKFLOW MEMORY
+# ==========================================
+@app.route("/api/automation/workflows", methods=["GET"])
+def automation_workflows_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    response = jsonify({"workflows": list_recent_workflows(session["user"], limit=30)})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/reminders", methods=["GET", "POST"])
+def reminders_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    username = session["user"]
+    if request.method == "GET":
+        response = jsonify({"reminders": list_reminders(username)})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        reminder = create_reminder(username, data.get("title"), data.get("due_at"))
+        response = jsonify({"reminder": reminder})
+        response.status_code = 201
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ReminderError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/reminders/<int:reminder_id>/status", methods=["POST"])
+def reminder_status_api(reminder_id):
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        changed = update_reminder_status(session["user"], reminder_id, data.get("status"))
+    except ReminderError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not changed:
+        return jsonify({"error": "Reminder was not found or is no longer active."}), 404
+    response = jsonify({"ok": True})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/notification-preferences", methods=["GET", "PUT"])
+def notification_preferences_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    username = session["user"]
+    if request.method == "GET":
+        response = jsonify({"preferences": get_notification_preferences(username)})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        preferences = set_notification_preferences(
+            username,
+            reminders_enabled=data.get("reminders_enabled"),
+            browser_notifications_enabled=data.get("browser_notifications_enabled", False),
+        )
+        response = jsonify({"preferences": preferences})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ReminderError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/notifications", methods=["GET"])
+def notifications_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    username = session["user"]
+    preferences = get_notification_preferences(username)
+    newly_due = collect_due_notifications(username, limit=20)
+    response = jsonify({
+        "notifications": list_unread_notifications(username, limit=30),
+        "newly_due": newly_due,
+        "preferences": preferences,
+    })
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
+def mark_notification_read_api(notification_id):
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    try:
+        changed = mark_notification_read(session["user"], notification_id)
+    except ReminderError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not changed:
+        return jsonify({"error": "Notification was not found or is already read."}), 404
+    response = jsonify({"ok": True})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+# ==========================================
 # VOICE COMMAND
 # ==========================================
 @app.route("/voice_command", methods=["POST"])
@@ -468,5 +599,9 @@ def logout():
 # START APP
 # ==========================================
 if __name__ == "__main__":
+    try:
+        recover_interrupted_workflows()
+    except Exception:
+        app.logger.warning("Workflow recovery check failed", exc_info=True)
     _ensure_face_cache_loaded()
     app.run(host="127.0.0.1", port=5000, debug=False)
