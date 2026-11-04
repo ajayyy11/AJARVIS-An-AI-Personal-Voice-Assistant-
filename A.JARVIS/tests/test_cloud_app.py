@@ -94,6 +94,8 @@ def test_security_headers_are_set(client):
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert "microphone=(self)" in response.headers["Permissions-Policy"]
+    assert "camera=(self)" in response.headers["Permissions-Policy"]
+    assert "display-capture=(self)" in response.headers["Permissions-Policy"]
 
 
 def test_assistant_route_limits_request_bursts_per_user(client, monkeypatch):
