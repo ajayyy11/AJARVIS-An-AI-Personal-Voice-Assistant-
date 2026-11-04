@@ -599,3 +599,47 @@ def test_document_is_saved_when_ai_quota_is_exhausted(client, monkeypatch):
     assert "Document saved successfully" in result["summary"]
     assert "summary was skipped" in result["summary"]
     assert connection.committed
+
+
+def test_visual_analysis_requires_authentication(client):
+    response = client.post("/api/visual/analyze")
+    assert response.status_code == 401
+
+
+def test_visual_analysis_requires_csrf(client):
+    login_session(client, username="visual_user", csrf="visual-token")
+    response = client.post("/api/visual/analyze", data={"prompt": "Describe."}, content_type="multipart/form-data")
+    assert response.status_code == 403
+
+
+def test_visual_analysis_is_transient_and_user_scoped(client, monkeypatch):
+    from io import BytesIO
+    login_session(client, username="visual_user", csrf="visual-token")
+    monkeypatch.setattr(cloud_app, "_genai", lambda: object())
+    monkeypatch.setattr(cloud_app, "_assistant_rate_limited", lambda _username: False)
+    monkeypatch.setattr(cloud_app, "validate_visual_input", lambda _filename, _raw: ("image/png", None))
+    monkeypatch.setattr(cloud_app, "analyze_visual_input", lambda **_kwargs: "A maintenance checklist.")
+    monkeypatch.setattr(cloud_app, "_database", lambda: pytest.fail("Visual media must not be persisted."))
+    response = client.post(
+        "/api/visual/analyze",
+        headers={"X-CSRF-Token": "visual-token"},
+        data={"file": (BytesIO(b"transient-image"), "capture.png"), "prompt": "Read the title."},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    assert response.get_json()["stored"] is False
+    assert response.get_json()["answer"] == "A maintenance checklist."
+
+
+def test_visual_analysis_uses_shared_ai_quota(client, monkeypatch):
+    from io import BytesIO
+    login_session(client, username="visual_quota", csrf="visual-token")
+    monkeypatch.setattr(cloud_app, "validate_visual_input", lambda _filename, _raw: ("image/png", None))
+    monkeypatch.setattr(cloud_app, "_genai", lambda: object())
+    monkeypatch.setattr(cloud_app, "_assistant_rate_limited", lambda _username: True)
+    response = client.post(
+        "/api/visual/analyze", headers={"X-CSRF-Token": "visual-token"},
+        data={"file": (BytesIO(b"frame"), "capture.png")}, content_type="multipart/form-data",
+    )
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
