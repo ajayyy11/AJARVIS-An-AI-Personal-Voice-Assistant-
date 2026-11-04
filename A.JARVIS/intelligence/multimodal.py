@@ -103,6 +103,12 @@ def _visual_input(filename: str, data: bytes) -> tuple[str, int | None]:
     return mime_type, None
 
 
+
+def validate_visual_input(filename: str, data: bytes) -> tuple[str, int | None]:
+    """Validate image/PDF bytes and return the trusted MIME type and page count."""
+    return _visual_input(filename, data)
+
+
 def _response_text(response: Any, fallback: str) -> str:
     value = getattr(response, "text", None)
     if not isinstance(value, str) or not value.strip():
