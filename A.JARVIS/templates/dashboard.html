@@ -504,6 +504,30 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     .automation-event span:first-child{overflow-wrap:anywhere}
     @media(max-width:860px){.frame{grid-template-columns:1fr;height:auto;min-height:0;padding:18px}.automation-panel{width:96%;padding:14px}.automation-form{flex-direction:column}.automation-form textarea{min-height:90px}}
 
+
+    /* Phase 6 — durable reminders, notifications and workflow history */
+    .phase6-panel{width:min(94%,1180px);margin:0 auto 28px;position:relative;z-index:10;border:1px solid rgba(0,240,255,.28);background:rgba(0,15,25,.94);box-shadow:0 0 26px rgba(0,240,255,.09);padding:20px}
+    .phase6-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+    .phase6-block{border:1px solid rgba(0,240,255,.15);background:rgba(0,240,255,.025);padding:14px;min-width:0}
+    .phase6-block h4{font-size:11px;letter-spacing:1.5px;color:#00f0ff;margin:0 0 10px}
+    .phase6-helper{font-size:10px;line-height:1.55;color:#8eabb7;margin:6px 0 12px}
+    .reminder-form{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end}
+    .reminder-form label{display:block;color:#a9c3ce;font-size:9px;letter-spacing:.8px;margin-bottom:5px}
+    .reminder-form input{width:100%;min-width:0;background:rgba(0,240,255,.045);border:1px solid rgba(0,240,255,.25);border-radius:3px;padding:9px;color:#e0f7fa;font:11px 'Courier New',monospace}
+    .phase6-toggle{display:flex;align-items:center;gap:8px;color:#d5e9ef;font-size:10px;margin:10px 0}
+    .phase6-toggle input{accent-color:#00d9ef}
+    .phase6-list{display:grid;gap:7px;margin-top:10px}
+    .phase6-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px;border:1px solid rgba(0,240,255,.12);background:rgba(0,240,255,.025);min-width:0}
+    .phase6-item-main{min-width:0;flex:1}
+    .phase6-item-title{font-size:11px;color:#e0f7fa;overflow-wrap:anywhere}
+    .phase6-item-meta{font-size:9px;color:#8eabb7;margin-top:4px;overflow-wrap:anywhere}
+    .phase6-empty{font-size:10px;color:#7e9aa7;padding:8px 0}
+    .phase6-actions{display:flex;gap:5px;flex-wrap:wrap}
+    .phase6-small-action{border:1px solid rgba(0,240,255,.28);background:transparent;color:#80deea;padding:5px 7px;font-size:9px;cursor:pointer;border-radius:3px}
+    .phase6-small-action:disabled{opacity:.45;cursor:wait}
+    .phase6-status{font-size:10px;color:#80deea;min-height:16px;margin:8px 0}
+    @media(max-width:860px){.phase6-panel{width:96%;padding:14px}.phase6-grid{grid-template-columns:1fr}.reminder-form{grid-template-columns:1fr}.phase6-item{align-items:flex-start;flex-direction:column}}
+
 </style>
 
 <body>
@@ -634,6 +658,50 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       <div id="automation-plan" aria-live="polite"></div>
       <h3 style="margin-top:24px">AUTOMATION ACTIVITY</h3>
       <div id="automation-activity" class="automation-activity"></div>
+    </section>
+
+    <section class="panel phase6-panel" aria-labelledby="phase6-heading">
+      <h3 id="phase6-heading">PROACTIVE INTELLIGENCE & WORKFLOW MEMORY</h3>
+      <p class="automation-intro">Your tasks and reminders remain stored across AJARVIS restarts. Reminders are checked when this dashboard is open; browser alerts require your separate permission and opt-in.</p>
+      <div class="phase6-grid">
+        <section class="phase6-block" aria-labelledby="reminders-heading">
+          <h4 id="reminders-heading">SCHEDULED REMINDERS</h4>
+          <form id="reminder-form" class="reminder-form">
+            <div>
+              <label for="reminder-title">REMINDER</label>
+              <input id="reminder-title" maxlength="180" required placeholder="e.g. Review vessel IT checklist">
+            </div>
+            <div>
+              <label for="reminder-due">DATE & TIME (YOUR LOCAL TIME)</label>
+              <input id="reminder-due" type="datetime-local" required>
+            </div>
+            <button type="submit" class="automation-action" id="reminder-create-button">SAVE</button>
+          </form>
+          <div id="reminder-status" class="phase6-status" role="status" aria-live="polite">Loading reminders…</div>
+          <div id="reminder-list" class="phase6-list"></div>
+        </section>
+        <section class="phase6-block" aria-labelledby="notification-heading">
+          <h4 id="notification-heading">NOTIFICATION PREFERENCES</h4>
+          <p class="phase6-helper">Reminder alerts are off until you enable them. Browser notifications are a second, optional permission. AJARVIS does not send notifications when the dashboard is closed.</p>
+          <label class="phase6-toggle" for="reminders-enabled">
+            <input type="checkbox" id="reminders-enabled">
+            <span>ENABLE REMINDER ALERTS</span>
+          </label>
+          <label class="phase6-toggle" for="browser-notifications-enabled">
+            <input type="checkbox" id="browser-notifications-enabled">
+            <span>ALLOW BROWSER NOTIFICATIONS</span>
+          </label>
+          <div id="notification-settings-status" class="phase6-status" role="status" aria-live="polite"></div>
+          <h4 style="margin-top:16px">NOTIFICATION CENTRE</h4>
+          <div id="notification-list" class="phase6-list"></div>
+        </section>
+        <section class="phase6-block" aria-labelledby="workflow-heading" style="grid-column:1/-1">
+          <h4 id="workflow-heading">DURABLE WORKFLOW HISTORY</h4>
+          <p class="phase6-helper">Completed and interrupted workflow status survives a restart. Pending approvals and execution arguments are intentionally not restored; interrupted work must be reviewed and planned again.</p>
+          <div id="workflow-status" class="phase6-status" role="status" aria-live="polite">Loading workflow history…</div>
+          <div id="workflow-list" class="phase6-list"></div>
+        </section>
+      </div>
     </section>
 
   <script>
@@ -793,6 +861,252 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
 
     automationForm.addEventListener("submit", createAutomationPlan);
     refreshAutomationActivity();
+
+
+    /* PHASE 6 — PERSISTENT REMINDERS, NOTIFICATIONS & WORKFLOW HISTORY */
+    const reminderForm = document.getElementById("reminder-form");
+    const reminderTitle = document.getElementById("reminder-title");
+    const reminderDue = document.getElementById("reminder-due");
+    const reminderButton = document.getElementById("reminder-create-button");
+    const reminderStatus = document.getElementById("reminder-status");
+    const reminderList = document.getElementById("reminder-list");
+    const remindersEnabled = document.getElementById("reminders-enabled");
+    const browserNotificationsEnabled = document.getElementById("browser-notifications-enabled");
+    const notificationSettingsStatus = document.getElementById("notification-settings-status");
+    const notificationList = document.getElementById("notification-list");
+    const workflowStatus = document.getElementById("workflow-status");
+    const workflowList = document.getElementById("workflow-list");
+    let phase6NotificationPolling = false;
+
+    async function phase6Request(url, method = "GET", payload) {
+      const response = await fetch(url, {
+        method,
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+          "Accept": "application/json"
+        },
+        body: payload ? JSON.stringify(payload) : undefined
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "The request could not be completed.");
+      return data;
+    }
+
+    function phase6Empty(container, message) {
+      container.replaceChildren(automationNode("p", "phase6-empty", message));
+    }
+
+    function phase6FormatDate(value) {
+      if (!value) return "Time unavailable";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+
+    async function refreshPhase6Reminders() {
+      try {
+        const data = await phase6Request("/api/reminders");
+        reminderList.replaceChildren();
+        if (!data.reminders.length) {
+          phase6Empty(reminderList, "No active reminders.");
+          return;
+        }
+        data.reminders.forEach((reminder) => {
+          const row = automationNode("div", "phase6-item");
+          const main = automationNode("div", "phase6-item-main");
+          main.appendChild(automationNode("div", "phase6-item-title", reminder.title));
+          main.appendChild(automationNode("div", "phase6-item-meta", phase6FormatDate(reminder.due_at) + " · " + reminder.status));
+          const actions = automationNode("div", "phase6-actions");
+          const complete = automationNode("button", "phase6-small-action", "COMPLETE");
+          complete.type = "button";
+          complete.addEventListener("click", () => updatePhase6Reminder(reminder.id, "completed", complete));
+          const cancel = automationNode("button", "phase6-small-action", "CANCEL");
+          cancel.type = "button";
+          cancel.addEventListener("click", () => updatePhase6Reminder(reminder.id, "cancelled", cancel));
+          actions.append(complete, cancel);
+          row.append(main, actions);
+          reminderList.appendChild(row);
+        });
+      } catch (error) {
+        reminderStatus.textContent = error.message || "Could not load reminders.";
+      }
+    }
+
+    async function updatePhase6Reminder(id, status, button) {
+      button.disabled = true;
+      try {
+        await phase6Request("/api/reminders/" + encodeURIComponent(id) + "/status", "POST", { status });
+        reminderStatus.textContent = status === "completed" ? "Reminder completed." : "Reminder cancelled.";
+        await refreshPhase6Reminders();
+      } catch (error) {
+        reminderStatus.textContent = error.message || "Could not update reminder.";
+        button.disabled = false;
+      }
+    }
+
+    async function createPhase6Reminder(event) {
+      event.preventDefault();
+      if (reminderButton.disabled) return;
+      const title = reminderTitle.value.trim();
+      const localValue = reminderDue.value;
+      const due = localValue ? new Date(localValue) : null;
+      if (!title || !due || Number.isNaN(due.getTime())) {
+        reminderStatus.textContent = "Enter a reminder title and a valid local date/time.";
+        return;
+      }
+      if (due.getTime() <= Date.now()) {
+        reminderStatus.textContent = "Choose a future date and time.";
+        return;
+      }
+      reminderButton.disabled = true;
+      reminderStatus.textContent = "Saving reminder…";
+      try {
+        await phase6Request("/api/reminders", "POST", { title, due_at: due.toISOString() });
+        reminderTitle.value = "";
+        reminderDue.value = "";
+        reminderStatus.textContent = "Reminder saved.";
+        await refreshPhase6Reminders();
+      } catch (error) {
+        reminderStatus.textContent = error.message || "Reminder could not be saved.";
+      } finally {
+        reminderButton.disabled = false;
+      }
+    }
+
+    async function savePhase6NotificationPreferences() {
+      notificationSettingsStatus.textContent = "Saving notification preferences…";
+      const wantsBrowser = browserNotificationsEnabled.checked;
+      if (wantsBrowser) {
+        if (!("Notification" in window)) {
+          browserNotificationsEnabled.checked = false;
+          notificationSettingsStatus.textContent = "This browser does not support desktop notifications. In-app alerts remain available.";
+          return;
+        }
+        if (Notification.permission === "default") {
+          const permission = await Notification.requestPermission();
+          if (permission !== "granted") {
+            browserNotificationsEnabled.checked = false;
+            notificationSettingsStatus.textContent = "Browser permission was not granted. In-app alerts remain available.";
+            return;
+          }
+        } else if (Notification.permission !== "granted") {
+          browserNotificationsEnabled.checked = false;
+          notificationSettingsStatus.textContent = "Allow notifications in your browser site settings, then try again.";
+          return;
+        }
+      }
+      try {
+        const data = await phase6Request("/api/notification-preferences", "PUT", {
+          reminders_enabled: remindersEnabled.checked,
+          browser_notifications_enabled: browserNotificationsEnabled.checked
+        });
+        remindersEnabled.checked = data.preferences.reminders_enabled;
+        browserNotificationsEnabled.checked = data.preferences.browser_notifications_enabled;
+        notificationSettingsStatus.textContent = "Preferences saved.";
+        await pollPhase6Notifications();
+      } catch (error) {
+        notificationSettingsStatus.textContent = error.message || "Preferences could not be saved.";
+      }
+    }
+
+    async function loadPhase6NotificationPreferences() {
+      try {
+        const data = await phase6Request("/api/notification-preferences");
+        remindersEnabled.checked = data.preferences.reminders_enabled;
+        browserNotificationsEnabled.checked = data.preferences.browser_notifications_enabled;
+        if (browserNotificationsEnabled.checked && (!("Notification" in window) || Notification.permission !== "granted")) {
+          browserNotificationsEnabled.checked = false;
+          notificationSettingsStatus.textContent = "Browser permission is currently unavailable. In-app alerts remain active.";
+        }
+      } catch (error) {
+        notificationSettingsStatus.textContent = error.message || "Could not load notification settings.";
+      }
+    }
+
+    function renderPhase6Notifications(items) {
+      notificationList.replaceChildren();
+      if (!items.length) {
+        phase6Empty(notificationList, "No unread notifications.");
+        return;
+      }
+      items.forEach((item) => {
+        const row = automationNode("div", "phase6-item");
+        const main = automationNode("div", "phase6-item-main");
+        main.appendChild(automationNode("div", "phase6-item-title", item.title));
+        main.appendChild(automationNode("div", "phase6-item-meta", item.body + " · " + phase6FormatDate(item.created_at)));
+        const read = automationNode("button", "phase6-small-action", "MARK READ");
+        read.type = "button";
+        read.addEventListener("click", async () => {
+          read.disabled = true;
+          try {
+            await phase6Request("/api/notifications/" + encodeURIComponent(item.id) + "/read", "POST", {});
+            await pollPhase6Notifications();
+          } catch (error) {
+            notificationSettingsStatus.textContent = error.message || "Could not mark notification as read.";
+            read.disabled = false;
+          }
+        });
+        row.append(main, read);
+        notificationList.appendChild(row);
+      });
+    }
+
+    async function pollPhase6Notifications() {
+      if (phase6NotificationPolling) return;
+      phase6NotificationPolling = true;
+      try {
+        const data = await phase6Request("/api/notifications");
+        renderPhase6Notifications(data.notifications || []);
+        const prefs = data.preferences || {};
+        if (prefs.browser_notifications_enabled && "Notification" in window && Notification.permission === "granted") {
+          (data.newly_due || []).forEach((item) => {
+            try {
+              const notification = new Notification(item.title, { body: item.body, tag: "ajarvis-reminder-" + item.id });
+              notification.onclick = () => { window.focus(); notification.close(); };
+            } catch (_error) {
+              notificationSettingsStatus.textContent = "A reminder was saved in the in-app notification centre, but the browser alert could not be shown.";
+            }
+          });
+        }
+      } catch (error) {
+        notificationSettingsStatus.textContent = error.message || "Reminder notifications could not be refreshed.";
+      } finally {
+        phase6NotificationPolling = false;
+      }
+    }
+
+    async function refreshPhase6Workflows() {
+      try {
+        const data = await phase6Request("/api/automation/workflows");
+        workflowList.replaceChildren();
+        const workflows = data.workflows || [];
+        if (!workflows.length) {
+          phase6Empty(workflowList, "No workflow history yet.");
+          workflowStatus.textContent = "Workflow history is ready.";
+          return;
+        }
+        workflows.forEach((workflow) => {
+          const row = automationNode("div", "phase6-item");
+          const main = automationNode("div", "phase6-item-main");
+          main.appendChild(automationNode("div", "phase6-item-title", workflow.tools || "AJARVIS workflow"));
+          main.appendChild(automationNode("div", "phase6-item-meta", workflow.step_count + " steps · " + workflow.status.replaceAll("_", " ") + " · Updated " + phase6FormatDate(workflow.updated_at)));
+          row.appendChild(main);
+          workflowList.appendChild(row);
+        });
+        workflowStatus.textContent = workflows.length + " saved workflow record(s). Interrupted workflows are review-only; create a new plan to continue safely.";
+      } catch (error) {
+        workflowStatus.textContent = error.message || "Could not load workflow history.";
+      }
+    }
+
+    reminderForm.addEventListener("submit", createPhase6Reminder);
+    remindersEnabled.addEventListener("change", savePhase6NotificationPreferences);
+    browserNotificationsEnabled.addEventListener("change", savePhase6NotificationPreferences);
+    refreshPhase6Reminders();
+    loadPhase6NotificationPreferences().then(pollPhase6Notifications);
+    refreshPhase6Workflows();
+    window.setInterval(pollPhase6Notifications, 60000);
 
     /* PHASE 4 — PERSONAL MEMORY MANAGER */
     const memoryForm = document.getElementById("memory-form");
