@@ -1833,6 +1833,8 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       // idle → greeted → activated
 
       recognition.onstart = () => {
+        recognitionStarting = false;
+        lastHandledResultIndex = -1;
         aiStatus.textContent = state === "activated" ? "System Active" : (state === "greeted" ? "Awaiting Activation" : "Standby");
         const statusText = document.getElementById('mic-status');
         if(statusText) statusText.style.display = 'none';
