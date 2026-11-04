@@ -44,6 +44,18 @@ PHASE6_INDEXES = {
     "assistant_notifications": ("idx_assistant_notifications_user_read", ("username", "read_at", "id")),
 }
 
+PROJECT_COLUMNS = {
+    "id", "username", "name", "objective", "status", "created_at", "updated_at"
+}
+TASK_COLUMNS = {
+    "id", "username", "project_id", "title", "details", "priority", "due_at",
+    "effort_minutes", "status", "created_at", "updated_at", "completed_at"
+}
+PHASE7_INDEXES = {
+    "assistant_projects": ("idx_assistant_projects_user_status_updated", ("username", "status", "updated_at")),
+    "assistant_tasks": ("idx_assistant_tasks_user_status_due", ("username", "status", "due_at")),
+}
+
 
 def plan_migration(tables, columns, indexes):
     """Return planned actions and errors without making schema changes."""
@@ -143,6 +155,27 @@ def plan_migration(tables, columns, indexes):
                 "Index uq_assistant_notifications_user_reminder must cover "
                 "(username, reminder_id); inspect it manually."
             )
+    phase7_tables = {
+        "assistant_projects": PROJECT_COLUMNS,
+        "assistant_tasks": TASK_COLUMNS,
+    }
+    for table_name, required_columns in phase7_tables.items():
+        if table_name not in tables:
+            actions.append(f"create_{table_name}_table")
+            continue
+        missing = sorted(required_columns - columns.get(table_name, set()))
+        if missing:
+            errors.append(
+                f"Table {table_name} is missing required column(s): " + ", ".join(missing)
+            )
+    for table_name, (index_name, expected_columns) in PHASE7_INDEXES.items():
+        if table_name not in tables:
+            continue
+        actual = indexes.get(table_name, {}).get(index_name)
+        if actual is None:
+            actions.append(f"add_{table_name}_index")
+        elif tuple(actual) != expected_columns:
+            errors.append(f"Index {index_name} must cover {expected_columns!r}; inspect it manually.")
     return actions, errors
 
 
@@ -158,6 +191,7 @@ def read_schema(cursor, database_name):
         *REQUIRED_COLUMNS, "user_memories", "automation_activity",
         "automation_workflows", "user_notification_preferences",
         "assistant_reminders", "assistant_notifications",
+        "assistant_projects", "assistant_tasks",
     ]
     for table_name in inspected_tables:
         if table_name not in tables:
@@ -217,6 +251,10 @@ def migrate_database(apply=False, confirm=input):
             "add_assistant_reminders_index": "Create reminder due-date index",
             "add_assistant_notifications_index": "Create unread notification index",
             "add_assistant_notifications_unique": "Create unique notification-per-reminder constraint",
+            "create_assistant_projects_table": "Create user-owned project records",
+            "create_assistant_tasks_table": "Create user-owned prioritized task records",
+            "add_assistant_projects_index": "Create project status/updated index",
+            "add_assistant_tasks_index": "Create task status/due-date index",
         }
         print(f"Database: {Config.MYSQL_DB}")
         print("Planned schema changes:")
@@ -339,6 +377,44 @@ def migrate_database(apply=False, confirm=input):
                 cursor.execute(
                     "CREATE UNIQUE INDEX uq_assistant_notifications_user_reminder "
                     "ON assistant_notifications (username, reminder_id)"
+                )
+
+            elif action == "create_assistant_projects_table":
+                cursor.execute(
+                    "CREATE TABLE assistant_projects ("
+                    "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, username VARCHAR(100) NOT NULL, "
+                    "name VARCHAR(180) NOT NULL, objective VARCHAR(500) NOT NULL DEFAULT '', "
+                    "status VARCHAR(20) NOT NULL DEFAULT 'active', "
+                    "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                    "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                    "PRIMARY KEY (id), "
+                    "KEY idx_assistant_projects_user_status_updated (username, status, updated_at)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "create_assistant_tasks_table":
+                cursor.execute(
+                    "CREATE TABLE assistant_tasks ("
+                    "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, username VARCHAR(100) NOT NULL, "
+                    "project_id BIGINT UNSIGNED NULL, title VARCHAR(180) NOT NULL, "
+                    "details VARCHAR(500) NOT NULL DEFAULT '', priority VARCHAR(12) NOT NULL DEFAULT 'normal', "
+                    "due_at DATETIME NULL, effort_minutes SMALLINT UNSIGNED NULL, "
+                    "status VARCHAR(20) NOT NULL DEFAULT 'pending', "
+                    "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                    "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                    "completed_at DATETIME NULL, PRIMARY KEY (id), "
+                    "KEY idx_assistant_tasks_user_status_due (username, status, due_at), "
+                    "KEY idx_assistant_tasks_user_project (username, project_id)"
+                    ") ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+            elif action == "add_assistant_projects_index":
+                cursor.execute(
+                    "CREATE INDEX idx_assistant_projects_user_status_updated "
+                    "ON assistant_projects (username, status, updated_at)"
+                )
+            elif action == "add_assistant_tasks_index":
+                cursor.execute(
+                    "CREATE INDEX idx_assistant_tasks_user_status_due "
+                    "ON assistant_tasks (username, status, due_at)"
                 )
         connection.commit()
         print("Migration completed. Existing history rows remain unassigned (username IS NULL).")

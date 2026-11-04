@@ -124,3 +124,39 @@ CREATE TABLE IF NOT EXISTS assistant_notifications (
 ) ENGINE=InnoDB
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
+
+
+-- User-owned projects and tasks. Task ranking is calculated transparently at read time.
+CREATE TABLE IF NOT EXISTS assistant_projects (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(100) NOT NULL,
+  name VARCHAR(180) NOT NULL,
+  objective VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_assistant_projects_user_status_updated (username, status, updated_at)
+) ENGINE=InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS assistant_tasks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(100) NOT NULL,
+  project_id BIGINT UNSIGNED NULL,
+  title VARCHAR(180) NOT NULL,
+  details VARCHAR(500) NOT NULL DEFAULT '',
+  priority VARCHAR(12) NOT NULL DEFAULT 'normal',
+  due_at DATETIME NULL,
+  effort_minutes SMALLINT UNSIGNED NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  completed_at DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_assistant_tasks_user_status_due (username, status, due_at),
+  KEY idx_assistant_tasks_user_project (username, project_id)
+) ENGINE=InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
