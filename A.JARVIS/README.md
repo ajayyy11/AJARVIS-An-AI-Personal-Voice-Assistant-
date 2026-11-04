@@ -30,7 +30,7 @@ Python · Flask · Google GenAI · OpenCV · face-recognition · MySQL · python
    ```
 
 4. Copy `.env.example` to `.env`. Set a unique random `SECRET_KEY` and your MySQL credentials. `GEMINI_API_KEY` is needed for free-form Gemini answers but is no longer required just to start local commands; `WEATHER_API_KEY` is optional.
-5. For a new database, create the tables using `database/schema.sql`. For an existing database, back it up and follow [the database upgrade runbook](database/migrations/README.md) to add user-scoped history and personal memory while preserving users and face encodings.
+5. For a new database, create the tables using `database/schema.sql`. For an existing database, back it up and follow [the database upgrade runbook](database/migrations/README.md) to add user-scoped history, personal memory, automation history, scheduled reminders, and notification settings while preserving users and face encodings.
 6. Start the app:
 
    ```bash

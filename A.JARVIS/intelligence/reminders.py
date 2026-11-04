@@ -7,7 +7,7 @@ stored while AJARVIS is closed, and are surfaced when the dashboard is opened.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from database.db import get_connection
@@ -42,7 +42,7 @@ def _parse_due_at(value: Any) -> datetime:
     now = datetime.now(timezone.utc)
     if utc_value <= now:
         raise ReminderError("Reminder time must be in the future.")
-    if (utc_value - now).days > MAX_REMINDER_DAYS:
+    if utc_value - now > timedelta(days=MAX_REMINDER_DAYS):
         raise ReminderError("Reminders can be scheduled up to one year ahead.")
     return utc_value.replace(tzinfo=None)
 

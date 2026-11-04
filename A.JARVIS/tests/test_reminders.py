@@ -166,3 +166,9 @@ def test_notification_and_reminder_ids_are_validated():
         reminders.mark_notification_read("alice", True)
     with pytest.raises(reminders.ReminderError):
         reminders.update_reminder_status("alice", 0, "completed")
+
+
+def test_reminder_cannot_be_scheduled_more_than_one_year_ahead():
+    too_far = (datetime.now(timezone.utc) + timedelta(days=366)).isoformat()
+    with pytest.raises(reminders.ReminderError, match="one year"):
+        reminders._parse_due_at(too_far)

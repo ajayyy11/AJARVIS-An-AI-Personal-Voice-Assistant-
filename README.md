@@ -85,7 +85,7 @@ Shutdown and restart requests now require an exact confirmation within 30 second
 
 ## Automated Tests
 
-GitHub Actions validates both dashboard JavaScript surfaces and the Render Blueprint, compiles the Python modules, and runs the session, memory, task-planner, approval, activity-log, migration, and command integration tests. To run the suite locally from the application directory:
+GitHub Actions validates both dashboard JavaScript surfaces and the Render Blueprint, compiles the Python modules, and runs the session, memory, task-planner, approval, activity-log, reminder, workflow-recovery, migration, and command integration tests. To run the suite locally from the application directory:
 
 ```bash
 cd A.JARVIS

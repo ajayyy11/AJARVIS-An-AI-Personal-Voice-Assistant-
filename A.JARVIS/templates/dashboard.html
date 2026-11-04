@@ -907,6 +907,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     async function refreshPhase6Reminders() {
       try {
         const data = await phase6Request("/api/reminders");
+        reminderStatus.textContent = "Reminders loaded.";
         reminderList.replaceChildren();
         if (!data.reminders.length) {
           phase6Empty(reminderList, "No active reminders.");
