@@ -832,6 +832,7 @@
       setVisualFile(snapshot, "Camera snapshot");
       toast("One camera frame captured locally. It has not been uploaded.", false, "VISUAL CAPTURE");
     } catch (error) {
+      stopVisualCamera();
       toast(error.message, true, "CAMERA CAPTURE");
     }
   });
@@ -843,6 +844,7 @@
       toast("Screen capture is not supported in this browser. Choose an image instead.", true, "SCREEN CAPTURE UNAVAILABLE");
       return;
     }
+    stopVisualCamera();
     let stream = null;
     try {
       // The browser opens its native picker. Only one frame is captured and the stream is stopped.
@@ -851,11 +853,12 @@
       visualCameraPreview.hidden = false;
       await visualCameraPreview.play();
       await new Promise((resolve) => {
+        let settled = false;
+        const finish = () => { if (!settled) { settled = true; resolve(); } };
         if (typeof visualCameraPreview.requestVideoFrameCallback === "function") {
-          visualCameraPreview.requestVideoFrameCallback(() => resolve());
-        } else {
-          window.setTimeout(resolve, 150);
+          visualCameraPreview.requestVideoFrameCallback(finish);
         }
+        window.setTimeout(finish, 500);
       });
       const snapshot = await captureVisualFrame(visualCameraPreview, "ajarvis-screen");
       stream.getTracks().forEach((track) => track.stop());
