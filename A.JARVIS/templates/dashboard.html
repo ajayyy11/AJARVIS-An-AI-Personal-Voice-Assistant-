@@ -800,6 +800,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
           ? "Read-only checks are complete. Review the pending action before approving."
           : "Plan status: " + data.plan.status + ".";
         await refreshAutomationActivity();
+        await refreshPhase6Workflows();
       } catch (error) {
         automationStatus.textContent = error.message || "Could not create the task plan.";
       } finally {
@@ -817,6 +818,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
           ? "Next computer-changing step needs your approval."
           : "Plan status: " + data.plan.status + ".";
         await refreshAutomationActivity();
+        await refreshPhase6Workflows();
       } catch (error) {
         automationStatus.textContent = error.message || "Approval could not be processed.";
         button.disabled = false;
@@ -830,6 +832,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
         renderAutomationPlan(data.plan);
         automationStatus.textContent = "Plan cancelled.";
         await refreshAutomationActivity();
+        await refreshPhase6Workflows();
       } catch (error) {
         automationStatus.textContent = error.message || "Plan could not be cancelled.";
         button.disabled = false;
@@ -978,23 +981,22 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     async function savePhase6NotificationPreferences() {
       notificationSettingsStatus.textContent = "Saving notification preferences…";
       const wantsBrowser = browserNotificationsEnabled.checked;
+      let browserPermissionNote = "";
       if (wantsBrowser) {
         if (!("Notification" in window)) {
           browserNotificationsEnabled.checked = false;
-          notificationSettingsStatus.textContent = "This browser does not support desktop notifications. In-app alerts remain available.";
-          return;
-        }
-        if (Notification.permission === "default") {
-          const permission = await Notification.requestPermission();
-          if (permission !== "granted") {
+          browserPermissionNote = " This browser does not support desktop notifications; in-app alerts remain enabled.";
+        } else {
+          if (Notification.permission === "default") {
+            const permission = await Notification.requestPermission();
+            if (permission !== "granted") {
+              browserNotificationsEnabled.checked = false;
+              browserPermissionNote = " Browser permission was not granted; in-app alerts remain enabled.";
+            }
+          } else if (Notification.permission !== "granted") {
             browserNotificationsEnabled.checked = false;
-            notificationSettingsStatus.textContent = "Browser permission was not granted. In-app alerts remain available.";
-            return;
+            browserPermissionNote = " Allow notifications in browser site settings to enable desktop alerts; in-app alerts remain enabled.";
           }
-        } else if (Notification.permission !== "granted") {
-          browserNotificationsEnabled.checked = false;
-          notificationSettingsStatus.textContent = "Allow notifications in your browser site settings, then try again.";
-          return;
         }
       }
       try {
@@ -1004,7 +1006,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
         });
         remindersEnabled.checked = data.preferences.reminders_enabled;
         browserNotificationsEnabled.checked = data.preferences.browser_notifications_enabled;
-        notificationSettingsStatus.textContent = "Preferences saved.";
+        notificationSettingsStatus.textContent = "Preferences saved." + browserPermissionNote;
         await pollPhase6Notifications();
       } catch (error) {
         notificationSettingsStatus.textContent = error.message || "Preferences could not be saved.";
