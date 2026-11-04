@@ -20,6 +20,16 @@ from intelligence.activity_log import (
     list_recent_workflows,
     recover_interrupted_workflows,
 )
+from intelligence.personal_intelligence import (
+    PersonalIntelligenceError,
+    build_personal_focus,
+    create_project,
+    list_projects,
+    update_project_status,
+    create_task,
+    list_tasks,
+    update_task_status,
+)
 from intelligence.reminders import (
     ReminderError,
     create_reminder,
@@ -552,6 +562,122 @@ def mark_notification_read_api(notification_id):
     response = jsonify({"ok": True})
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+# ==========================================
+# PHASE 7 — PERSONAL PROJECT & TASK INTELLIGENCE
+# ==========================================
+@app.route("/api/personal-intelligence/focus", methods=["GET"])
+def personal_intelligence_focus_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        response = jsonify({"focus": build_personal_focus(session["user"])})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except PersonalIntelligenceError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@app.route("/api/projects", methods=["GET", "POST"])
+def personal_projects_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    username = session["user"]
+    if request.method == "GET":
+        try:
+            response = jsonify({"projects": list_projects(username)})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except PersonalIntelligenceError as exc:
+            return jsonify({"error": str(exc)}), 503
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        project = create_project(username, data.get("name"), data.get("objective", ""))
+        response = jsonify({"project": project})
+        response.status_code = 201
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except PersonalIntelligenceError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/projects/<int:project_id>/status", methods=["POST"])
+def personal_project_status_api(project_id):
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        changed = update_project_status(session["user"], project_id, data.get("status"))
+    except PersonalIntelligenceError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not changed:
+        return jsonify({"error": "Project not found."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tasks", methods=["GET", "POST"])
+def personal_tasks_api():
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    username = session["user"]
+    if request.method == "GET":
+        try:
+            response = jsonify({"tasks": list_tasks(
+                username,
+                include_completed=request.args.get("include_completed", "").lower() in {"1", "true", "yes"},
+            )})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except PersonalIntelligenceError as exc:
+            return jsonify({"error": str(exc)}), 503
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        task = create_task(
+            username,
+            data.get("title"),
+            project_id=data.get("project_id"),
+            details=data.get("details", ""),
+            priority=data.get("priority", "normal"),
+            due_at=data.get("due_at"),
+            effort_minutes=data.get("effort_minutes"),
+        )
+        response = jsonify({"task": task})
+        response.status_code = 201
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except PersonalIntelligenceError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/tasks/<int:task_id>/status", methods=["POST"])
+def personal_task_status_api(task_id):
+    if not is_authenticated():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A JSON object is required."}), 400
+    try:
+        changed = update_task_status(session["user"], task_id, data.get("status"))
+    except PersonalIntelligenceError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not changed:
+        return jsonify({"error": "Task not found or no longer active."}), 404
+    return jsonify({"ok": True})
 
 
 # ==========================================

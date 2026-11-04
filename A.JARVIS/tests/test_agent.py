@@ -71,7 +71,7 @@ def test_default_registry_exposes_only_read_only_tools():
     assert {tool["name"] for tool in tools} == {
         "get_current_datetime", "get_system_status", "get_battery_status",
         "read_recent_notes", "search_personal_notes", "read_user_memories",
-        "search_user_memories"
+        "search_user_memories", "get_personal_focus"
     }
     assert all(tool["risk_level"] == "read_only" for tool in tools)
 
@@ -223,3 +223,22 @@ def test_default_registry_includes_read_only_personal_memory_tools(monkeypatch):
     assert registry.invoke("read_user_memories", username="ajay")["memories"][0]["value"] == "concise"
     assert registry.invoke("search_user_memories", username="ajay", arguments={"query": "style"})["matches"][0]["key"] == "answer_style"
     assert all(item["risk_level"] == "read_only" for item in registry.list_tools())
+
+
+def test_default_registry_exposes_explainable_personal_focus(monkeypatch):
+    from intelligence import agent
+
+    monkeypatch.setattr(
+        agent,
+        "build_personal_focus",
+        lambda username: {
+            "active_projects": [{"id": 1, "name": "AJARVIS"}],
+            "next_tasks": [{"id": 4, "title": "Run Phase 7 tests", "priority_score": 95}],
+            "metrics": {"active_projects": 1, "open_tasks": 1, "overdue_tasks": 0, "in_progress_tasks": 0},
+            "prioritisation": "Transparent score.",
+        },
+    )
+    registry = agent.build_default_registry()
+    result = registry.invoke("get_personal_focus", username="alice")
+    assert result["next_tasks"][0]["priority_score"] == 95
+    assert all(tool["risk_level"] == "read_only" for tool in registry.list_tools())

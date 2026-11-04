@@ -8,6 +8,8 @@ TABLE_COLUMNS = {
     "user_notification_preferences": {"username", "reminders_enabled", "browser_notifications_enabled", "updated_at"},
     "assistant_reminders": {"id", "username", "title", "due_at", "status", "created_at", "updated_at", "completed_at"},
     "assistant_notifications": {"id", "username", "reminder_id", "title", "body", "created_at", "presented_at", "read_at"},
+    "assistant_projects": {"id", "username", "name", "objective", "status", "created_at", "updated_at"},
+    "assistant_tasks": {"id", "username", "project_id", "title", "details", "priority", "due_at", "effort_minutes", "status", "created_at", "updated_at", "completed_at"},
 }
 TABLE_INDEXES = {
     "users": {"uq_users_username": ("username",)},
@@ -20,6 +22,8 @@ TABLE_INDEXES = {
         "uq_assistant_notifications_user_reminder": ("username", "reminder_id"),
         "idx_assistant_notifications_user_read": ("username", "read_at", "id"),
     },
+    "assistant_projects": {"idx_assistant_projects_user_status_updated": ("username", "status", "updated_at")},
+    "assistant_tasks": {"idx_assistant_tasks_user_status_due": ("username", "status", "due_at")},
 }
 
 
@@ -50,6 +54,8 @@ def test_legacy_schema_plans_all_missing_phase_tables_and_history_index():
         "create_user_notification_preferences_table",
         "create_assistant_reminders_table",
         "create_assistant_notifications_table",
+        "create_assistant_projects_table",
+        "create_assistant_tasks_table",
     }
 
 
@@ -151,3 +157,24 @@ def test_existing_phase6_table_with_missing_columns_is_rejected():
     actions, errors = plan_migration(tables, columns, indexes)
     assert actions == []
     assert any("assistant_reminders is missing" in error for error in errors)
+
+
+def test_phase7_missing_project_task_indexes_are_planned():
+    from database.migrate_database import plan_migration
+
+    tables, columns, indexes = full_schema()
+    indexes["assistant_projects"].pop("idx_assistant_projects_user_status_updated")
+    indexes["assistant_tasks"].pop("idx_assistant_tasks_user_status_due")
+    actions, errors = plan_migration(tables, columns, indexes)
+    assert set(actions) == {"add_assistant_projects_index", "add_assistant_tasks_index"}
+    assert errors == []
+
+
+def test_phase7_incompatible_task_schema_is_rejected():
+    from database.migrate_database import plan_migration
+
+    tables, columns, indexes = full_schema()
+    columns["assistant_tasks"].remove("priority")
+    actions, errors = plan_migration(tables, columns, indexes)
+    assert actions == []
+    assert any("assistant_tasks is missing" in error for error in errors)
