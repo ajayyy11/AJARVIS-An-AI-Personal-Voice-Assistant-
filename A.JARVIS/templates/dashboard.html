@@ -1101,8 +1101,17 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     }
 
     reminderForm.addEventListener("submit", createPhase6Reminder);
-    remindersEnabled.addEventListener("change", savePhase6NotificationPreferences);
-    browserNotificationsEnabled.addEventListener("change", savePhase6NotificationPreferences);
+    remindersEnabled.addEventListener("change", () => {
+      if (!remindersEnabled.checked) browserNotificationsEnabled.checked = false;
+      savePhase6NotificationPreferences();
+    });
+    browserNotificationsEnabled.addEventListener("change", () => {
+      if (browserNotificationsEnabled.checked && !remindersEnabled.checked) {
+        remindersEnabled.checked = true;
+        notificationSettingsStatus.textContent = "Reminder alerts are enabled because browser alerts depend on them.";
+      }
+      savePhase6NotificationPreferences();
+    });
     refreshPhase6Reminders();
     loadPhase6NotificationPreferences().then(pollPhase6Notifications);
     refreshPhase6Workflows();
