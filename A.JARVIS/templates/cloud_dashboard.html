@@ -39,16 +39,16 @@
     <aside class="sidebar" id="workspaceSidebar" aria-label="AJARVIS navigation">
       <div class="sidebar-heading">FEATURES AVAILABLE IN <strong>AJARVIS</strong></div>
       <nav class="sidebar-nav" aria-label="Workspace sections">
-        <a id="newChatButton" class="nav-link{% if active_page == 'dashboard' %} is-active{% endif %}" href="{{ url_for('dashboard') }}"><span aria-hidden="true">＋</span>New Chat</a>
-        <a class="nav-link{% if active_page == 'history' %} is-active{% endif %}" href="{{ url_for('history_page') }}"><span aria-hidden="true">◷</span>Chat History</a>
-        <a class="nav-link{% if active_page == 'tasks' %} is-active{% endif %}" href="{{ url_for('tasks_page') }}"><span aria-hidden="true">✓</span>Tasks &amp; Reminders</a>
-        <a class="nav-link{% if active_page == 'notes' %} is-active{% endif %}" href="{{ url_for('notes_page') }}"><span aria-hidden="true">▤</span>Personal Notes</a>
-        <a class="nav-link{% if active_page == 'memory' %} is-active{% endif %}" href="{{ url_for('memory_page') }}"><span aria-hidden="true">✦</span>Personal Memory</a>
-        <a class="nav-link{% if active_page == 'activity' %} is-active{% endif %}" href="{{ url_for('activity_page') }}"><span aria-hidden="true">⌁</span>Agent Activity</a>
-        <a class="nav-link{% if active_page == 'visual' %} is-active{% endif %}" href="{{ url_for('visual_page') }}"><span aria-hidden="true">◉</span>Visual Tools</a>
-        <a class="nav-link{% if active_page == 'documents' %} is-active{% endif %}" href="{{ url_for('documents_page') }}"><span aria-hidden="true">▧</span>Documents</a>
-        <a class="nav-link{% if active_page == 'account' %} is-active{% endif %}" href="{{ url_for('account_page') }}"><span aria-hidden="true">♙</span>Account</a>
-        <a class="nav-link{% if active_page == 'settings' %} is-active{% endif %}" href="{{ url_for('settings_page') }}"><span aria-hidden="true">⚙</span>Settings</a>
+        <a id="newChatButton" class="nav-link{% if active_page == 'dashboard' %} is-active{% endif %}"{% if active_page == 'dashboard' %} aria-current="page"{% endif %} href="{{ url_for('dashboard') }}"><span aria-hidden="true">＋</span>New Chat</a>
+        <a class="nav-link{% if active_page == 'history' %} is-active{% endif %}"{% if active_page == 'history' %} aria-current="page"{% endif %} href="{{ url_for('history_page') }}"><span aria-hidden="true">◷</span>Chat History</a>
+        <a class="nav-link{% if active_page == 'tasks' %} is-active{% endif %}"{% if active_page == 'tasks' %} aria-current="page"{% endif %} href="{{ url_for('tasks_page') }}"><span aria-hidden="true">✓</span>Tasks &amp; Reminders</a>
+        <a class="nav-link{% if active_page == 'notes' %} is-active{% endif %}"{% if active_page == 'notes' %} aria-current="page"{% endif %} href="{{ url_for('notes_page') }}"><span aria-hidden="true">▤</span>Personal Notes</a>
+        <a class="nav-link{% if active_page == 'memory' %} is-active{% endif %}"{% if active_page == 'memory' %} aria-current="page"{% endif %} href="{{ url_for('memory_page') }}"><span aria-hidden="true">✦</span>Personal Memory</a>
+        <a class="nav-link{% if active_page == 'activity' %} is-active{% endif %}"{% if active_page == 'activity' %} aria-current="page"{% endif %} href="{{ url_for('activity_page') }}"><span aria-hidden="true">⌁</span>Agent Activity</a>
+        <a class="nav-link{% if active_page == 'visual' %} is-active{% endif %}"{% if active_page == 'visual' %} aria-current="page"{% endif %} href="{{ url_for('visual_page') }}"><span aria-hidden="true">◉</span>Visual Tools</a>
+        <a class="nav-link{% if active_page == 'documents' %} is-active{% endif %}"{% if active_page == 'documents' %} aria-current="page"{% endif %} href="{{ url_for('documents_page') }}"><span aria-hidden="true">▧</span>Documents</a>
+        <a class="nav-link{% if active_page == 'account' %} is-active{% endif %}"{% if active_page == 'account' %} aria-current="page"{% endif %} href="{{ url_for('account_page') }}"><span aria-hidden="true">♙</span>Account</a>
+        <a class="nav-link{% if active_page == 'settings' %} is-active{% endif %}"{% if active_page == 'settings' %} aria-current="page"{% endif %} href="{{ url_for('settings_page') }}"><span aria-hidden="true">⚙</span>Settings</a>
       </nav>
       <div class="sidebar-footer"><span class="dot"></span><span>Private workspace</span></div>
     </aside>
