@@ -65,18 +65,60 @@
 
   const newChatButton = $("newChatButton");
   if (newChatButton && log) {
-    newChatButton.addEventListener("click", () => {
-      log.replaceChildren();
-      appendMessage("assistant", "Hello " + username + ". Your new conversation is ready. What would you like to do?");
-      log.dataset.historyLoaded = "true";
-      const input = $("commandInput");
-      if (input) {
-        input.value = "";
-        input.focus();
+    newChatButton.addEventListener("click", async () => {
+      if (newChatButton.disabled) return;
+      newChatButton.disabled = true;
+      try {
+        const response = await fetch("/api/history", {
+          credentials: "same-origin",
+          cache: "no-store"
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not start a new conversation.");
+        const cursor = Number(result.latest_id);
+        if (!Number.isSafeInteger(cursor) || cursor < 0) {
+          throw new Error("AJARVIS could not establish a safe conversation boundary. Please try again.");
+        }
+
+        const cursorKey = "ajarvis.cloud.context_after_id:" + username.toLowerCase();
+        document.body.dataset.contextAfterId = String(cursor);
+        let persisted = false;
+        try { window.localStorage.setItem(cursorKey, String(cursor)); persisted = true; } catch (_error) {}
+        try { window.sessionStorage.setItem(cursorKey, String(cursor)); persisted = true; } catch (_error) {}
+        if (!persisted) {
+          const region = $("toastRegion");
+          if (region) {
+            const notice = document.createElement("div");
+            notice.className = "toast";
+            notice.textContent = "New conversation started for this tab. Browser storage is blocked, so reloading may restore older chat context.";
+            region.appendChild(notice);
+            window.setTimeout(() => notice.remove(), 6500);
+          }
+        }
+
+        log.replaceChildren();
+        appendMessage("assistant", "Hello " + username + ". Your new conversation is ready. What would you like to do?");
+        log.dataset.historyLoaded = "true";
+        const input = $("commandInput");
+        if (input) {
+          input.value = "";
+          input.focus();
+        }
+        document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("is-active"));
+        newChatButton.classList.add("is-active");
+        $("commandConsole")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        const region = $("toastRegion");
+        if (region) {
+          const notice = document.createElement("div");
+          notice.className = "toast error";
+          notice.textContent = error.message || "Could not start a new conversation.";
+          region.appendChild(notice);
+          window.setTimeout(() => notice.remove(), 6500);
+        }
+      } finally {
+        newChatButton.disabled = false;
       }
-      document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("is-active"));
-      newChatButton.classList.add("is-active");
-      $("commandConsole")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
 

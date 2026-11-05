@@ -41,7 +41,14 @@ from intelligence.cloud_tasks import (
     list_user_tasks,
     update_user_task,
 )
-from intelligence.memory import add_memory, get_recent
+from intelligence.memory import (
+    add_memory,
+    get_recent,
+    get_recent_after,
+    get_all_recent,
+    get_all_recent_after,
+    get_latest_id,
+)
 from intelligence.multimodal import (
     MultimodalError,
     analyze_visual_input,
@@ -717,7 +724,9 @@ def _strip_wake_prefix(command: str) -> str:
     return _WAKE_PREFIX_RE.sub("", normalized, count=1).strip()
 
 
-def process_cloud_command(username: str, command: str) -> str:
+def process_cloud_command(
+    username: str, command: str, context_after_id: int | None = None
+) -> str:
     original = _strip_wake_prefix(command)
     if not original:
         return "At your service. What can I help you with?"
@@ -858,7 +867,11 @@ def process_cloud_command(username: str, command: str) -> str:
             return "I couldn't complete the grounded web search. Please try again with a more specific query."
 
     try:
-        history = get_recent(5, username=username)
+        history = (
+            get_recent_after(5, username=username, after_id=context_after_id)
+            if context_after_id is not None
+            else get_recent(5, username=username)
+        )
         messages = []
         for entry in history:
             messages.append({"role": "user", "parts": [{"text": str(entry["command"])[:2000]}]})
@@ -1551,11 +1564,21 @@ def assistant_api():
     command = command.strip()
     if len(command) > 2000:
         return jsonify({"error": "Command must be 2,000 characters or fewer."}), 400
+    context_after_id = data.get("context_after_id")
+    if context_after_id is not None and (
+        isinstance(context_after_id, bool)
+        or not isinstance(context_after_id, int)
+        or context_after_id < 0
+    ):
+        return jsonify({"error": "Conversation history cursor must be a non-negative integer."}), 400
     username = session["user"]
     if _assistant_rate_limited(username):
         return _ai_quota_response()
     try:
-        reply = process_cloud_command(username, command)
+        if context_after_id is None:
+            reply = process_cloud_command(username, command)
+        else:
+            reply = process_cloud_command(username, command, context_after_id=context_after_id)
         _save_history(username, command, reply)
         return jsonify({"response": reply})
     except Exception:
@@ -1628,9 +1651,23 @@ def history_api():
     auth_error = _require_login()
     if auth_error:
         return auth_error
+    after_id_value = request.args.get("after_id")
+    after_id = None
+    if after_id_value is not None:
+        try:
+            after_id = int(after_id_value)
+            if after_id < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": "History cursor must be a non-negative integer."}), 400
     try:
-        from intelligence.memory import get_all_recent
-        return jsonify({"history": get_all_recent(30, username=session["user"])})
+        username = session["user"]
+        history = (
+            get_all_recent_after(30, username=username, after_id=after_id)
+            if after_id is not None
+            else get_all_recent(30, username=username)
+        )
+        return jsonify({"history": history, "latest_id": get_latest_id(username=username)})
     except Exception:
         return jsonify({"error": "History is temporarily unavailable."}), 503
 

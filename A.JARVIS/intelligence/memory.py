@@ -144,3 +144,98 @@ def get_all_recent(n=20, username=None):
         return _cache_snapshot(limit, username, newest_first=True)
     finally:
         _close_resources(cursor, conn)
+
+
+def _normalise_after_id(value):
+    """Validate a persisted history cursor before using it in a scoped query."""
+    if isinstance(value, bool):
+        raise ValueError("History cursor must be a non-negative integer.")
+    try:
+        after_id = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("History cursor must be a non-negative integer.") from None
+    if after_id < 0:
+        raise ValueError("History cursor must be a non-negative integer.")
+    return after_id
+
+
+def get_recent_after(n=5, username=None, after_id=0):
+    """Return this user's conversation entries after a history cursor, oldest-first.
+
+    Unlike the general history readers, this deliberately does not fall back to
+    the process cache: cached entries have no durable database IDs and cannot be
+    safely separated by conversation boundary.
+    """
+    if not isinstance(username, str) or not username.strip():
+        return []
+    username = username.strip()
+    limit = _normalise_limit(n, 5)
+    if limit == 0:
+        return []
+    cursor_id = _normalise_after_id(after_id)
+
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT command, response FROM command_history "
+            "WHERE username = %s AND id > %s ORDER BY id DESC LIMIT %s",
+            (username, cursor_id, limit),
+        )
+        rows = cursor.fetchall()
+        return [{"command": row[0], "response": row[1]} for row in reversed(rows)]
+    except Exception:
+        logger.warning("Conversation history read failed; refusing to reuse older context.", exc_info=True)
+        raise RuntimeError("Conversation history is temporarily unavailable.") from None
+    finally:
+        _close_resources(cursor, conn)
+
+
+def get_all_recent_after(n=30, username=None, after_id=0):
+    """Return this user's recent entries after a conversation cursor, newest-first."""
+    if not isinstance(username, str) or not username.strip():
+        return []
+    username = username.strip()
+    limit = _normalise_limit(n, 30)
+    if limit == 0:
+        return []
+    cursor_id = _normalise_after_id(after_id)
+
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT command, response FROM command_history "
+            "WHERE username = %s AND id > %s ORDER BY id DESC LIMIT %s",
+            (username, cursor_id, limit),
+        )
+        rows = cursor.fetchall()
+        return [{"command": row[0], "response": row[1]} for row in rows]
+    except Exception:
+        logger.warning("Conversation history display failed.", exc_info=True)
+        raise RuntimeError("Conversation history is temporarily unavailable.") from None
+    finally:
+        _close_resources(cursor, conn)
+
+
+def get_latest_id(username=None):
+    """Return the latest durable command-history ID for this signed-in user."""
+    if not isinstance(username, str) or not username.strip():
+        return 0
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM command_history WHERE username = %s",
+            (username.strip(),),
+        )
+        row = cursor.fetchone()
+        return int(row[0] or 0) if row else 0
+    except Exception:
+        logger.warning("Could not determine the conversation history boundary.", exc_info=True)
+        raise RuntimeError("Conversation history is temporarily unavailable.") from None
+    finally:
+        _close_resources(cursor, conn)
