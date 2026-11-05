@@ -14,6 +14,8 @@ def test_cloud_dashboard_has_simple_feature_navigation_and_status_panel():
         'id="commandConsole"',
         'id="tasksPanel"',
         'id="notesPanel"',
+        'href="#preferencesPanel"',
+        'href="#activityPanel"',
         'id="visualPanel"',
         'id="documentsPanel"',
         'id="voiceSettings"',
