@@ -61,6 +61,7 @@ jobs:
         shell: bash
         run: |
           node --check static/cloud.js
+          node --check static/interface.js
           python - <<'PY'
           import re
           from pathlib import Path
