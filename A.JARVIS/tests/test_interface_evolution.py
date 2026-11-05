@@ -83,3 +83,39 @@ def test_mobile_sidebar_has_drawer_and_backdrop_controls():
     assert ".sidebar.is-open" in style
     assert ".sidebar-backdrop:not([hidden])" in style
     assert "@media (max-width: 760px)" in style
+
+
+
+def test_cloud_dashboard_has_a_fresh_context_boundary_and_does_not_autoload_saved_history():
+    html = (ROOT / "templates" / "cloud_dashboard.html").read_text(encoding="utf-8")
+    script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'data-context-after-id="{{ context_after_id }}"' in html
+    assert 'id="historyList"' in html
+    assert 'refreshHistory().catch(() => {});' not in script
+    assert 'if (activePage === "history") refreshHistory()' in script
+
+
+def test_each_feature_has_a_dedicated_route_and_active_navigation_link():
+    html = (ROOT / "templates" / "cloud_dashboard.html").read_text(encoding="utf-8")
+    for route in (
+        "dashboard", "history_page", "tasks_page", "notes_page",
+        "memory_page", "activity_page", "visual_page", "documents_page",
+        "account_page", "settings_page",
+    ):
+        assert "url_for('" + route + "')" in html
+    assert 'data-page="{{ active_page }}"' in html
+
+
+def test_separate_feature_pages_hide_non_active_panels_and_animate_login_aurora():
+    style = (ROOT / "static" / "cloud.css").read_text(encoding="utf-8")
+    for page, panel in (
+        ("dashboard", "assistant-panel"), ("history", "history-panel"),
+        ("tasks", "tasks-panel"), ("notes", "notes-panel"),
+        ("memory", "preferences-panel"), ("activity", "activity-panel"),
+        ("visual", "visual-panel"), ("documents", "documents-panel"),
+        ("settings", "settings-panel"), ("account", "account-panel"),
+    ):
+        assert f'body[data-page="{page}"]' in style
+        assert panel in style
+    assert "auroraWaveDrift" in style
+    assert "prefers-reduced-motion" in style
