@@ -91,8 +91,10 @@ def test_cloud_dashboard_has_a_fresh_context_boundary_and_does_not_autoload_save
     script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
     assert 'data-context-after-id="{{ context_after_id }}"' in html
     assert 'id="historyList"' in html
-    assert 'refreshHistory().catch(() => {});' not in script
+    assert not any(line.strip() == "refreshHistory().catch(() => {});" for line in script.splitlines())
     assert 'if (activePage === "history") refreshHistory()' in script
+    assert 'if (activePage === "tasks") loadTasks()' in script
+    assert 'if (activePage === "notes") loadNotes()' in script
 
 
 def test_each_feature_has_a_dedicated_route_and_active_navigation_link():
