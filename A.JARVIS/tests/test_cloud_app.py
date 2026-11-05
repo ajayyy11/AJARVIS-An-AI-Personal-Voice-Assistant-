@@ -145,6 +145,96 @@ def test_post_request_requires_csrf_token(client, monkeypatch):
     assert saved == [("alice", "my personal note")]
 
 
+def test_history_api_returns_user_history_cursor_and_filters_new_chat(client, monkeypatch):
+    login_session(client)
+    calls = []
+    monkeypatch.setattr(
+        cloud_app, "get_all_recent_after",
+        lambda limit, username, after_id: calls.append((limit, username, after_id))
+        or [{"command": "new chat message", "response": "new chat reply"}],
+    )
+    monkeypatch.setattr(cloud_app, "get_latest_id", lambda username: 73)
+
+    response = client.get("/api/history?after_id=42")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "history": [{"command": "new chat message", "response": "new chat reply"}],
+        "latest_id": 73,
+    }
+    assert calls == [(30, "alice", 42)]
+
+
+@pytest.mark.parametrize("cursor", ["-1", "not-a-number"])
+def test_history_api_rejects_invalid_conversation_cursor(client, cursor):
+    login_session(client)
+    response = client.get("/api/history?after_id=" + cursor)
+    assert response.status_code == 400
+
+
+def test_assistant_api_passes_conversation_cursor_to_command_processor(client, monkeypatch):
+    login_session(client)
+    calls = []
+    monkeypatch.setattr(
+        cloud_app, "process_cloud_command",
+        lambda username, command, context_after_id=None:
+            calls.append((username, command, context_after_id)) or "clean-context reply",
+    )
+    monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
+    with cloud_app._assistant_lock:
+        cloud_app._assistant_requests.pop("alice", None)
+
+    response = client.post(
+        "/api/assistant",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"command": "Explain this", "context_after_id": 42},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["response"] == "clean-context reply"
+    assert calls == [("alice", "Explain this", 42)]
+
+
+def test_assistant_api_rejects_invalid_conversation_cursor(client, monkeypatch):
+    login_session(client)
+    monkeypatch.setattr(cloud_app, "process_cloud_command", lambda *_args, **_kwargs: "unexpected")
+    response = client.post(
+        "/api/assistant",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"command": "Explain this", "context_after_id": -1},
+    )
+    assert response.status_code == 400
+
+
+def test_process_cloud_command_uses_only_the_selected_conversation_history(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cloud_app, "_genai", lambda: object())
+    monkeypatch.setattr(
+        cloud_app, "get_recent_after",
+        lambda limit, username, after_id: [
+            {"command": "new conversation question", "response": "new conversation answer"}
+        ],
+    )
+
+    def fake_generate_agent_response(**kwargs):
+        captured["contents"] = kwargs["contents"]
+        return "answer"
+
+    monkeypatch.setattr(cloud_app, "generate_agent_response", fake_generate_agent_response)
+
+    result = cloud_app.process_cloud_command(
+        "alice", "Explain the next step", context_after_id=42
+    )
+
+    assert result == "answer"
+    assert captured["contents"] == [
+        {"role": "user", "parts": [{"text": "new conversation question"}]},
+        {"role": "model", "parts": [{"text": "new conversation answer"}]},
+        {"role": "user", "parts": [{"text": "Explain the next step"}]},
+    ]
+
+
+
 def test_registration_hashes_password_and_creates_fresh_session(client, monkeypatch):
     cursor = FakeCursor()
     connection = FakeConnection(cursor)
