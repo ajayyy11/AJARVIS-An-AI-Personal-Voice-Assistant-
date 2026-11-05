@@ -54,3 +54,32 @@ def test_cloud_chat_sends_and_restores_conversation_boundary():
     assert 'payload.context_after_id = contextAfterId' in script
     assert 'historyEndpoint()' in script
     assert '"/api/history?after_id="' in script
+
+
+
+def test_dashboard_uses_left_feature_navigation_without_duplicate_topbar_brand():
+    html = (ROOT / "templates" / "cloud_dashboard.html").read_text(encoding="utf-8")
+    assert 'id="mobileNavToggle"' in html
+    assert 'id="workspaceSidebar"' in html
+    assert 'id="sidebarBackdrop"' in html
+    topbar = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+    assert 'class="brand"' not in topbar
+    assert 'AJARVIS · PERSONAL AI ASSISTANT' in html
+
+
+def test_login_uses_product_name_without_generic_access_or_welcome_copy():
+    html = (ROOT / "templates" / "cloud_auth.html").read_text(encoding="utf-8")
+    assert 'class="auth-product-title">AJARVIS</h1>' in html
+    assert "SECURE CLOUD ACCESS" not in html
+    assert "Welcome back" not in html
+    assert 'class="brand-large"' not in html
+
+
+def test_mobile_sidebar_has_drawer_and_backdrop_controls():
+    script = (ROOT / "static" / "interface.js").read_text(encoding="utf-8")
+    style = (ROOT / "static" / "cloud.css").read_text(encoding="utf-8")
+    assert 'setSidebarOpen(sidebarToggle.getAttribute("aria-expanded") !== "true")' in script
+    assert 'sidebarBackdrop.addEventListener("click"' in script
+    assert ".sidebar.is-open" in style
+    assert ".sidebar-backdrop:not([hidden])" in style
+    assert "@media (max-width: 760px)" in style
