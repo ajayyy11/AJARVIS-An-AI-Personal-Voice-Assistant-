@@ -8,14 +8,14 @@ def test_cloud_dashboard_has_simple_feature_navigation_and_status_panel():
     for marker in (
         'class="sidebar"',
         'id="newChatButton"',
-        'id="chatHistoryButton"',
+        "url_for('history_page')",
         'id="systemStatusButton"',
         'id="systemStatusPanel"',
         'id="commandConsole"',
         'id="tasksPanel"',
         'id="notesPanel"',
-        'href="#preferencesPanel"',
-        'href="#activityPanel"',
+        "url_for('memory_page')",
+        "url_for('activity_page')",
         'id="visualPanel"',
         'id="documentsPanel"',
         'id="voiceSettings"',
@@ -35,18 +35,26 @@ def test_cloud_auth_keeps_login_and_registration_flow():
     assert 'url_for(\'login_page\')' in html
 
 
-def test_interface_script_uses_safe_history_text_rendering():
+def test_interface_script_uses_safe_text_rendering_and_route_navigation():
     script = (ROOT / "static" / "interface.js").read_text(encoding="utf-8")
-    assert 'fetch("/api/history"' in script
     assert "message.textContent" in script
     assert 'aria-expanded' in script
+    assert 'fetch("/api/history"' not in script
 
 
-def test_new_chat_establishes_and_persists_a_conversation_boundary():
-    script = (ROOT / "static" / "interface.js").read_text(encoding="utf-8")
-    assert 'result.latest_id' in script
-    assert 'ajarvis.cloud.context_after_id:' in script
-    assert 'body.dataset.contextAfterId' in script
+def test_chat_history_is_loaded_by_its_own_feature_page():
+    script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'if (body.dataset.page !== "history") return;' in script
+    assert 'const list = $("historyList")' in script
+    assert 'const result = await api("/api/history")' in script
+
+
+def test_new_chat_uses_server_provided_conversation_boundary():
+    html = (ROOT / "templates" / "cloud_dashboard.html").read_text(encoding="utf-8")
+    script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'data-context-after-id="{{ context_after_id }}"' in html
+    assert "body.dataset.contextAfterId" in script
+    assert "payload.context_after_id = contextAfterId" in script
 
 
 def test_cloud_chat_sends_and_restores_conversation_boundary():
@@ -83,3 +91,41 @@ def test_mobile_sidebar_has_drawer_and_backdrop_controls():
     assert ".sidebar.is-open" in style
     assert ".sidebar-backdrop:not([hidden])" in style
     assert "@media (max-width: 760px)" in style
+
+
+
+def test_cloud_dashboard_has_a_fresh_context_boundary_and_does_not_autoload_saved_history():
+    html = (ROOT / "templates" / "cloud_dashboard.html").read_text(encoding="utf-8")
+    script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'data-context-after-id="{{ context_after_id }}"' in html
+    assert 'id="historyList"' in html
+    assert not any(line.strip() == "refreshHistory().catch(() => {});" for line in script.splitlines())
+    assert 'if (activePage === "history") refreshHistory()' in script
+    assert 'if (activePage === "tasks") loadTasks()' in script
+    assert 'if (activePage === "notes") loadNotes()' in script
+
+
+def test_each_feature_has_a_dedicated_route_and_active_navigation_link():
+    html = (ROOT / "templates" / "cloud_dashboard.html").read_text(encoding="utf-8")
+    for route in (
+        "dashboard", "history_page", "tasks_page", "notes_page",
+        "memory_page", "activity_page", "visual_page", "documents_page",
+        "account_page", "settings_page",
+    ):
+        assert "url_for('" + route + "')" in html
+    assert 'data-page="{{ active_page }}"' in html
+
+
+def test_separate_feature_pages_hide_non_active_panels_and_animate_login_aurora():
+    style = (ROOT / "static" / "cloud.css").read_text(encoding="utf-8")
+    for page, panel in (
+        ("dashboard", "assistant-panel"), ("history", "history-panel"),
+        ("tasks", "tasks-panel"), ("notes", "notes-panel"),
+        ("memory", "preferences-panel"), ("activity", "activity-panel"),
+        ("visual", "visual-panel"), ("documents", "documents-panel"),
+        ("settings", "settings-panel"), ("account", "account-panel"),
+    ):
+        assert f'body[data-page="{page}"]' in style
+        assert panel in style
+    assert "auroraWaveDrift" in style
+    assert "prefers-reduced-motion" in style

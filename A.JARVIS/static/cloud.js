@@ -159,7 +159,10 @@
       micButton.title = isListening ? "Stop listening" : "Start voice command";
     }
     $("sendButton").disabled = isProcessing;
-    if (stopSpeakingButton) stopSpeakingButton.disabled = !isSpeaking;
+    if (stopSpeakingButton) {
+      stopSpeakingButton.disabled = !isSpeaking;
+      stopSpeakingButton.hidden = !isSpeaking;
+    }
   }
 
   function stopSpokenReply() {
@@ -236,8 +239,8 @@
       syncVoiceControls();
       if (!isListening && !isSpeaking && !requestFailed) setAssistantStatus("ready", "READY");
       $("commandInput").focus();
-      refreshHistory().catch(() => {});
-      loadActivity().catch(() => {});
+      if (body.dataset.page === "history") refreshHistory().catch(() => {});
+      if (body.dataset.page === "activity") loadActivity().catch(() => {});
     }
   }
 
@@ -413,18 +416,25 @@
   });
 
   async function refreshHistory() {
-    const result = await api(historyEndpoint());
-    const rows = result.history || [];
-    if (!rows.length) return;
-    const log = $("chatLog");
-    if (log.dataset.historyLoaded === "true") return;
-    log.dataset.historyLoaded = "true";
-    log.replaceChildren();
-    rows.slice().reverse().forEach((entry) => {
-      addChatMessage("user", entry.command || "");
-      addChatMessage("assistant", entry.response || "");
+    if (body.dataset.page !== "history") return;
+    const list = $("historyList");
+    if (!list) return;
+    const result = await api("/api/history");
+    const rows = Array.isArray(result.history) ? result.history : [];
+    list.replaceChildren();
+    if (!rows.length) {
+      list.appendChild(make("p", "empty-state", "No saved conversations yet. Start a new chat with AJARVIS."));
+      return;
+    }
+    rows.forEach((entry, index) => {
+      const card = make("article", "history-item");
+      const heading = make("div", "history-item-heading");
+      heading.appendChild(make("strong", "", "Saved exchange " + (index + 1)));
+      const question = make("p", "history-question", entry.command || "Question not available");
+      const answer = make("p", "history-answer", entry.response || "Response not available");
+      card.append(heading, question, answer);
+      list.appendChild(card);
     });
-    if (!rows.length) addChatMessage("assistant", "Hello " + username + ". How can I help?");
   }
 
   function friendlyDate(value) {
@@ -992,12 +1002,13 @@
     }
   });
 
-  loadTasks().catch(error => toast(error.message, true, "TASKS"));
-  loadNotes().catch(error => toast(error.message, true, "NOTES"));
-  loadPreferences().catch(error => toast(error.message, true, "PERSONAL MEMORY"));
-  loadDocuments().catch(error => toast(error.message, true, "DOCUMENTS"));
-  loadActivity().catch(error => toast(error.message, true, "ACTIVITY"));
-  refreshHistory().catch(() => {});
+  const activePage = body.dataset.page || "dashboard";
+  if (activePage === "tasks") loadTasks().catch(error => toast(error.message, true, "TASKS"));
+  if (activePage === "notes") loadNotes().catch(error => toast(error.message, true, "NOTES"));
+  if (activePage === "memory") loadPreferences().catch(error => toast(error.message, true, "PERSONAL MEMORY"));
+  if (activePage === "documents") loadDocuments().catch(error => toast(error.message, true, "DOCUMENTS"));
+  if (activePage === "activity") loadActivity().catch(error => toast(error.message, true, "ACTIVITY"));
+  if (activePage === "history") refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"));
   loadSystemStatus();
   claimReminders().catch(() => {});
   window.setInterval(() => claimReminders().catch(() => {}), 60000);

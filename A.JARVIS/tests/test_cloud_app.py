@@ -773,3 +773,25 @@ def test_scanned_pdf_document_upload_falls_back_to_visual_transcription(client, 
     assert transcribed[0]["filename"] == "scan.pdf"
     assert transcribed[0]["data"] == b"%PDF-test"
     assert connection.committed
+
+
+
+def test_workspace_feature_routes_render_one_authenticated_page(client, monkeypatch):
+    monkeypatch.setattr(cloud_app, "get_latest_id", lambda username: 91)
+    login_session(client)
+    routes = {
+        "/dashboard": "dashboard",
+        "/history": "history",
+        "/tasks": "tasks",
+        "/notes": "notes",
+        "/memory": "memory",
+        "/activity": "activity",
+        "/visual": "visual",
+        "/documents": "documents",
+        "/account": "account",
+        "/settings": "settings",
+    }
+    for path, page in routes.items():
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert f'data-page="{page}"' in response.get_data(as_text=True), path

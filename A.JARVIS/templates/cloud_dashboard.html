@@ -7,7 +7,8 @@
   <title>AJARVIS Cloud · Workspace</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css') }}">
 </head>
-<body class="workspace-body" data-user="{{ user }}" data-csrf="{{ csrf_token }}">
+<body class="workspace-body" data-user="{{ user }}" data-csrf="{{ csrf_token }}" data-page="{{ active_page }}"
+      {% if context_after_id is not none %}data-context-after-id="{{ context_after_id }}"{% endif %}>
   <div class="app-glow"></div>
   <header class="topbar">
     <button id="mobileNavToggle" class="mobile-nav-toggle" type="button"
@@ -28,6 +29,7 @@
           <p>These metrics describe the AJARVIS cloud host, not your personal device.</p>
         </div>
       </div>
+      <button id="stopSpeakingButton" type="button" class="stop-voice-button global-stop-voice" disabled hidden>Stop voice</button>
       <span class="user-pill"><span class="avatar">{{ user[:1]|upper }}</span><span>{{ user }}</span></span>
       <button id="logoutButton" class="quiet-button">Sign out</button>
     </div>
@@ -38,16 +40,16 @@
     <aside class="sidebar" id="workspaceSidebar" aria-label="AJARVIS navigation">
       <div class="sidebar-heading">FEATURES AVAILABLE IN <strong>AJARVIS</strong></div>
       <nav class="sidebar-nav" aria-label="Workspace sections">
-        <button id="newChatButton" class="nav-link is-active" type="button" data-action="new-chat"><span aria-hidden="true">＋</span>New Chat</button>
-        <button id="chatHistoryButton" class="nav-link" type="button"><span aria-hidden="true">◷</span>Chat History</button>
-        <a class="nav-link" href="#tasksPanel"><span aria-hidden="true">✓</span>Tasks &amp; Reminders</a>
-        <a class="nav-link" href="#notesPanel"><span aria-hidden="true">▤</span>Personal Notes</a>
-        <a class="nav-link" href="#preferencesPanel"><span aria-hidden="true">✦</span>Personal Memory</a>
-        <a class="nav-link" href="#activityPanel"><span aria-hidden="true">⌁</span>Agent Activity</a>
-        <a class="nav-link" href="#visualPanel"><span aria-hidden="true">◉</span>Visual Tools</a>
-        <a class="nav-link" href="#documentsPanel"><span aria-hidden="true">▧</span>Documents</a>
-        <a class="nav-link" href="#accountPanel"><span aria-hidden="true">♙</span>Account</a>
-        <a class="nav-link" href="#voiceSettings"><span aria-hidden="true">⚙</span>Settings</a>
+        <a id="newChatButton" class="nav-link{% if active_page == 'dashboard' %} is-active{% endif %}"{% if active_page == 'dashboard' %} aria-current="page"{% endif %} href="{{ url_for('dashboard') }}"><span aria-hidden="true">＋</span>New Chat</a>
+        <a class="nav-link{% if active_page == 'history' %} is-active{% endif %}"{% if active_page == 'history' %} aria-current="page"{% endif %} href="{{ url_for('history_page') }}"><span aria-hidden="true">◷</span>Chat History</a>
+        <a class="nav-link{% if active_page == 'tasks' %} is-active{% endif %}"{% if active_page == 'tasks' %} aria-current="page"{% endif %} href="{{ url_for('tasks_page') }}"><span aria-hidden="true">✓</span>Tasks &amp; Reminders</a>
+        <a class="nav-link{% if active_page == 'notes' %} is-active{% endif %}"{% if active_page == 'notes' %} aria-current="page"{% endif %} href="{{ url_for('notes_page') }}"><span aria-hidden="true">▤</span>Personal Notes</a>
+        <a class="nav-link{% if active_page == 'memory' %} is-active{% endif %}"{% if active_page == 'memory' %} aria-current="page"{% endif %} href="{{ url_for('memory_page') }}"><span aria-hidden="true">✦</span>Personal Memory</a>
+        <a class="nav-link{% if active_page == 'activity' %} is-active{% endif %}"{% if active_page == 'activity' %} aria-current="page"{% endif %} href="{{ url_for('activity_page') }}"><span aria-hidden="true">⌁</span>Agent Activity</a>
+        <a class="nav-link{% if active_page == 'visual' %} is-active{% endif %}"{% if active_page == 'visual' %} aria-current="page"{% endif %} href="{{ url_for('visual_page') }}"><span aria-hidden="true">◉</span>Visual Tools</a>
+        <a class="nav-link{% if active_page == 'documents' %} is-active{% endif %}"{% if active_page == 'documents' %} aria-current="page"{% endif %} href="{{ url_for('documents_page') }}"><span aria-hidden="true">▧</span>Documents</a>
+        <a class="nav-link{% if active_page == 'account' %} is-active{% endif %}"{% if active_page == 'account' %} aria-current="page"{% endif %} href="{{ url_for('account_page') }}"><span aria-hidden="true">♙</span>Account</a>
+        <a class="nav-link{% if active_page == 'settings' %} is-active{% endif %}"{% if active_page == 'settings' %} aria-current="page"{% endif %} href="{{ url_for('settings_page') }}"><span aria-hidden="true">⚙</span>Settings</a>
       </nav>
       <div class="sidebar-footer"><span class="dot"></span><span>Private workspace</span></div>
     </aside>
@@ -55,8 +57,8 @@
     <section class="welcome-row">
       <div>
         <div class="eyebrow">AJARVIS · PERSONAL AI ASSISTANT</div>
-        <h1>Good to see you, <span>{{ user }}</span>.</h1>
-        <p class="muted">Your workspace is ready. Speak or type to get started.</p>
+        <h1>{% if active_page == 'dashboard' %}Good to see you, <span>{{ user }}</span>.{% else %}{{ page_title }}{% endif %}</h1>
+        <p class="muted">{{ page_subtitle }}</p>
       </div>
     </section>
 
@@ -99,6 +101,21 @@
             </div>
           </div>
         </form>
+      </div>
+
+      <div class="panel history-panel" id="historyPanel">
+        <div class="panel-heading">
+          <div class="panel-symbol">◷</div>
+          <div><h2>Previous conversations</h2><p>Your saved questions and AJARVIS responses, newest first</p></div>
+        </div>
+        <div id="historyList" class="history-list"><p class="empty-state">Loading chat history…</p></div>
+      </div>
+
+      <div class="panel settings-panel" id="settingsPanel">
+        <div class="panel-heading">
+          <div class="panel-symbol">⚙</div>
+          <div><h2>Voice preferences</h2><p>Choose how AJARVIS listens and responds</p></div>
+        </div>
         <div class="voice-toolbar" id="voiceSettings" aria-label="Voice settings">
           <label class="voice-language-label" for="voiceLanguage">VOICE LANGUAGE
             <select id="voiceLanguage" aria-label="Voice recognition and spoken reply language">
@@ -112,9 +129,8 @@
             <input id="voiceOutput" type="checkbox" checked>
             <span>Speak replies</span>
           </label>
-          <button id="stopSpeakingButton" type="button" class="stop-voice-button" disabled>Stop voice</button>
         </div>
-        <p class="capability-note">Voice input depends on your browser. Say “Hey Jarvis” naturally. Cloud mode does not control your personal computer.</p>
+        <p class="capability-note">Voice input depends on your browser and microphone permissions. Cloud mode does not control your personal computer.</p>
       </div>
 
       <div class="panel tasks-panel" id="tasksPanel">
@@ -223,11 +239,17 @@
       </div>
     </section>
 
-    <section class="bottom-strip" id="accountPanel">
-      <span><span class="dot"></span> Your workspace is user-scoped</span>
-      <span>Voice input depends on your browser. Reminder notifications require this page to remain open.</span>
-      <a href="{{ url_for('healthz') }}" target="_blank" rel="noreferrer">Service health ↗</a>
-      <button id="deleteAccountButton" class="danger-button" type="button">Delete account &amp; data</button>
+    <section class="panel account-panel" id="accountPanel">
+      <div class="panel-heading">
+        <div class="panel-symbol">♙</div>
+        <div><h2>Account and data</h2><p>Your workspace information and account controls</p></div>
+      </div>
+      <div class="bottom-strip">
+        <span><span class="dot"></span> Your workspace is user-scoped</span>
+        <span>Signed in as {{ user }}</span>
+        <a href="{{ url_for('healthz') }}" target="_blank" rel="noreferrer">Service health ↗</a>
+        <button id="deleteAccountButton" class="danger-button" type="button">Delete account &amp; data</button>
+      </div>
     </section>
   </main>
   </div>
