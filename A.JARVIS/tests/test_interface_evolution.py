@@ -8,7 +8,7 @@ def test_cloud_dashboard_has_simple_feature_navigation_and_status_panel():
     for marker in (
         'class="sidebar"',
         'id="newChatButton"',
-        'id="chatHistoryButton"',
+        "url_for('history_page')",
         'id="systemStatusButton"',
         'id="systemStatusPanel"',
         'id="commandConsole"',
@@ -35,18 +35,26 @@ def test_cloud_auth_keeps_login_and_registration_flow():
     assert 'url_for(\'login_page\')' in html
 
 
-def test_interface_script_uses_safe_history_text_rendering():
+def test_interface_script_uses_safe_text_rendering_and_route_navigation():
     script = (ROOT / "static" / "interface.js").read_text(encoding="utf-8")
-    assert 'fetch("/api/history"' in script
     assert "message.textContent" in script
     assert 'aria-expanded' in script
+    assert 'fetch("/api/history"' not in script
 
 
-def test_new_chat_establishes_and_persists_a_conversation_boundary():
-    script = (ROOT / "static" / "interface.js").read_text(encoding="utf-8")
-    assert 'result.latest_id' in script
-    assert 'ajarvis.cloud.context_after_id:' in script
-    assert 'body.dataset.contextAfterId' in script
+def test_chat_history_is_loaded_by_its_own_feature_page():
+    script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'if (body.dataset.page !== "history") return;' in script
+    assert 'const list = $("historyList")' in script
+    assert 'const result = await api("/api/history")' in script
+
+
+def test_new_chat_uses_server_provided_conversation_boundary():
+    html = (ROOT / "templates" / "cloud_dashboard.html").read_text(encoding="utf-8")
+    script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'data-context-after-id="{{ context_after_id }}"' in html
+    assert "body.dataset.contextAfterId" in script
+    assert "payload.context_after_id = contextAfterId" in script
 
 
 def test_cloud_chat_sends_and_restores_conversation_boundary():
