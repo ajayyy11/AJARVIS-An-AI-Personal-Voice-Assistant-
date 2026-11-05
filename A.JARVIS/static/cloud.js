@@ -159,7 +159,10 @@
       micButton.title = isListening ? "Stop listening" : "Start voice command";
     }
     $("sendButton").disabled = isProcessing;
-    if (stopSpeakingButton) stopSpeakingButton.disabled = !isSpeaking;
+    if (stopSpeakingButton) {
+      stopSpeakingButton.disabled = !isSpeaking;
+      stopSpeakingButton.hidden = !isSpeaking;
+    }
   }
 
   function stopSpokenReply() {
