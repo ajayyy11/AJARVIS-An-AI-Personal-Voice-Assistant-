@@ -2,8 +2,9 @@ import intelligence.memory as memory
 
 
 class FakeCursor:
-    def __init__(self, rows=None, error=None):
+    def __init__(self, rows=None, error=None, one=None):
         self.rows = rows or []
+        self.one = one
         self.error = error
         self.executed = None
         self.closed = False
@@ -15,6 +16,9 @@ class FakeCursor:
 
     def fetchall(self):
         return self.rows
+
+    def fetchone(self):
+        return self.one
 
     def close(self):
         self.closed = True
@@ -110,3 +114,49 @@ def test_zero_limit_or_missing_username_does_not_open_database(monkeypatch):
     assert memory.get_all_recent(0, username="ajay") == []
     assert memory.get_recent(5) == []
     assert memory.get_all_recent(5) == []
+
+
+
+def test_get_recent_after_uses_only_rows_after_user_history_cursor(monkeypatch):
+    cursor = FakeCursor(rows=[("latest", "response 2"), ("first in new chat", "response 1")])
+    conn = FakeConnection(cursor)
+    monkeypatch.setattr(memory, "get_connection", lambda: conn)
+
+    assert memory.get_recent_after(2, username="ajay", after_id=42) == [
+        {"command": "first in new chat", "response": "response 1"},
+        {"command": "latest", "response": "response 2"},
+    ]
+    assert "id > %s" in cursor.executed[0]
+    assert cursor.executed[1] == ("ajay", 42, 2)
+    assert cursor.closed and conn.closed
+
+
+def test_get_all_recent_after_keeps_dashboard_history_newest_first(monkeypatch):
+    cursor = FakeCursor(rows=[("newest", "response 2"), ("older", "response 1")])
+    conn = FakeConnection(cursor)
+    monkeypatch.setattr(memory, "get_connection", lambda: conn)
+
+    assert memory.get_all_recent_after(2, username="ajay", after_id=42) == [
+        {"command": "newest", "response": "response 2"},
+        {"command": "older", "response": "response 1"},
+    ]
+    assert cursor.executed[1] == ("ajay", 42, 2)
+    assert cursor.closed and conn.closed
+
+
+def test_get_latest_id_is_scoped_to_user_and_closes_resources(monkeypatch):
+    cursor = FakeCursor(one=(73,))
+    conn = FakeConnection(cursor)
+    monkeypatch.setattr(memory, "get_connection", lambda: conn)
+
+    assert memory.get_latest_id(username="ajay") == 73
+    assert "MAX(id)" in cursor.executed[0]
+    assert cursor.executed[1] == ("ajay",)
+    assert cursor.closed and conn.closed
+
+
+def test_invalid_history_cursor_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError):
+        memory.get_recent_after(5, username="ajay", after_id=-1)
