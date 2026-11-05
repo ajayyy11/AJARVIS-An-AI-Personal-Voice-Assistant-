@@ -7,7 +7,8 @@
   <title>AJARVIS Cloud · Workspace</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css') }}">
 </head>
-<body class="workspace-body" data-user="{{ user }}" data-csrf="{{ csrf_token }}" data-page="{{ active_page }}">
+<body class="workspace-body" data-user="{{ user }}" data-csrf="{{ csrf_token }}" data-page="{{ active_page }}"
+      {% if context_after_id is not none %}data-context-after-id="{{ context_after_id }}"{% endif %}>
   <div class="app-glow"></div>
   <header class="topbar">
     <button id="mobileNavToggle" class="mobile-nav-toggle" type="button"
