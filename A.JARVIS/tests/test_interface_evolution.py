@@ -19,7 +19,7 @@ def test_cloud_dashboard_has_simple_feature_navigation_and_status_panel():
         'id="voiceSettings"',
         'id="accountPanel"',
         'class="hologram-stage"',
-        'static/interface.js',
+        "filename='interface.js'",
     ):
         assert marker in html, f"Missing interface element: {marker}"
 
