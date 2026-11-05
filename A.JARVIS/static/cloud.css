@@ -513,7 +513,7 @@ body { background:radial-gradient(ellipse at 50% -12%,rgba(31,105,132,.15),trans
 @keyframes holoBars { to { transform: scaleY(2.1); } }
 .chat-log { min-height: 145px; max-height: 360px; }
 .nav-link:focus-visible, .status-trigger:focus-visible { outline: 2px solid var(--interface-cyan); outline-offset: 3px; }
-#commandConsole, #tasksPanel, #notesPanel, #visualPanel, #documentsPanel, #accountPanel, #voiceSettings { scroll-margin-top: 92px; }
+#commandConsole, #tasksPanel, #notesPanel, #preferencesPanel, #activityPanel, #visualPanel, #documentsPanel, #accountPanel, #voiceSettings, #historyPanel, #settingsPanel { scroll-margin-top: 92px; }
 @media (max-width: 1050px) {
   .workspace-layout { grid-template-columns: 180px minmax(0,1fr); }
   .workspace { padding-left: 20px; padding-right: 20px; }
@@ -796,4 +796,82 @@ body { background:radial-gradient(ellipse at 50% -12%,rgba(31,105,132,.15),trans
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar { transition: none; }
+}
+
+
+/* Dedicated feature pages: each authenticated route displays only its own workspace panel. */
+.workspace-grid { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.workspace-grid > .panel { grid-column: 1 / -1; grid-row: auto; width: 100%; }
+.workspace-grid > .assistant-panel,
+.workspace-grid > .history-panel,
+.workspace-grid > .settings-panel,
+.workspace-grid > .tasks-panel,
+.workspace-grid > .notes-panel,
+.workspace-grid > .preferences-panel,
+.workspace-grid > .activity-panel,
+.workspace-grid > .visual-panel,
+.workspace-grid > .documents-panel { display: none; }
+body[data-page="dashboard"] .workspace-grid > .assistant-panel,
+body[data-page="history"] .workspace-grid > .history-panel,
+body[data-page="settings"] .workspace-grid > .settings-panel,
+body[data-page="tasks"] .workspace-grid > .tasks-panel,
+body[data-page="notes"] .workspace-grid > .notes-panel,
+body[data-page="memory"] .workspace-grid > .preferences-panel,
+body[data-page="activity"] .workspace-grid > .activity-panel,
+body[data-page="visual"] .workspace-grid > .visual-panel,
+body[data-page="documents"] .workspace-grid > .documents-panel { display: block; }
+.account-panel { display: none; }
+body[data-page="account"] .account-panel { display: block; }
+.history-list { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.history-item { border: 1px solid rgba(111,170,205,.14); border-radius: 13px; background: rgba(4,10,19,.48); padding: 15px 16px; }
+.history-item-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.history-item-heading strong { color: #c9f8fb; font-size: 12px; }
+.history-question, .history-answer { margin: 0; padding: 10px 12px; border-radius: 9px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.65; }
+.history-question { color: #dcecff; background: rgba(60,89,132,.16); }
+.history-answer { margin-top: 8px; color: #c4d9e5; background: rgba(87,231,242,.055); }
+.history-question::before { content: "YOU"; display: block; margin-bottom: 4px; color: #86a6bf; font-size: 9px; letter-spacing: 1px; font-weight: 800; }
+.history-answer::before { content: "AJARVIS"; display: block; margin-bottom: 4px; color: #79e7ef; font-size: 9px; letter-spacing: 1px; font-weight: 800; }
+.account-panel .bottom-strip { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px; padding: 20px; }
+.settings-panel .voice-toolbar { display: grid; gap: 16px; padding: 20px; }
+body[data-page="dashboard"] .welcome-row { margin-bottom: 22px; }
+body[data-page="dashboard"] .assistant-panel { grid-row: auto; }
+body[data-page]:not([data-page="dashboard"]) .workspace { max-width: 1320px; }
+.sidebar-nav .nav-link[aria-current="page"] { color: #effdff; border-color: rgba(131,237,244,.28); background: linear-gradient(90deg,rgba(76,201,218,.2),rgba(76,201,218,.05)); }
+
+/* Slow moving aurora ribbons behind the glass login card. */
+.auth-body { isolation: isolate; position: relative; overflow: hidden; }
+.auth-aurora-waves {
+  position: fixed;
+  inset: -24%;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 28% 46% at 18% 38%, rgba(31,225,124,.68) 0%, transparent 75%),
+    radial-gradient(ellipse 34% 35% at 38% 50%, rgba(27,177,255,.65) 0%, transparent 75%),
+    radial-gradient(ellipse 28% 48% at 57% 56%, rgba(185,58,255,.56) 0%, transparent 75%),
+    radial-gradient(ellipse 32% 33% at 75% 39%, rgba(244,154,70,.42) 0%, transparent 76%),
+    radial-gradient(ellipse 42% 28% at 47% 77%, rgba(55,99,255,.48) 0%, transparent 78%);
+  background-size: 155% 155%;
+  filter: blur(34px) saturate(1.28);
+  opacity: .88;
+  transform-origin: 50% 50%;
+  animation: auroraWaveDrift 19s ease-in-out infinite alternate;
+}
+.auth-body::before {
+  z-index: -3;
+  animation: auroraFlow 27s ease-in-out infinite alternate;
+}
+.auth-body::after {
+  background:
+    linear-gradient(90deg,rgba(2,5,12,.28),rgba(3,7,14,.04) 48%,rgba(3,7,14,.32)),
+    linear-gradient(180deg,rgba(3,7,14,.04),rgba(3,7,14,.24));
+}
+@keyframes auroraWaveDrift {
+  0% { transform: translate3d(-5%,2%,0) rotate(-10deg) scale(1); background-position: 0% 20%; }
+  35% { transform: translate3d(2%,-2%,0) rotate(2deg) scale(1.05); background-position: 38% 48%; }
+  70% { transform: translate3d(5%,1%,0) rotate(-4deg) scale(1.08); background-position: 75% 82%; }
+  100% { transform: translate3d(-1%,-3%,0) rotate(8deg) scale(1.02); background-position: 100% 20%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-aurora-waves, .auth-body::before { animation: none !important; }
 }
