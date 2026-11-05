@@ -40,3 +40,17 @@ def test_interface_script_uses_safe_history_text_rendering():
     assert 'fetch("/api/history"' in script
     assert "message.textContent" in script
     assert 'aria-expanded' in script
+
+
+def test_new_chat_establishes_and_persists_a_conversation_boundary():
+    script = (ROOT / "static" / "interface.js").read_text(encoding="utf-8")
+    assert 'result.latest_id' in script
+    assert 'ajarvis.cloud.context_after_id:' in script
+    assert 'body.dataset.contextAfterId' in script
+
+
+def test_cloud_chat_sends_and_restores_conversation_boundary():
+    script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'payload.context_after_id = contextAfterId' in script
+    assert 'historyEndpoint()' in script
+    assert '"/api/history?after_id="' in script
