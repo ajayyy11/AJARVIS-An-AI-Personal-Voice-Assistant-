@@ -587,3 +587,213 @@ body { background:radial-gradient(ellipse at 50% -12%,rgba(31,105,132,.15),trans
 .stack-form .primary-button { border-radius: 8px; }
 .auth-switch a { color: #ddfaff; text-decoration: underline; text-underline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .auth-body::before { animation: none; } }
+
+
+/* Left-side feature navigation and single-product authentication identity */
+.workspace-layout {
+  grid-template-columns: 232px minmax(0, 1fr);
+  max-width: 1760px;
+  align-items: start;
+}
+.workspace {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 30px clamp(18px, 3vw, 42px) 26px;
+}
+.sidebar {
+  position: sticky;
+  top: 86px;
+  height: calc(100vh - 104px);
+  min-height: 480px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 18px 0 22px 16px;
+  padding: 20px 13px 14px;
+  border: 1px solid rgba(131,237,244,.2);
+  border-radius: 15px;
+  background: linear-gradient(160deg,rgba(19,43,54,.82),rgba(5,13,22,.95));
+  box-shadow: inset 0 1px rgba(255,255,255,.05), 0 16px 36px rgba(0,0,0,.18);
+  backdrop-filter: blur(18px);
+}
+.sidebar-heading {
+  padding: 2px 10px 17px;
+  color: #9ab7c4;
+  font-size: 9px;
+  line-height: 1.6;
+  letter-spacing: 1.5px;
+}
+.sidebar-heading strong {
+  display: block;
+  color: #e0faff;
+  font-size: 13px;
+  letter-spacing: 2px;
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow: visible;
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 43px;
+  flex: 0 0 auto;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #b7cbd5;
+  background: transparent;
+  text-align: left;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: normal;
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+.nav-link > span {
+  display: inline-grid;
+  place-items: center;
+  width: 21px;
+  flex: 0 0 21px;
+  color: #83dfe9;
+  font-size: 16px;
+}
+.nav-link:hover, .nav-link.is-active {
+  color: #effdff;
+  border-color: rgba(131,237,244,.2);
+  background: linear-gradient(90deg,rgba(76,201,218,.17),rgba(76,201,218,.035));
+}
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 8px 3px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(131,237,244,.12);
+  color: #7795a4;
+  font-size: 10px;
+}
+.topbar {
+  min-height: 66px;
+  justify-content: flex-end;
+  padding: 11px clamp(16px, 3vw, 36px);
+}
+.mobile-nav-toggle, .sidebar-backdrop { display: none; }
+.nav-link:focus-visible, .mobile-nav-toggle:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+#commandConsole, #tasksPanel, #notesPanel, #preferencesPanel, #activityPanel,
+#visualPanel, #documentsPanel, #accountPanel, #voiceSettings {
+  scroll-margin-top: 88px;
+}
+.welcome-row .eyebrow { letter-spacing: 2.4px; }
+
+.auth-shell { width: min(100%, 470px); }
+.auth-card { padding: clamp(26px, 5vw, 38px); }
+.auth-card .auth-product-title {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(34px, 8vw, 46px);
+  line-height: 1.08;
+  font-weight: 850;
+  letter-spacing: .105em;
+  color: #effcff;
+  background: linear-gradient(100deg,#ffffff 0%,#c8f7ff 55%,#8cecf3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.auth-card .auth-tagline {
+  margin: 12px 0 0;
+  text-align: center;
+  color: #9eb5c5;
+  font-size: 13px;
+}
+.auth-card .stack-form { margin-top: 28px; }
+.auth-card .stack-form label { font-size: 13px; }
+.auth-card .stack-form input { min-height: 54px; font-size: 15px; }
+.auth-card .stack-form .primary-button { min-height: 52px; font-size: 14px; }
+@media (max-width: 1050px) and (min-width: 761px) {
+  .workspace-layout { grid-template-columns: 205px minmax(0, 1fr); }
+  .sidebar { margin-left: 12px; padding: 17px 10px 12px; }
+  .workspace { padding: 25px 20px 22px; }
+}
+@media (max-width: 760px) {
+  .workspace-layout { display: block; }
+  .workspace { width: 100%; padding: 23px 13px 20px; }
+  .sidebar {
+    position: fixed;
+    z-index: 51;
+    inset: 0 auto 0 0;
+    width: min(310px, 86vw);
+    height: 100dvh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: max(22px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
+    border-radius: 0 18px 18px 0;
+    transform: translateX(-105%);
+    transition: transform .22s ease;
+    box-shadow: 18px 0 54px rgba(0,0,0,.45);
+  }
+  .sidebar.is-open { transform: translateX(0); }
+  .sidebar-nav { display: flex; flex-direction: column; gap: 6px; overflow: visible; }
+  .nav-link { width: 100%; min-height: 46px; font-size: 13px; white-space: normal; }
+  .sidebar-heading { padding: 6px 9px 18px; font-size: 10px; }
+  .sidebar-heading strong { font-size: 15px; }
+  .sidebar-footer { display: flex; }
+  .sidebar-backdrop:not([hidden]) {
+    display: block;
+    position: fixed;
+    z-index: 50;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(0,5,12,.62);
+    backdrop-filter: blur(3px);
+  }
+  .mobile-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 8px 11px;
+    border: 1px solid rgba(131,237,244,.24);
+    border-radius: 10px;
+    background: rgba(87,231,242,.06);
+    color: #d5f8fb;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .mobile-nav-toggle span:first-child { color: var(--cyan); font-size: 17px; }
+  .topbar { justify-content: space-between; gap: 10px; }
+  .topbar-right { gap: 7px; }
+  .status-trigger { padding: 8px; font-size: 9px; }
+  .status-trigger strong { display: none; }
+  .hologram-stage { min-height: 235px; }
+  .workspace-grid { grid-template-columns: minmax(0,1fr); }
+  .assistant-panel { grid-column: auto; }
+}
+@media (max-width: 520px) {
+  .topbar { align-items: center; padding: 10px 12px; }
+  .topbar-right { gap: 5px; }
+  .status-trigger { gap: 5px; }
+  .status-trigger > span:nth-child(2) { display: none; }
+  .user-pill > span:last-child { display: none; }
+  .workspace { padding-left: 11px; padding-right: 11px; }
+  .assistant-panel .panel-heading { align-items: flex-start; }
+  .hologram-rings { width: 154px; height: 154px; }
+  .holo-core { width: 82px; height: 82px; }
+  .auth-body { padding: max(24px, env(safe-area-inset-top)) 14px max(24px, env(safe-area-inset-bottom)); }
+  .auth-shell { width: 100%; }
+  .auth-card { padding: 26px 21px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
+}

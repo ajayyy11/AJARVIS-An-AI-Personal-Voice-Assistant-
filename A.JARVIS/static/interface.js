@@ -10,6 +10,28 @@
   const statusMini = $("systemStatusMini");
   const coreStatus = $("coreStatusText");
   const username = document.body.dataset.user || "there";
+  const sidebar = $("workspaceSidebar");
+  const sidebarToggle = $("mobileNavToggle");
+  const sidebarBackdrop = $("sidebarBackdrop");
+
+  function setSidebarOpen(open) {
+    if (!sidebar || !sidebarToggle || !sidebarBackdrop) return;
+    sidebar.classList.toggle("is-open", open);
+    sidebarBackdrop.hidden = !open;
+    sidebarToggle.setAttribute("aria-expanded", String(open));
+    sidebarToggle.setAttribute("aria-label", open ? "Close feature navigation" : "Open feature navigation");
+    document.body.classList.toggle("sidebar-open", open);
+  }
+
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", () => {
+      setSidebarOpen(sidebarToggle.getAttribute("aria-expanded") !== "true");
+    });
+  }
+  if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", () => setSidebarOpen(false));
+  document.querySelectorAll(".sidebar-nav .nav-link").forEach((item) => {
+    item.addEventListener("click", () => setSidebarOpen(false));
+  });
 
   function closeStatusPanel() {
     if (!statusPanel || !statusButton) return;
@@ -27,7 +49,10 @@
       if (!statusPanel.contains(event.target) && !statusButton.contains(event.target)) closeStatusPanel();
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeStatusPanel();
+      if (event.key === "Escape") {
+        closeStatusPanel();
+        setSidebarOpen(false);
+      }
     });
   }
 
@@ -66,6 +91,7 @@
   const newChatButton = $("newChatButton");
   if (newChatButton && log) {
     newChatButton.addEventListener("click", async () => {
+      setSidebarOpen(false);
       if (newChatButton.disabled) return;
       newChatButton.disabled = true;
       try {
@@ -125,6 +151,7 @@
   const historyButton = $("chatHistoryButton");
   if (historyButton && log) {
     historyButton.addEventListener("click", async () => {
+      setSidebarOpen(false);
       historyButton.disabled = true;
       historyButton.textContent = "Loading history…";
       try {
@@ -164,6 +191,7 @@
 
   document.querySelectorAll('.sidebar-nav a.nav-link').forEach((link) => {
     link.addEventListener("click", () => {
+      setSidebarOpen(false);
       document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("is-active"));
       link.classList.add("is-active");
     });

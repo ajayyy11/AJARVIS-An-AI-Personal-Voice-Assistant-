@@ -10,14 +10,9 @@
 <body class="auth-body">
   <div class="auth-grid"></div>
   <main class="auth-shell">
-    <a class="brand brand-large" href="{{ url_for('index') }}">
-      <span class="brand-mark">A</span>
-      <span><strong>A.J.A.R.V.I.S</strong><small>PERSONAL INTELLIGENCE · CLOUD</small></span>
-    </a>
     <section class="auth-card">
-      <span class="eyebrow">SECURE CLOUD ACCESS</span>
-      <h1 id="authTitle">{{ 'Welcome back' if mode == 'login' else 'Create your account' }}</h1>
-      <p class="muted">Your notes, documents, reminders, and AI workspace in one place.</p>
+      <h1 id="authTitle" class="auth-product-title">AJARVIS</h1>
+      <p class="muted auth-tagline">Your personal AI workspace.</p>
       <form id="authForm" class="stack-form">
         <label for="username">Username</label>
         <input id="username" name="username" autocomplete="username" minlength="3" maxlength="32"
