@@ -417,7 +417,7 @@
     const list = $("historyList");
     if (!list) return;
     const result = await api("/api/history");
-    const rows = Array.isArray(result.history) ? result.history.slice().reverse() : [];
+    const rows = Array.isArray(result.history) ? result.history : [];
     list.replaceChildren();
     if (!rows.length) {
       list.appendChild(make("p", "empty-state", "No saved conversations yet. Start a new chat with AJARVIS."));
