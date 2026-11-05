@@ -1043,11 +1043,87 @@ def logout_account():
     return jsonify({"ok": True})
 
 
-@app.get("/dashboard")
-def dashboard():
+def _render_workspace_page(page, page_title, page_subtitle):
     if not _is_authenticated():
         return redirect(url_for("login_page"))
-    return render_template("cloud_dashboard.html", user=session["user"], csrf_token=session["csrf_token"])
+    return render_template(
+        "cloud_dashboard.html",
+        user=session["user"],
+        csrf_token=session["csrf_token"],
+        active_page=page,
+        page_title=page_title,
+        page_subtitle=page_subtitle,
+    )
+
+
+@app.get("/dashboard")
+def dashboard():
+    return _render_workspace_page(
+        "dashboard", "Your AI workspace", "Start a fresh conversation with AJARVIS."
+    )
+
+
+@app.get("/history")
+def history_page():
+    return _render_workspace_page(
+        "history", "Chat History", "Review previous questions and AJARVIS responses."
+    )
+
+
+@app.get("/tasks")
+def tasks_page():
+    return _render_workspace_page(
+        "tasks", "Tasks & Reminders", "Keep your to-dos and reminders in one place."
+    )
+
+
+@app.get("/notes")
+def notes_page():
+    return _render_workspace_page(
+        "notes", "Personal Notes", "Save, search and manage notes in your private account."
+    )
+
+
+@app.get("/memory")
+def memory_page():
+    return _render_workspace_page(
+        "memory", "Personal Memory", "Manage preferences AJARVIS can use to personalize replies."
+    )
+
+
+@app.get("/activity")
+def activity_page():
+    return _render_workspace_page(
+        "activity", "Agent Activity", "Review the tools AJARVIS has executed and their outcomes."
+    )
+
+
+@app.get("/visual")
+def visual_page():
+    return _render_workspace_page(
+        "visual", "Visual Intelligence", "Analyze images, camera snapshots, screens and PDFs."
+    )
+
+
+@app.get("/documents")
+def documents_page():
+    return _render_workspace_page(
+        "documents", "Document Intelligence", "Upload and ask questions about your documents."
+    )
+
+
+@app.get("/account")
+def account_page():
+    return _render_workspace_page(
+        "account", "Account", "Manage your account data and service information."
+    )
+
+
+@app.get("/settings")
+def settings_page():
+    return _render_workspace_page(
+        "settings", "Settings", "Choose your voice language and spoken-reply preferences."
+    )
 
 
 @app.get("/api/preferences")
