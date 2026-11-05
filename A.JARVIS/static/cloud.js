@@ -112,6 +112,24 @@
     catch (_error) { /* Private browsing or storage policies may block local settings. */ }
   }
 
+  const historyCursorKey = "ajarvis.cloud.context_after_id:" + username.toLowerCase();
+  function readContextAfterId() {
+    const candidates = [body.dataset.contextAfterId];
+    try { candidates.push(window.localStorage.getItem(historyCursorKey)); } catch (_error) {}
+    try { candidates.push(window.sessionStorage.getItem(historyCursorKey)); } catch (_error) {}
+    for (const raw of candidates) {
+      if (raw === null || raw === undefined || raw === "") continue;
+      const value = Number(raw);
+      if (Number.isSafeInteger(value) && value >= 0) return value;
+    }
+    return null;
+  }
+
+  function historyEndpoint() {
+    const cursor = readContextAfterId();
+    return cursor === null ? "/api/history" : "/api/history?after_id=" + encodeURIComponent(String(cursor));
+  }
+
   const storedLanguage = readSetting("ajarvis.voice.language");
   if (storedLanguage && Array.from(voiceLanguageSelect.options).some((option) => option.value === storedLanguage)) {
     voiceLanguageSelect.value = storedLanguage;
@@ -199,9 +217,12 @@
     const placeholder = addChatMessage("assistant", "One moment — I'm on it…");
     let requestFailed = false;
     try {
+      const payload = { command: trimmed };
+      const contextAfterId = readContextAfterId();
+      if (contextAfterId !== null) payload.context_after_id = contextAfterId;
       const result = await api("/api/assistant", {
         method: "POST",
-        body: JSON.stringify({ command: trimmed })
+        body: JSON.stringify(payload)
       });
       renderAnswer(placeholder, result.response);
       speakReply(result.response);
@@ -392,7 +413,7 @@
   });
 
   async function refreshHistory() {
-    const result = await api("/api/history");
+    const result = await api(historyEndpoint());
     const rows = result.history || [];
     if (!rows.length) return;
     const log = $("chatLog");
