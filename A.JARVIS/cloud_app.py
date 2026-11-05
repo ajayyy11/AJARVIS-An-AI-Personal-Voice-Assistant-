@@ -1046,6 +1046,11 @@ def logout_account():
 def _render_workspace_page(page, page_title, page_subtitle):
     if not _is_authenticated():
         return redirect(url_for("login_page"))
+    try:
+        context_after_id = get_latest_id(username=session["user"]) if page == "dashboard" else None
+    except Exception:
+        logger.warning("Could not establish a fresh dashboard conversation boundary.", exc_info=True)
+        return "AJARVIS is temporarily unable to start a new conversation. Please refresh in a moment.", 503
     return render_template(
         "cloud_dashboard.html",
         user=session["user"],
@@ -1053,6 +1058,7 @@ def _render_workspace_page(page, page_title, page_subtitle):
         active_page=page,
         page_title=page_title,
         page_subtitle=page_subtitle,
+        context_after_id=context_after_id,
     )
 
 
