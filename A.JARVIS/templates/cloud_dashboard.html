@@ -29,6 +29,7 @@
           <p>These metrics describe the AJARVIS cloud host, not your personal device.</p>
         </div>
       </div>
+      <button id="stopSpeakingButton" type="button" class="stop-voice-button global-stop-voice" disabled hidden>Stop voice</button>
       <span class="user-pill"><span class="avatar">{{ user[:1]|upper }}</span><span>{{ user }}</span></span>
       <button id="logoutButton" class="quiet-button">Sign out</button>
     </div>
@@ -128,7 +129,6 @@
             <input id="voiceOutput" type="checkbox" checked>
             <span>Speak replies</span>
           </label>
-          <button id="stopSpeakingButton" type="button" class="stop-voice-button" disabled>Stop voice</button>
         </div>
         <p class="capability-note">Voice input depends on your browser and microphone permissions. Cloud mode does not control your personal computer.</p>
       </div>
