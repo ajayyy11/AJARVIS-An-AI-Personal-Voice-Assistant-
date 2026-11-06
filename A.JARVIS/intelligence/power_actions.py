@@ -6,52 +6,56 @@ commands itself.
 """
 
 import time
+from threading import Lock
 
 CONFIRMATION_TIMEOUT_SECONDS = 30
 _pending_actions = {}
+_pending_actions_lock = Lock()
 
 
 def handle_power_command(command, username, now=None):
-    """Handle a power-control phrase, returning an event or None."""
+    """Handle one power-control event atomically for each process."""
     command = str(command).strip().lower()
     current_time = time.monotonic() if now is None else float(now)
 
-    pending = _pending_actions.get(username)
-    expired_action = None
-    if pending and current_time >= pending["expires_at"]:
-        expired_action = pending["action"]
-        _pending_actions.pop(username, None)
-        pending = None
-
-    requested_action = {
-        "shutdown system": "shutdown",
-        "shut down system": "shutdown",
-        "restart system": "restart",
-    }.get(command)
-    if requested_action:
-        _pending_actions[username] = {
-            "action": requested_action,
-            "expires_at": current_time + CONFIRMATION_TIMEOUT_SECONDS,
-        }
-        return {"status": "confirmation_required", "action": requested_action}
-
-    if command in {"confirm shutdown", "confirm restart"}:
-        action = command.removeprefix("confirm ")
+    with _pending_actions_lock:
         pending = _pending_actions.get(username)
-        if pending and pending["action"] == action:
+        expired_action = None
+        if pending and current_time >= pending["expires_at"]:
+            expired_action = pending["action"]
             _pending_actions.pop(username, None)
-            return {"status": "confirmed", "action": action}
-        if expired_action == action:
-            return {"status": "expired", "action": action}
-        return {"status": "no_pending", "action": action}
+            pending = None
 
-    if command in {"cancel", "cancel shutdown", "cancel restart", "cancel power action"}:
-        pending = _pending_actions.pop(username, None)
-        if pending:
-            return {"status": "cancelled", "action": pending["action"]}
-        if expired_action:
-            return {"status": "expired", "action": expired_action}
-        return {"status": "no_pending", "action": None}
+        requested_action = {
+            "shutdown system": "shutdown",
+            "shut down system": "shutdown",
+            "restart system": "restart",
+        }.get(command)
+        if requested_action:
+            _pending_actions[username] = {
+                "action": requested_action,
+                "expires_at": current_time + CONFIRMATION_TIMEOUT_SECONDS,
+            }
+            return {"status": "confirmation_required", "action": requested_action}
+
+        if command in {"confirm shutdown", "confirm restart"}:
+            action = command.removeprefix("confirm ")
+            pending = _pending_actions.get(username)
+            if pending and pending["action"] == action:
+                # Consume under the same lock before returning permission to execute.
+                _pending_actions.pop(username, None)
+                return {"status": "confirmed", "action": action}
+            if expired_action == action:
+                return {"status": "expired", "action": action}
+            return {"status": "no_pending", "action": action}
+
+        if command in {"cancel", "cancel shutdown", "cancel restart", "cancel power action"}:
+            pending = _pending_actions.pop(username, None)
+            if pending:
+                return {"status": "cancelled", "action": pending["action"]}
+            if expired_action:
+                return {"status": "expired", "action": expired_action}
+            return {"status": "no_pending", "action": None}
 
     return None
 
@@ -59,4 +63,5 @@ def handle_power_command(command, username, now=None):
 def clear_pending_power_action(username):
     """Forget an unconfirmed power action when a user deactivates or logs out."""
     if isinstance(username, str) and username.strip():
-        _pending_actions.pop(username.strip(), None)
+        with _pending_actions_lock:
+            _pending_actions.pop(username.strip(), None)
