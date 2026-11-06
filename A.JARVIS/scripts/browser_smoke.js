@@ -308,6 +308,70 @@ async function testDocumentAndVisualFlows() {
   } finally { oversizedImage.dom.window.close(); }
 }
 
+async function testLocalMicrophoneVisualizerLifecycle() {
+  const localDashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
+  const inlineScript = (localDashboard.match(/<script>([\\s\\S]*?)<\\/script>/i) || [])[1];
+  assert(inlineScript, "local dashboard: inline script is missing");
+  const start = inlineScript.indexOf("/* MIC REACTIVE EFFECT");
+  assert(start >= 0, "local dashboard: microphone visualizer block is missing");
+  const source = inlineScript.slice(start);
+
+  const dom = new JSDOM('<!doctype html><div id="ai-core"></div><div class="bar"></div><div class="bar"></div>', {
+    url: "https://ajarvis.test/dashboard",
+    runScripts: "outside-only",
+    pretendToBeVisual: true,
+  });
+  const { window } = dom;
+  let getUserMediaCalls = 0;
+  let tracksStopped = 0;
+  let contextsCreated = 0;
+  let contextsClosed = 0;
+  let disconnected = 0;
+  let cancelledFrames = 0;
+  let nextFrame = 0;
+  window.navigator.mediaDevices = {
+    getUserMedia: async () => {
+      getUserMediaCalls += 1;
+      return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
+    },
+  };
+  window.requestAnimationFrame = () => ++nextFrame;
+  window.cancelAnimationFrame = () => { cancelledFrames += 1; };
+  window.AudioContext = class FakeAudioContext {
+    constructor() { contextsCreated += 1; this.state = "running"; }
+    createAnalyser() {
+      return {
+        fftSize: 0,
+        frequencyBinCount: 8,
+        getByteFrequencyData(target) { target.fill(96); },
+      };
+    }
+    createMediaStreamSource() {
+      return { connect() {}, disconnect() { disconnected += 1; } };
+    }
+    async resume() { this.state = "running"; }
+    async close() { this.state = "closed"; contextsClosed += 1; }
+  };
+  window.eval(
+    'const core = document.getElementById("ai-core"); const bars = document.querySelectorAll(".bar");\n' + source
+  );
+  await Promise.all([
+    window.eval("startMicReactiveSystem()"),
+    window.eval("startMicReactiveSystem()"),
+  ]);
+  assert(getUserMediaCalls === 1, "local dashboard: repeated recognition starts opened multiple microphone streams");
+  assert(contextsCreated === 1, "local dashboard: repeated recognition starts created multiple AudioContexts");
+  await window.eval("startMicReactiveSystem()");
+  assert(getUserMediaCalls === 1, "local dashboard: existing visualizer was not reused");
+  await window.eval("stopMicReactiveSystem()");
+  assert(tracksStopped === 1, "local dashboard: microphone track was not released");
+  assert(contextsClosed === 1, "local dashboard: AudioContext was not closed");
+  assert(disconnected === 1, "local dashboard: microphone source was not disconnected");
+  assert(cancelledFrames === 1, "local dashboard: animation frame was not cancelled");
+  successes.push("local Windows dashboard microphone visualizer reuse and cleanup");
+  dom.window.close();
+}
+
 async function testAuthenticationPages() {
   const css = fs.readFileSync(path.join(__dirname, "..", "static", "cloud.css"), "utf8");
   assert(css.includes("@keyframes auroraWaveDrift"), "login: animated aurora keyframes are missing");
@@ -354,6 +418,7 @@ async function testAuthenticationPages() {
   await testChatAndVoice();
   await testFeatureForms();
   await testDocumentAndVisualFlows();
+  await testLocalMicrophoneVisualizerLifecycle();
   await testAuthenticationPages();
   console.log("BROWSER_SMOKE_OK " + successes.length);
   successes.forEach((item) => console.log("PASS " + item));
