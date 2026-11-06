@@ -49,7 +49,10 @@
       pointer-events: none;
     }
 
-    .frame {
+    .logout-form { margin: 0; }
+  .logout-button { border: 0; padding: 0; background: transparent; color: #00ffff; font: inherit; cursor: pointer; }
+  .logout-button:hover, .logout-button:focus-visible { color: #c7fbff; text-decoration: underline; outline-offset: 3px; }
+  .frame {
       width: 96%;
       min-height: 92vh;
       height: auto;
@@ -585,7 +588,12 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       <div class="status uptime" id="uptime-status">Uptime: --</div>
       <div class="status processor" id="processor-status">Processor: --</div>
       <div class="status telemetry-updated" id="telemetry-updated" role="status" aria-live="polite">Waiting for telemetry…</div>
-      <div class="status"><a href="/logout" style="color:#00ffff">Logout</a></div>
+      <div class="status">
+          <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="logout-button">Logout</button>
+          </form>
+        </div>
 
       <br>
 
