@@ -47,6 +47,7 @@ from intelligence.memory import (
     get_recent_after,
     get_all_recent,
     get_all_recent_after,
+    get_history_page,
     get_latest_id,
 )
 from intelligence.multimodal import (
@@ -1734,22 +1735,43 @@ def history_api():
     if auth_error:
         return auth_error
     after_id_value = request.args.get("after_id")
-    after_id = None
-    if after_id_value is not None:
+    before_id_value = request.args.get("before_id")
+    if after_id_value is not None and before_id_value is not None:
+        return jsonify({"error": "Choose either an after_id or before_id cursor, not both."}), 400
+
+    def parse_history_cursor(value):
         try:
-            after_id = int(after_id_value)
-            if after_id < 0:
+            parsed = int(value)
+            if isinstance(value, bool) or parsed < 0:
                 raise ValueError
+            return parsed
         except (TypeError, ValueError):
-            return jsonify({"error": "History cursor must be a non-negative integer."}), 400
+            return None
+
+    after_id = parse_history_cursor(after_id_value) if after_id_value is not None else None
+    before_id = parse_history_cursor(before_id_value) if before_id_value is not None else None
+    if (after_id_value is not None and after_id is None) or (before_id_value is not None and before_id is None):
+        return jsonify({"error": "History cursor must be a non-negative integer."}), 400
+
     try:
         username = session["user"]
-        history = (
-            get_all_recent_after(30, username=username, after_id=after_id)
-            if after_id is not None
-            else get_all_recent(30, username=username)
-        )
-        return jsonify({"history": history, "latest_id": get_latest_id(username=username)})
+        latest_id = get_latest_id(username=username)
+        if after_id is not None:
+            # Retain the existing conversation-boundary query contract used by
+            # clients that explicitly request exchanges after a known ID.
+            history = get_all_recent_after(30, username=username, after_id=after_id)
+            return jsonify({"history": history, "latest_id": latest_id})
+
+        rows = get_history_page(31, username=username, before_id=before_id)
+        has_more = len(rows) > 30
+        page = rows[:30]
+        next_before_id = page[-1]["id"] if has_more and page else None
+        return jsonify({
+            "history": page,
+            "latest_id": latest_id,
+            "has_more": has_more,
+            "next_before_id": next_before_id,
+        })
     except Exception:
         return jsonify({"error": "History is temporarily unavailable."}), 503
 
