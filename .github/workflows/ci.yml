@@ -114,6 +114,15 @@ jobs:
           PY
       - name: Compile application modules
         run: python -m compileall -q .
+      - name: Set up Node.js for browser smoke tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run browser integration smoke tests
+        run: |
+          npm install --no-save --no-package-lock jsdom@26.1.0
+          python scripts/render_browser_smoke_pages.py /tmp/ajarvis-browser-smoke
+          node scripts/browser_smoke.js /tmp/ajarvis-browser-smoke
       - name: Run automated tests
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789
