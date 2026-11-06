@@ -79,7 +79,7 @@ def _refresh_face_cache():
 
 def _csrf_is_valid():
     expected = session.get("csrf_token")
-    supplied = request.headers.get("X-CSRF-Token", "")
+    supplied = request.headers.get("X-CSRF-Token", "") or request.form.get("csrf_token", "")
     return (
         isinstance(expected, str)
         and bool(expected)
@@ -710,13 +710,16 @@ def voice_command():
 # ==========================================
 # LOGOUT
 # ==========================================
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 def logout():
-    if is_authenticated():
-        try:
-            cancel_user_plans(session["user"])
-        except AutomationError:
-            app.logger.warning("Could not cancel pending automation plans during logout")
+    if not is_authenticated():
+        return redirect(url_for("home"))
+    if not _csrf_is_valid():
+        return jsonify({"error": "CSRF validation failed."}), 403
+    try:
+        cancel_user_plans(session["user"])
+    except AutomationError:
+        app.logger.warning("Could not cancel pending automation plans during logout")
     revoke_access()
     return redirect(url_for("home"))
 
