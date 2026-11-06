@@ -355,3 +355,18 @@ def test_dashboard_voice_capture_uses_one_guarded_start_and_recovery_timer():
     assert "recognitionActive" in source
     assert source.count("recognition.start()") == 1
 
+
+
+
+def test_local_dashboard_microphone_visualizer_reuses_one_stream_and_cleans_up():
+    from pathlib import Path
+
+    dashboard = (Path(__file__).resolve().parents[1] / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    assert "let microphoneStream = null;" in dashboard
+    assert "let audioStartPromise = null;" in dashboard
+    assert "if (audioContext && audioContext.state !== \"closed\")" in dashboard
+    assert "if (audioStartPromise) return audioStartPromise;" in dashboard
+    assert "window.addEventListener(\"pagehide\", stopMicReactiveSystem)" in dashboard
+    assert "microphoneStream.getTracks().forEach((track) => track.stop())" in dashboard
+    assert "window.cancelAnimationFrame(audioFrameId)" in dashboard
+    assert "if (!shouldListen || recognitionBlocked) stopMicReactiveSystem();" in dashboard
