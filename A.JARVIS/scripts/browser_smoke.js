@@ -67,6 +67,8 @@ async function mountPage(page) {
   window.clearInterval = () => {};
   window.scrollTo = () => {};
   window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
+  window.URL.createObjectURL = () => "blob:ajarvis-qa-preview";
+  window.URL.revokeObjectURL = () => {};
   window.SpeechSynthesisUtterance = class SpeechSynthesisUtterance {
     constructor(text) { this.text = text; }
   };
@@ -112,6 +114,13 @@ async function mountPage(page) {
       return jsonResponse({ preference: state.preferences[state.preferences.length - 1] }, 201);
     }
     if (url === "/api/documents" && method === "GET") return jsonResponse({ documents: state.documents });
+    if (url === "/api/documents" && method === "POST") {
+      state.documents.push({ id: state.documents.length + 1, filename: "qa.txt", created_at: "2026-11-06T00:00:00Z" });
+      return jsonResponse({ summary: "Document accepted for QA.", filename: "qa.txt" }, 201);
+    }
+    if (url === "/api/visual/analyze" && method === "POST") {
+      return jsonResponse({ answer: "A QA sample image.", filename: "qa.png", mime_type: "image/png" });
+    }
     if (url === "/api/activity") return jsonResponse({ activity: state.activity });
     if (url === "/api/assistant") return jsonResponse({ response: "It is 12:00 UTC." });
     if (url === "/api/auth/logout") return jsonResponse({ ok: true });
@@ -245,6 +254,60 @@ async function testFeatureForms() {
   } finally { settings.dom.window.close(); }
 }
 
+async function testDocumentAndVisualFlows() {
+  const documents = await mountPage("documents");
+  try {
+    const upload = documents.document.querySelector("#documentFile");
+    const file = new documents.window.File(["AJARVIS QA document"], "qa.txt", { type: "text/plain" });
+    Object.defineProperty(upload, "files", { configurable: true, value: [file] });
+    documents.document.querySelector("#documentForm").dispatchEvent(
+      new documents.window.Event("submit", { bubbles: true, cancelable: true })
+    );
+    await wait(35);
+    assert(documents.calls.some((call) => call.url === "/api/documents" && call.method === "POST"), "document upload did not call the API");
+    assert(documents.document.querySelector("#documentResult").textContent.includes("Document accepted for QA."), "document result was not rendered");
+    successes.push("document upload and analysis response");
+  } finally { documents.dom.window.close(); }
+
+  const oversized = await mountPage("documents");
+  try {
+    const upload = oversized.document.querySelector("#documentFile");
+    const file = new oversized.window.File([new Uint8Array(8 * 1024 * 1024 + 1)], "large.txt", { type: "text/plain" });
+    Object.defineProperty(upload, "files", { configurable: true, value: [file] });
+    oversized.document.querySelector("#documentForm").dispatchEvent(
+      new oversized.window.Event("submit", { bubbles: true, cancelable: true })
+    );
+    await wait(20);
+    assert(!oversized.calls.some((call) => call.url === "/api/documents" && call.method === "POST"), "oversized document bypassed the 8 MB client limit");
+    successes.push("document upload size validation");
+  } finally { oversized.dom.window.close(); }
+
+  const visual = await mountPage("visual");
+  try {
+    const image = new visual.window.File(["fake image bytes"], "qa.png", { type: "image/png" });
+    Object.defineProperty(visual.document.querySelector("#visualFile"), "files", { configurable: true, value: [image] });
+    visual.document.querySelector("#visualFile").dispatchEvent(new visual.window.Event("change", { bubbles: true }));
+    assert(!visual.document.querySelector("#visualAnalyzeButton").disabled, "visual analysis did not enable after image selection");
+    visual.document.querySelector("#visualPrompt").value = "Describe this QA test image.";
+    visual.document.querySelector("#visualAnalyzeButton").click();
+    await wait(30);
+    assert(visual.calls.some((call) => call.url === "/api/visual/analyze" && call.method === "POST"), "visual analysis did not call the API");
+    assert(visual.document.querySelector("#visualResult").textContent.includes("A QA sample image."), "visual answer was not rendered");
+    successes.push("visual image selection and analysis response");
+  } finally { visual.dom.window.close(); }
+
+  const oversizedImage = await mountPage("visual");
+  try {
+    const image = new oversizedImage.window.File([new Uint8Array(5 * 1024 * 1024 + 1)], "large.png", { type: "image/png" });
+    Object.defineProperty(oversizedImage.document.querySelector("#visualFile"), "files", { configurable: true, value: [image] });
+    oversizedImage.document.querySelector("#visualFile").dispatchEvent(new oversizedImage.window.Event("change", { bubbles: true }));
+    oversizedImage.document.querySelector("#visualAnalyzeButton").click();
+    await wait(20);
+    assert(!oversizedImage.calls.some((call) => call.url === "/api/visual/analyze"), "oversized image bypassed the 5 MB client limit");
+    successes.push("visual image size validation");
+  } finally { oversizedImage.dom.window.close(); }
+}
+
 async function testAuthenticationPages() {
   const css = fs.readFileSync(path.join(__dirname, "..", "static", "cloud.css"), "utf8");
   assert(css.includes("@keyframes auroraWaveDrift"), "login: animated aurora keyframes are missing");
@@ -290,6 +353,7 @@ async function testAuthenticationPages() {
   for (const [page, route] of routes) await runPageSmoke(page, route);
   await testChatAndVoice();
   await testFeatureForms();
+  await testDocumentAndVisualFlows();
   await testAuthenticationPages();
   console.log("BROWSER_SMOKE_OK " + successes.length);
   successes.forEach((item) => console.log("PASS " + item));
