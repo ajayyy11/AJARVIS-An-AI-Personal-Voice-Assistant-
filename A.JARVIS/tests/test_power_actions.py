@@ -56,3 +56,17 @@ def test_confirmation_is_scoped_to_username():
         "status": "confirmed",
         "action": "shutdown",
     }
+
+
+
+def test_concurrent_power_confirmation_is_consumed_exactly_once():
+    from concurrent.futures import ThreadPoolExecutor
+
+    power_actions.handle_power_command("shutdown system", "ajay", now=10)
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        results = list(executor.map(
+            lambda _index: power_actions.handle_power_command("confirm shutdown", "ajay", now=11),
+            range(48),
+        ))
+    assert sum(result["status"] == "confirmed" for result in results) == 1
+    assert sum(result["status"] == "no_pending" for result in results) == 47
