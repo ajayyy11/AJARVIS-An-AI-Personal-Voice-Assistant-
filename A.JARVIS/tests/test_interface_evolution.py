@@ -78,6 +78,8 @@ def test_dashboard_uses_left_feature_navigation_without_duplicate_topbar_brand()
 
 def test_login_uses_product_name_without_generic_access_or_welcome_copy():
     html = (ROOT / "templates" / "cloud_auth.html").read_text(encoding="utf-8")
+    assert 'class="auth-reactor" aria-hidden="true"' in html
+    assert 'class="auth-kicker"' in html
     assert 'class="auth-product-title">AJARVIS</h1>' in html
     assert "SECURE CLOUD ACCESS" not in html
     assert "Welcome back" not in html
@@ -130,4 +132,9 @@ def test_separate_feature_pages_hide_non_active_panels_and_animate_login_aurora(
         assert f'body[data-page="{page}"]' in style
         assert panel in style
     assert "auroraWaveDrift" in style
+    assert "auroraColorTravel" in style
+    assert "auroraSpectrumSpin" in style
+    assert "appAuroraDrift" in style
+    assert ".auth-reactor" in style
+    assert "authCardSweep" in style
     assert "prefers-reduced-motion" in style
