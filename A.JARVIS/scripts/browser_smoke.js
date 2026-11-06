@@ -96,7 +96,17 @@ async function mountPage(page) {
 
     if (url === "/api/system") return jsonResponse({ cpu_percent: 12, memory_percent: 34 });
     if (url === "/api/reminders/claim") return jsonResponse({ reminders: [] });
-    if (url === "/api/history") return jsonResponse({ history: state.history, latest_id: 42 });
+    if (url === "/api/history") {
+      return jsonResponse({ history: state.history, latest_id: 42, has_more: true, next_before_id: 40 });
+    }
+    if (url === "/api/history?before_id=40") {
+      return jsonResponse({
+        history: [{ id: 39, command: "Much older saved question", response: "Much older saved answer" }],
+        latest_id: 42,
+        has_more: false,
+        next_before_id: null,
+      });
+    }
     if (url === "/api/tasks" && method === "GET") return jsonResponse({ tasks: state.tasks });
     if (url === "/api/tasks" && method === "POST") {
       const task = { id: state.tasks.length + 1, title: body.title, details: body.details || "", done: false };
@@ -171,6 +181,12 @@ async function runPageSmoke(page, route) {
     if (page === "history") {
       assert(document.querySelector("#historyList").textContent.includes("Newest saved question"), "history: newest exchange is missing");
       assert(document.querySelector("#historyList").textContent.indexOf("Newest saved question") < document.querySelector("#historyList").textContent.indexOf("Older saved question"), "history: newest exchange must appear first");
+      const olderButton = document.querySelector("#loadOlderHistory");
+      assert(olderButton && !olderButton.hidden, "history: load-older control should appear when another page exists");
+      olderButton.click();
+      await wait(30);
+      assert(document.querySelector("#historyList").textContent.includes("Much older saved question"), "history: older page did not append");
+      assert(olderButton.hidden, "history: load-older control should hide after the final page");
     }
     successes.push("page rendering and startup: " + page);
   } finally {
