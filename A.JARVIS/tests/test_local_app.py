@@ -370,3 +370,24 @@ def test_local_dashboard_microphone_visualizer_reuses_one_stream_and_cleans_up()
     assert "microphoneStream.getTracks().forEach((track) => track.stop())" in dashboard
     assert "window.cancelAnimationFrame(audioFrameId)" in dashboard
     assert "if (!shouldListen || recognitionBlocked) stopMicReactiveSystem();" in dashboard
+
+
+
+def test_logout_rejects_cross_site_get_and_requires_csrf_post(client,monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app,"cancel_user_plans",lambda _username:None)
+
+    get_response=client.get("/logout")
+    assert get_response.status_code==405
+    with client.session_transaction() as session:
+        assert session.get("user")=="alice"
+
+    denied=client.post("/logout")
+    assert denied.status_code==403
+    with client.session_transaction() as session:
+        assert session.get("user")=="alice"
+
+    allowed=client.post("/logout",headers={"X-CSRF-Token":"test-csrf-token"})
+    assert allowed.status_code==302
+    with client.session_transaction() as session:
+        assert "user" not in session
