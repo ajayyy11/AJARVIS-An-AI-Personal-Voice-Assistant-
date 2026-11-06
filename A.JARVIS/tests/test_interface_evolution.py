@@ -44,9 +44,10 @@ def test_interface_script_uses_safe_text_rendering_and_route_navigation():
 
 def test_chat_history_is_loaded_by_its_own_feature_page():
     script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
-    assert 'if (body.dataset.page !== "history") return;' in script
+    assert 'if (body.dataset.page !== "history" || historyLoading) return;' in script
     assert 'const list = $("historyList")' in script
-    assert 'const result = await api("/api/history")' in script
+    assert 'const result = await api(endpoint)' in script
+    assert 'loadOlderButton.addEventListener("click", () => refreshHistory(false))' in script
 
 
 def test_new_chat_uses_server_provided_conversation_boundary():
@@ -100,7 +101,8 @@ def test_cloud_dashboard_has_a_fresh_context_boundary_and_does_not_autoload_save
     assert 'data-context-after-id="{{ context_after_id }}"' in html
     assert 'id="historyList"' in html
     assert not any(line.strip() == "refreshHistory().catch(() => {});" for line in script.splitlines())
-    assert 'if (activePage === "history") refreshHistory()' in script
+    assert 'if (activePage === "history") {' in script
+    assert 'refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"))' in script
     assert 'if (activePage === "tasks") loadTasks()' in script
     assert 'if (activePage === "notes") loadNotes()' in script
 
