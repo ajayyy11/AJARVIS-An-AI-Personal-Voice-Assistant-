@@ -1944,6 +1944,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
           aiStatus.textContent = "Voice input error";
           showToast("Voice input failed (" + errorCode + "). You can change the voice language or use the text command box.");
         }
+        if (!shouldListen || recognitionBlocked) stopMicReactiveSystem();
       };
 
       recognition.onend = () => {
@@ -1953,6 +1954,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
           window.clearTimeout(recognitionStartWatchdog);
           recognitionStartWatchdog = null;
         }
+        if (!shouldListen || recognitionBlocked) stopMicReactiveSystem();
         scheduleRecognitionRestart(450);
       };
 
@@ -2157,30 +2159,106 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       }, 4000);
     }
 
-    /* MIC REACTIVE EFFECT */
-    let audioContext;
-    let analyser;
-    let microphone;
-    let dataArray;
+    /* MIC REACTIVE EFFECT
+       SpeechRecognition may restart many times during a single voice session.
+       Keep exactly one analyser stream/context and release every resource on exit. */
+    let audioContext = null;
+    let analyser = null;
+    let microphone = null;
+    let microphoneStream = null;
+    let dataArray = null;
+    let audioStartPromise = null;
+    let audioFrameId = null;
+    let audioGeneration = 0;
 
     async function startMicReactiveSystem() {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (audioContext && audioContext.state !== "closed") {
+        if (audioContext.state === "suspended") {
+          try { await audioContext.resume(); } catch (_error) {}
+        }
+        return;
+      }
+      if (audioStartPromise) return audioStartPromise;
 
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      analyser = audioContext.createAnalyser();
-      microphone = audioContext.createMediaStreamSource(stream);
+      const generation = audioGeneration;
+      audioStartPromise = (async () => {
+        let stream = null;
+        let context = null;
+        try {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error("Microphone visualizer is unavailable in this browser.");
+          }
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          if (generation !== audioGeneration) {
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+          }
 
-      analyser.fftSize = 256;
-      const bufferLength = analyser.frequencyBinCount;
-      dataArray = new Uint8Array(bufferLength);
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) throw new Error("Audio visualization is not supported in this browser.");
+          context = new AudioContextClass();
+          const nextAnalyser = context.createAnalyser();
+          const nextMicrophone = context.createMediaStreamSource(stream);
+          nextAnalyser.fftSize = 256;
+          const nextDataArray = new Uint8Array(nextAnalyser.frequencyBinCount);
+          nextMicrophone.connect(nextAnalyser);
 
-      microphone.connect(analyser);
+          if (generation !== audioGeneration) {
+            stream.getTracks().forEach((track) => track.stop());
+            try { await context.close(); } catch (_error) {}
+            return;
+          }
 
-      animateVoice();
+          microphoneStream = stream;
+          audioContext = context;
+          analyser = nextAnalyser;
+          microphone = nextMicrophone;
+          dataArray = nextDataArray;
+          animateVoice();
+        } catch (error) {
+          if (stream) stream.getTracks().forEach((track) => track.stop());
+          if (context && context.state !== "closed") {
+            try { await context.close(); } catch (_error) {}
+          }
+          throw error;
+        }
+      })();
+
+      try {
+        await audioStartPromise;
+      } finally {
+        audioStartPromise = null;
+      }
     }
 
+    function stopMicReactiveSystem() {
+      audioGeneration += 1;
+      if (audioFrameId !== null) {
+        window.cancelAnimationFrame(audioFrameId);
+        audioFrameId = null;
+      }
+      if (microphone) {
+        try { microphone.disconnect(); } catch (_error) {}
+        microphone = null;
+      }
+      if (microphoneStream) {
+        microphoneStream.getTracks().forEach((track) => track.stop());
+        microphoneStream = null;
+      }
+      const context = audioContext;
+      audioContext = null;
+      analyser = null;
+      dataArray = null;
+      if (context && context.state !== "closed") {
+        context.close().catch(() => {});
+      }
+    }
+
+    window.addEventListener("pagehide", stopMicReactiveSystem);
+
     function animateVoice() {
-      requestAnimationFrame(animateVoice);
+      if (!analyser || !dataArray || !audioContext || audioContext.state === "closed") return;
+      audioFrameId = window.requestAnimationFrame(animateVoice);
       analyser.getByteFrequencyData(dataArray);
 
       let sum = 0;
@@ -2189,7 +2267,6 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
       }
 
       const volume = sum / dataArray.length;
-
       const glowStrength = 40 + volume * 0.8;
       core.style.boxShadow = `0 0 ${glowStrength}px #00ffff`;
 
