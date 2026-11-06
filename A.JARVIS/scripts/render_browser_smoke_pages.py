@@ -50,8 +50,10 @@ def main() -> None:
             if marker not in html:
                 raise SystemExit(f"{route} is missing {marker}")
             (output / f"{page}.html").write_text(html, encoding="utf-8")
+    # Authentication pages must be rendered without the authenticated workspace session.
+    with cloud_app.app.test_client() as auth_client:
         for page in ("login", "register"):
-            response = client.get("/" + page)
+            response = auth_client.get("/" + page)
             if response.status_code != 200:
                 raise SystemExit(f"/{page} returned HTTP {response.status_code}")
             (output / f"{page}.html").write_text(response.get_data(as_text=True), encoding="utf-8")
