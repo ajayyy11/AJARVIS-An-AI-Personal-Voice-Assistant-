@@ -415,26 +415,59 @@
     }
   });
 
-  async function refreshHistory() {
-    if (body.dataset.page !== "history") return;
+  let historyBeforeId = null;
+  let historyLoading = false;
+
+  async function refreshHistory(reset = true) {
+    if (body.dataset.page !== "history" || historyLoading) return;
     const list = $("historyList");
+    const loadOlderButton = $("loadOlderHistory");
     if (!list) return;
-    const result = await api("/api/history");
-    const rows = Array.isArray(result.history) ? result.history : [];
-    list.replaceChildren();
-    if (!rows.length) {
-      list.appendChild(make("p", "empty-state", "No saved conversations yet. Start a new chat with AJARVIS."));
-      return;
+    if (!reset && historyBeforeId === null) return;
+
+    historyLoading = true;
+    if (loadOlderButton) {
+      loadOlderButton.disabled = true;
+      loadOlderButton.textContent = "Loading…";
     }
-    rows.forEach((entry, index) => {
-      const card = make("article", "history-item");
-      const heading = make("div", "history-item-heading");
-      heading.appendChild(make("strong", "", "Saved exchange " + (index + 1)));
-      const question = make("p", "history-question", entry.command || "Question not available");
-      const answer = make("p", "history-answer", entry.response || "Response not available");
-      card.append(heading, question, answer);
-      list.appendChild(card);
-    });
+    try {
+      const endpoint = reset || historyBeforeId === null
+        ? "/api/history"
+        : "/api/history?before_id=" + encodeURIComponent(String(historyBeforeId));
+      const result = await api(endpoint);
+      const rows = Array.isArray(result.history) ? result.history : [];
+      if (reset) list.replaceChildren();
+
+      if (!rows.length && reset) {
+        list.appendChild(make("p", "empty-state", "No saved conversations yet. Start a new chat with AJARVIS."));
+      } else {
+        const firstIndex = list.querySelectorAll(".history-item").length;
+        rows.forEach((entry, index) => {
+          const card = make("article", "history-item");
+          const heading = make("div", "history-item-heading");
+          heading.appendChild(make("strong", "", "Saved exchange " + (firstIndex + index + 1)));
+          const question = make("p", "history-question", entry.command || "Question not available");
+          const answer = make("p", "history-answer", entry.response || "Response not available");
+          card.append(heading, question, answer);
+          list.appendChild(card);
+        });
+      }
+
+      historyBeforeId = result.has_more && Number.isSafeInteger(result.next_before_id)
+        ? result.next_before_id
+        : null;
+      if (loadOlderButton) {
+        loadOlderButton.hidden = historyBeforeId === null;
+        loadOlderButton.disabled = historyBeforeId === null;
+        loadOlderButton.textContent = "Load older exchanges";
+      }
+    } catch (error) {
+      if (loadOlderButton) loadOlderButton.textContent = "Retry loading older exchanges";
+      toast(error.message, true, "CHAT HISTORY");
+    } finally {
+      historyLoading = false;
+      if (loadOlderButton && historyBeforeId !== null) loadOlderButton.disabled = false;
+    }
   }
 
   function friendlyDate(value) {
@@ -1008,7 +1041,11 @@
   if (activePage === "memory") loadPreferences().catch(error => toast(error.message, true, "PERSONAL MEMORY"));
   if (activePage === "documents") loadDocuments().catch(error => toast(error.message, true, "DOCUMENTS"));
   if (activePage === "activity") loadActivity().catch(error => toast(error.message, true, "ACTIVITY"));
-  if (activePage === "history") refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"));
+  if (activePage === "history") {
+    const loadOlderButton = $("loadOlderHistory");
+    if (loadOlderButton) loadOlderButton.addEventListener("click", () => refreshHistory(false));
+    refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"));
+  }
   loadSystemStatus();
   claimReminders().catch(() => {});
   window.setInterval(() => claimReminders().catch(() => {}), 60000);
