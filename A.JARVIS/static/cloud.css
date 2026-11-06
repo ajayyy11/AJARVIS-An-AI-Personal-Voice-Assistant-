@@ -875,3 +875,276 @@ body[data-page]:not([data-page="dashboard"]) .workspace { max-width: 1320px; }
 @media (prefers-reduced-motion: reduce) {
   .auth-aurora-waves, .auth-body::before { animation: none !important; }
 }
+
+
+/* AJARVIS visual refresh: motion with restraint, depth, and accessible controls. */
+.workspace-body .app-glow {
+  inset: -18%;
+  background:
+    radial-gradient(ellipse at 18% 18%, rgba(0, 198, 218, .17), transparent 31%),
+    radial-gradient(ellipse at 78% 28%, rgba(75, 103, 231, .14), transparent 32%),
+    radial-gradient(ellipse at 52% 82%, rgba(30, 183, 157, .1), transparent 36%);
+  background-size: 145% 145%;
+  filter: blur(18px);
+  opacity: .82;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, background-position;
+  animation: appAuroraDrift 28s ease-in-out infinite alternate;
+}
+@keyframes appAuroraDrift {
+  0% { transform: translate3d(-2%, 1%, 0) scale(.98); background-position: 0% 15%; }
+  50% { transform: translate3d(1%, -1%, 0) scale(1.025); background-position: 55% 65%; }
+  100% { transform: translate3d(2%, 2%, 0) scale(1.04); background-position: 100% 30%; }
+}
+.workspace { animation: workspaceEnter .42s ease-out both; }
+@keyframes workspaceEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.panel {
+  transition: border-color .2s ease, box-shadow .22s ease, transform .22s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .workspace-grid > .panel:hover {
+    border-color: rgba(131, 237, 244, .28);
+    box-shadow: 0 22px 52px rgba(0, 0, 0, .16), 0 0 26px rgba(35, 189, 207, .045), inset 0 1px rgba(255,255,255,.025);
+  }
+}
+.nav-link { position: relative; overflow: hidden; }
+.nav-link::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #b8ffff, #36c5dc);
+  box-shadow: 0 0 12px rgba(87, 231, 242, .65);
+  opacity: 0;
+  transform: scaleY(.35);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.nav-link.is-active::before, .nav-link[aria-current="page"]::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+.status-trigger .dot { animation: statusBreath 2.8s ease-in-out infinite; }
+@keyframes statusBreath {
+  0%, 100% { opacity: .72; box-shadow: 0 0 5px rgba(116,230,190,.35); }
+  50% { opacity: 1; box-shadow: 0 0 13px rgba(116,230,190,.8); }
+}
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid rgba(126, 239, 248, .9);
+  outline-offset: 3px;
+}
+button:active { transform: translateY(1px); }
+.primary-button:focus-visible, .secondary-button:focus-visible, .quiet-button:focus-visible {
+  box-shadow: 0 0 0 4px rgba(87, 231, 242, .12);
+}
+
+/* More visible, continuously moving login aurora. The card remains calm and readable. */
+.auth-body {
+  min-height: 100svh;
+  background: #050914;
+}
+.auth-aurora-waves {
+  inset: -34%;
+  background:
+    radial-gradient(ellipse 33% 45% at 12% 34%, rgba(22, 238, 137, .78) 0%, transparent 76%),
+    radial-gradient(ellipse 38% 42% at 34% 52%, rgba(20, 177, 255, .78) 0%, transparent 76%),
+    radial-gradient(ellipse 35% 48% at 57% 44%, rgba(191, 65, 255, .68) 0%, transparent 77%),
+    radial-gradient(ellipse 34% 38% at 82% 38%, rgba(255, 154, 65, .58) 0%, transparent 78%),
+    radial-gradient(ellipse 45% 34% at 54% 82%, rgba(54, 105, 255, .64) 0%, transparent 78%);
+  background-size: 165% 165%;
+  filter: blur(42px) saturate(1.55);
+  opacity: .96;
+  will-change: transform, background-position, filter;
+  animation: auroraColorTravel 13s cubic-bezier(.45, 0, .35, 1) infinite alternate;
+}
+.auth-aurora-waves::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  background:
+    conic-gradient(from 20deg at 50% 50%,
+      transparent 0deg,
+      rgba(25, 229, 179, .2) 60deg,
+      transparent 110deg,
+      rgba(91, 130, 255, .22) 190deg,
+      transparent 245deg,
+      rgba(212, 81, 255, .17) 305deg,
+      transparent 360deg);
+  filter: blur(50px);
+  opacity: .85;
+  animation: auroraSpectrumSpin 32s linear infinite;
+}
+.auth-aurora-waves::after {
+  content: "";
+  position: absolute;
+  inset: 8% 4%;
+  background:
+    radial-gradient(ellipse at 24% 70%, rgba(76, 236, 255, .26), transparent 30%),
+    radial-gradient(ellipse at 76% 28%, rgba(255, 116, 182, .2), transparent 28%);
+  filter: blur(28px);
+  animation: auroraPulseDrift 8s ease-in-out infinite alternate;
+}
+@keyframes auroraColorTravel {
+  0% {
+    transform: translate3d(-7%, 3%, 0) rotate(-13deg) scale(.94);
+    background-position: 0% 30%;
+    filter: blur(42px) saturate(1.35) hue-rotate(-12deg);
+  }
+  45% {
+    transform: translate3d(2%, -3%, 0) rotate(1deg) scale(1.04);
+    background-position: 54% 65%;
+    filter: blur(48px) saturate(1.65) hue-rotate(12deg);
+  }
+  100% {
+    transform: translate3d(7%, 2%, 0) rotate(12deg) scale(1.1);
+    background-position: 100% 18%;
+    filter: blur(44px) saturate(1.5) hue-rotate(28deg);
+  }
+}
+@keyframes auroraSpectrumSpin { to { transform: rotate(360deg); } }
+@keyframes auroraPulseDrift {
+  from { transform: translate3d(-3%, 2%, 0) scale(.92); opacity: .55; }
+  to { transform: translate3d(4%, -3%, 0) scale(1.12); opacity: .95; }
+}
+.auth-body::before {
+  animation-duration: 31s;
+  opacity: .45;
+}
+.auth-body::after {
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(5, 9, 20, .04), rgba(3, 7, 15, .34) 78%),
+    linear-gradient(90deg, rgba(2,5,12,.28), rgba(3,7,14,.02) 48%, rgba(3,7,14,.34));
+}
+.auth-grid {
+  opacity: .22;
+  animation: authGridGlide 42s linear infinite;
+}
+@keyframes authGridGlide {
+  to { transform: translate3d(0, 42px, 0); }
+}
+.auth-card {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(207, 246, 255, .48);
+  background: linear-gradient(145deg, rgba(9, 17, 34, .76), rgba(7, 12, 25, .7));
+  box-shadow: 0 30px 100px rgba(0,0,0,.42), 0 0 42px rgba(41, 193, 223, .09), inset 0 1px rgba(255,255,255,.2);
+}
+.auth-card::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(112deg, transparent 24%, rgba(177, 250, 255, .13) 47%, transparent 68%);
+  transform: translateX(-125%);
+  animation: authCardSweep 9s ease-in-out infinite;
+}
+.auth-card > * { position: relative; z-index: 1; }
+@keyframes authCardSweep {
+  0%, 30% { transform: translateX(-125%); }
+  72%, 100% { transform: translateX(125%); }
+}
+.auth-reactor {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  margin: 0 auto 17px;
+  border: 1px solid rgba(168, 246, 255, .68);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(172,255,255,.16), rgba(37,152,190,.08) 48%, transparent 72%);
+  box-shadow: 0 0 22px rgba(74, 222, 244, .26), inset 0 0 18px rgba(101, 225, 245, .12);
+  animation: reactorHover 4.8s ease-in-out infinite;
+}
+.auth-reactor::before, .auth-reactor::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 1px solid rgba(111, 231, 246, .38);
+  border-radius: 50%;
+}
+.auth-reactor::before {
+  border-top-color: #d7ffff;
+  border-bottom-color: rgba(105, 196, 255, .1);
+  animation: reactorOrbit 8s linear infinite;
+}
+.auth-reactor::after {
+  inset: 5px;
+  border-style: dashed;
+  border-left-color: rgba(190, 124, 255, .8);
+  animation: reactorOrbit 11s linear infinite reverse;
+}
+.auth-reactor span {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0%, #9cffff 28%, #37cde9 58%, #14678e 100%);
+  box-shadow: 0 0 14px rgba(137, 250, 255, .95), 0 0 30px rgba(32, 190, 239, .45);
+}
+@keyframes reactorHover {
+  0%, 100% { transform: translateY(0); box-shadow: 0 0 22px rgba(74,222,244,.26), inset 0 0 18px rgba(101,225,245,.12); }
+  50% { transform: translateY(-4px); box-shadow: 0 0 34px rgba(74,222,244,.42), inset 0 0 24px rgba(101,225,245,.2); }
+}
+@keyframes reactorOrbit { to { transform: rotate(360deg); } }
+.auth-kicker {
+  margin: 0 0 9px !important;
+  text-align: center;
+  color: #9bdde8 !important;
+  font-size: 9px !important;
+  font-weight: 800;
+  letter-spacing: 2.1px;
+}
+.auth-card .auth-product-title {
+  background-size: 220% auto;
+  animation: authTitleGlow 7s ease-in-out infinite alternate;
+}
+@keyframes authTitleGlow {
+  from { background-position: 0% center; filter: drop-shadow(0 0 0 rgba(105,231,245,0)); }
+  to { background-position: 100% center; filter: drop-shadow(0 0 12px rgba(105,231,245,.22)); }
+}
+.auth-card .stack-form input {
+  transition: border-color .2s ease, background .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.auth-card .stack-form input:focus {
+  background: rgba(6, 17, 31, .78);
+  box-shadow: 0 0 0 3px rgba(87,231,242,.12), 0 0 24px rgba(35,190,219,.1);
+}
+.auth-card .stack-form .primary-button {
+  box-shadow: 0 9px 28px rgba(20,184,204,.2), inset 0 1px rgba(255,255,255,.42);
+  transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+}
+.auth-card .stack-form .primary-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 13px 34px rgba(20,184,204,.32), 0 0 24px rgba(87,231,242,.14), inset 0 1px rgba(255,255,255,.5);
+}
+.auth-card .stack-form .primary-button:disabled {
+  transform: none;
+  filter: saturate(.65);
+}
+.auth-card .auth-tagline { color: #c0d3e2; }
+.auth-switch a { transition: color .2s ease, text-shadow .2s ease; }
+.auth-switch a:hover { color: #fff; text-shadow: 0 0 14px rgba(105,231,245,.7); }
+@media (max-width: 520px) {
+  .auth-aurora-waves { inset: -48%; filter: blur(46px) saturate(1.5); }
+  .auth-reactor { width: 58px; height: 58px; }
+  .auth-card { backdrop-filter: blur(18px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace, .workspace-body .app-glow, .status-trigger .dot,
+  .auth-aurora-waves, .auth-aurora-waves::before, .auth-aurora-waves::after,
+  .auth-grid, .auth-card::before, .auth-reactor, .auth-reactor::before,
+  .auth-reactor::after, .auth-product-title {
+    animation: none !important;
+  }
+  .panel, .nav-link::before, .auth-card .stack-form input,
+  .auth-card .stack-form .primary-button {
+    transition: none !important;
+  }
+}
