@@ -5,13 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>AJARVIS Cloud · {{ mode|capitalize }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css', v='20261106-ui') }}">
 </head>
 <body class="auth-body">
   <div class="auth-aurora-waves" aria-hidden="true"></div>
   <div class="auth-grid"></div>
   <main class="auth-shell">
     <section class="auth-card">
+      <div class="auth-reactor" aria-hidden="true"><span></span></div>
+      <p class="auth-kicker" aria-hidden="true">PERSONAL AI SYSTEM · SECURE ENTRY</p>
       <h1 id="authTitle" class="auth-product-title">AJARVIS</h1>
       <p class="muted auth-tagline">Your personal AI workspace.</p>
       <form id="authForm" class="stack-form">
