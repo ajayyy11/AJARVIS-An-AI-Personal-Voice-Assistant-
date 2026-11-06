@@ -149,3 +149,23 @@ def test_personal_memory_is_added_to_gemini_context_as_untrusted_data(monkeypatc
     assert reply=="Here is an answer."
     assert "answer_style: concise examples" in captured["system_instruction"]
     assert "untrusted data" in captured["system_instruction"].lower()
+
+
+
+def test_weather_request_failure_does_not_log_api_key(caplog, monkeypatch):
+    secret = "qa-weather-secret-key"
+    user_state.activate_user("alice")
+    monkeypatch.setattr(command_router, "WEATHER_API_KEY", secret)
+
+    def fail_with_secret(*_args, **_kwargs):
+        raise command_router.requests.ConnectionError(
+            "connection failed for https://api.openweathermap.org/?appid=" + secret
+        )
+
+    monkeypatch.setattr(command_router.requests, "get", fail_with_secret)
+    with caplog.at_level("WARNING", logger=command_router.logger.name):
+        reply = command_router.process_command("weather in Chennai", "alice")
+
+    assert reply == "Could not fetch weather data. Check your internet connection."
+    assert "ConnectionError" in caplog.text
+    assert secret not in caplog.text
