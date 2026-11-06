@@ -430,8 +430,10 @@ def process_command(command, username):
                     )
                 else:
                     reply = f"Could not find weather for '{city}'. Please check the city name."
-            except Exception as e:
-                print("Weather error:", e)
+            except Exception as error:
+                # Request exceptions can include the full URL and query string;
+                # never log the OpenWeather API key or raw provider response.
+                logger.warning("Weather lookup failed (%s).", type(error).__name__)
                 reply = "Could not fetch weather data. Check your internet connection."
 
         add_memory(command, reply, username)
