@@ -56,9 +56,10 @@ async function mountPage(page) {
     preferences: [],
     documents: [],
     activity: [],
+    // /api/history returns records newest-first (ORDER BY id DESC).
     history: [
-      { command: "Older saved question", response: "Older saved answer" },
       { command: "Newest saved question", response: "Newest saved answer" },
+      { command: "Older saved question", response: "Older saved answer" },
     ],
   };
 
