@@ -310,7 +310,11 @@ async function testDocumentAndVisualFlows() {
 
 async function testLocalMicrophoneVisualizerLifecycle() {
   const localDashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
-  const inlineScript = (localDashboard.match(/<script>([\\s\\S]*?)<\\/script>/i) || [])[1];
+  const scriptStart = localDashboard.indexOf("<script>");
+  const scriptEnd = localDashboard.indexOf("</script>", scriptStart);
+  const inlineScript = scriptStart >= 0 && scriptEnd > scriptStart
+    ? localDashboard.slice(scriptStart + "<script>".length, scriptEnd)
+    : "";
   assert(inlineScript, "local dashboard: inline script is missing");
   const start = inlineScript.indexOf("/* MIC REACTIVE EFFECT");
   assert(start >= 0, "local dashboard: microphone visualizer block is missing");
