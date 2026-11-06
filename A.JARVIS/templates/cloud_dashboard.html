@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>AJARVIS Cloud · Workspace</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css', v='20261106-ui') }}">
 </head>
 <body class="workspace-body" data-user="{{ user }}" data-csrf="{{ csrf_token }}" data-page="{{ active_page }}"
       {% if context_after_id is not none %}data-context-after-id="{{ context_after_id }}"{% endif %}>
