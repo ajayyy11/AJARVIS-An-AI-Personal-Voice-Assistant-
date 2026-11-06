@@ -244,10 +244,52 @@ async function testFeatureForms() {
   } finally { settings.dom.window.close(); }
 }
 
+async function testAuthenticationPages() {
+  const css = fs.readFileSync(path.join(__dirname, "..", "static", "cloud.css"), "utf8");
+  assert(css.includes("@keyframes auroraWaveDrift"), "login: animated aurora keyframes are missing");
+  assert(css.includes("prefers-reduced-motion"), "login: reduced-motion support is missing");
+
+  for (const page of ["login", "register"]) {
+    const html = fs.readFileSync(path.join(fixtureDir, page + ".html"), "utf8");
+    const dom = new JSDOM(html, {
+      url: "https://ajarvis.test/" + page,
+      runScripts: "outside-only",
+      pretendToBeVisual: true,
+    });
+    const { window } = dom;
+    let captured = null;
+    window.fetch = async (url, options) => {
+      captured = { url, options, body: JSON.parse(options.body) };
+      return {
+        ok: false,
+        status: page === "login" ? 401 : 400,
+        json: async () => ({ error: "Expected QA authentication rejection." }),
+      };
+    };
+    const script = window.document.querySelector("script");
+    assert(window.document.querySelector(".auth-aurora-waves"), page + ": aurora background is missing");
+    assert(window.document.querySelector(".auth-product-title")?.textContent === "AJARVIS", page + ": product title is incorrect");
+    assert(!window.document.body.textContent.includes("Secure Cloud Access"), page + ": generic access heading remains");
+    assert(!window.document.body.textContent.includes("Welcome back"), page + ": generic welcome heading remains");
+    window.eval(script.textContent);
+    window.document.querySelector("#username").value = "qa_user";
+    window.document.querySelector("#password").value = page === "login" ? "qa-password" : "qa-password-123";
+    window.document.querySelector("#authForm").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    await wait(25);
+    assert(captured, page + ": form did not submit authentication request");
+    assert(captured.url === (page === "login" ? "/api/auth/login" : "/api/auth/register"), page + ": wrong authentication endpoint");
+    assert(captured.body.username === "qa_user", page + ": username was not submitted");
+    assert(window.document.querySelector("#authError").textContent.includes("Expected QA authentication rejection."), page + ": authentication error was not displayed");
+    dom.window.close();
+  }
+  successes.push("login/register form submission, error handling and animated aurora");
+}
+
 (async () => {
   for (const [page, route] of routes) await runPageSmoke(page, route);
   await testChatAndVoice();
   await testFeatureForms();
+  await testAuthenticationPages();
   console.log("BROWSER_SMOKE_OK " + successes.length);
   successes.forEach((item) => console.log("PASS " + item));
 })().catch((error) => {
