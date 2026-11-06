@@ -220,6 +220,48 @@ def get_all_recent_after(n=30, username=None, after_id=0):
         _close_resources(cursor, conn)
 
 
+def get_history_page(n=30, username=None, before_id=None):
+    """Return one newest-first history page with durable IDs for older-page cursors.
+
+    A database-backed page is required here: process-local fallback entries have
+    no durable IDs and cannot safely support a cross-request pagination cursor.
+    """
+    if not isinstance(username, str) or not username.strip():
+        return []
+    username = username.strip()
+    limit = _normalise_limit(n, 30)
+    if limit == 0:
+        return []
+    cursor_id = None if before_id is None else _normalise_after_id(before_id)
+
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if cursor_id is None:
+            cursor.execute(
+                "SELECT id, command, response FROM command_history "
+                "WHERE username = %s ORDER BY id DESC LIMIT %s",
+                (username, limit),
+            )
+        else:
+            cursor.execute(
+                "SELECT id, command, response FROM command_history "
+                "WHERE username = %s AND id < %s ORDER BY id DESC LIMIT %s",
+                (username, cursor_id, limit),
+            )
+        rows = cursor.fetchall()
+        return [
+            {"id": int(row[0]), "command": row[1], "response": row[2]}
+            for row in rows
+        ]
+    except Exception:
+        logger.warning("Paginated history read failed; refusing to return an incomplete page.", exc_info=True)
+        raise RuntimeError("Conversation history is temporarily unavailable.") from None
+    finally:
+        _close_resources(cursor, conn)
+
+
 def get_latest_id(username=None):
     """Return the latest durable command-history ID for this signed-in user."""
     if not isinstance(username, str) or not username.strip():
