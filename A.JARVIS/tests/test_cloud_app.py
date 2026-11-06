@@ -795,3 +795,45 @@ def test_workspace_feature_routes_render_one_authenticated_page(client, monkeypa
         response = client.get(path)
         assert response.status_code == 200, path
         assert f'data-page="{page}"' in response.get_data(as_text=True), path
+
+
+
+def test_history_api_returns_first_page_and_older_cursor(client, monkeypatch):
+    login_session(client)
+    calls = []
+    rows = [{"id": index, "command": f"question {index}", "response": f"answer {index}"} for index in range(31, 0, -1)]
+    monkeypatch.setattr(cloud_app, "get_history_page",
+        lambda limit, username, before_id=None: calls.append((limit, username, before_id)) or rows)
+    monkeypatch.setattr(cloud_app, "get_latest_id", lambda username: 91)
+
+    response = client.get("/api/history")
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert len(payload["history"]) == 30
+    assert payload["history"][0]["id"] == 31
+    assert payload["history"][-1]["id"] == 2
+    assert payload["has_more"] is True
+    assert payload["next_before_id"] == 2
+    assert calls == [(31, "alice", None)]
+
+    older_rows = [{"id": 1, "command": "old", "response": "older answer"}]
+    monkeypatch.setattr(cloud_app, "get_history_page",
+        lambda limit, username, before_id=None: calls.append((limit, username, before_id)) or older_rows)
+    older = client.get("/api/history?before_id=2").get_json()
+    assert older["history"] == older_rows
+    assert older["has_more"] is False
+    assert older["next_before_id"] is None
+    assert calls[-1] == (31, "alice", 2)
+
+
+@pytest.mark.parametrize("cursor", ["-1", "not-a-number"])
+def test_history_api_rejects_invalid_older_cursor(client, cursor):
+    login_session(client)
+    response = client.get("/api/history?before_id=" + cursor)
+    assert response.status_code == 400
+
+
+def test_history_api_rejects_ambiguous_cursor_parameters(client):
+    login_session(client)
+    response = client.get("/api/history?after_id=5&before_id=10")
+    assert response.status_code == 400
