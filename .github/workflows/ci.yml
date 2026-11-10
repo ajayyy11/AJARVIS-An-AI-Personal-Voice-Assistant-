@@ -115,7 +115,7 @@ jobs:
       - name: Compile application modules
         run: python -m compileall -q .
       - name: Set up Node.js for browser smoke tests
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
       - name: Run browser integration smoke tests
