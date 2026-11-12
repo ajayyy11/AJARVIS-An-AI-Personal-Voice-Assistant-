@@ -210,7 +210,11 @@
 
   async function sendCommand(command) {
     const trimmed = String(command || "").trim();
-    if (!trimmed || isProcessing) return;
+    if (!trimmed) return;
+    if (isProcessing) {
+      toast("AJARVIS is still processing the previous request. Your new command has not been sent yet.", false, "PLEASE WAIT");
+      return;
+    }
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     isSpeaking = false;
     isProcessing = true;
@@ -248,6 +252,11 @@
     event.preventDefault();
     const input = $("commandInput");
     const command = input.value;
+    if (isProcessing) {
+      toast("AJARVIS is still processing your previous message. This message is still here; send it again when the reply is ready.", false, "PLEASE WAIT");
+      return;
+    }
+    if (!command.trim()) return;
     input.value = "";
     sendCommand(command);
   });
@@ -281,12 +290,18 @@
     }
     if (isSpeaking) stopSpokenReply();
     if (isListening && recognitionInstance) {
+      const activeRecognition = recognitionInstance;
       manualStop = true;
-      try { recognitionInstance.stop(); } catch (_error) {}
       isListening = false;
       syncVoiceControls();
-      setAssistantStatus("ready", "READY");
-      toast("Listening stopped.", false, "MICROPHONE");
+      setAssistantStatus("thinking", "FINALIZING");
+      try {
+        activeRecognition.stop();
+      } catch (_error) {
+        if (recognitionInstance === activeRecognition) recognitionInstance = null;
+        if (!isProcessing && !isSpeaking) setAssistantStatus("ready", "READY");
+      }
+      toast("Listening stopped. Processing the speech captured so far…", false, "MICROPHONE");
       return;
     }
 
@@ -358,7 +373,7 @@
         setAssistantStatus("ready", "READY");
       }
 
-      if (submittedTranscript || manualStop || voiceErrorShown) return;
+      if (submittedTranscript || voiceErrorShown) return;
 
       const rawTranscript = capturedFinalTranscript || $("commandInput").value.trim();
       const cleanedTranscript = rawTranscript
@@ -459,14 +474,23 @@
       if (loadOlderButton) {
         loadOlderButton.hidden = historyBeforeId === null;
         loadOlderButton.disabled = historyBeforeId === null;
+        loadOlderButton.dataset.retryReset = "false";
         loadOlderButton.textContent = "Load older exchanges";
       }
     } catch (error) {
-      if (loadOlderButton) loadOlderButton.textContent = "Retry loading older exchanges";
+      if (reset) {
+        list.replaceChildren(make("p", "empty-state", "Chat history could not be loaded. Please retry."));
+      }
+      if (loadOlderButton) {
+        loadOlderButton.hidden = false;
+        loadOlderButton.disabled = false;
+        loadOlderButton.dataset.retryReset = reset ? "true" : "false";
+        loadOlderButton.textContent = reset ? "Retry loading history" : "Retry loading older exchanges";
+      }
       toast(error.message, true, "CHAT HISTORY");
     } finally {
       historyLoading = false;
-      if (loadOlderButton && historyBeforeId !== null) loadOlderButton.disabled = false;
+      if (loadOlderButton && !loadOlderButton.hidden) loadOlderButton.disabled = false;
     }
   }
 
@@ -520,8 +544,11 @@
     });
   }
 
-  $("taskForm").addEventListener("submit", async (event) => {
+  const taskForm = $("taskForm");
+  const taskSubmitButton = taskForm.querySelector('button[type="submit"]');
+  taskForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (taskForm.dataset.submitting === "true") return;
     const title = $("taskTitle").value.trim();
     const details = $("taskDetails").value.trim();
     const localDue = $("taskDue").value;
@@ -534,15 +561,27 @@
       }
       dueAt = parsed.toISOString();
     }
+
+    taskForm.dataset.submitting = "true";
+    taskSubmitButton.disabled = true;
+    taskSubmitButton.textContent = "Adding…";
     try {
       await api("/api/tasks", {
         method: "POST",
         body: JSON.stringify({ title, details, due_at: dueAt })
       });
-      $("taskForm").reset();
-      await loadTasks();
+      taskForm.reset();
       toast("Task saved.");
-    } catch (error) { toast(error.message, true, "TASK SAVE"); }
+      loadTasks().catch((error) => {
+        toast("Your task was saved, but the task list could not refresh. Use Refresh tasks to try again. " + error.message, true, "TASK LIST");
+      });
+    } catch (error) {
+      toast(error.message, true, "TASK SAVE");
+    } finally {
+      delete taskForm.dataset.submitting;
+      taskSubmitButton.disabled = false;
+      taskSubmitButton.textContent = "＋ Add task";
+    }
   });
   $("refreshTasks").addEventListener("click", () => loadTasks().catch(error => toast(error.message, true)));
   $("refreshActivity").addEventListener("click", () => loadActivity().catch(error => toast(error.message, true, "ACTIVITY")));
@@ -605,15 +644,29 @@
     });
   }
 
-  $("noteForm").addEventListener("submit", async (event) => {
+  const noteForm = $("noteForm");
+  const noteSubmitButton = noteForm.querySelector('button[type="submit"]');
+  noteForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (noteForm.dataset.submitting === "true") return;
     const text = $("noteText").value.trim();
+    noteForm.dataset.submitting = "true";
+    noteSubmitButton.disabled = true;
+    noteSubmitButton.textContent = "Saving…";
     try {
       await api("/api/notes", { method: "POST", body: JSON.stringify({ text }) });
       $("noteText").value = "";
-      await loadNotes();
       toast("Note saved securely to your account.");
-    } catch (error) { toast(error.message, true, "NOTE SAVE"); }
+      loadNotes().catch((error) => {
+        toast("Your note was saved, but the notes list could not refresh. Use search or reload the page to try again. " + error.message, true, "NOTES LIST");
+      });
+    } catch (error) {
+      toast(error.message, true, "NOTE SAVE");
+    } finally {
+      delete noteForm.dataset.submitting;
+      noteSubmitButton.disabled = false;
+      noteSubmitButton.textContent = "Save note";
+    }
   });
   $("noteSearchForm").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -651,20 +704,32 @@
     });
   }
 
-  $("preferenceForm").addEventListener("submit", async (event) => {
+  const preferenceForm = $("preferenceForm");
+  const preferenceSubmitButton = preferenceForm.querySelector('button[type="submit"]');
+  preferenceForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (preferenceForm.dataset.submitting === "true") return;
     const key = $("preferenceKey").value.trim();
     const value = $("preferenceValue").value.trim();
+    preferenceForm.dataset.submitting = "true";
+    preferenceSubmitButton.disabled = true;
+    preferenceSubmitButton.textContent = "Saving…";
     try {
       await api("/api/preferences", {
         method: "POST",
         body: JSON.stringify({ key, value })
       });
       $("preferenceValue").value = "";
-      await loadPreferences();
       toast("Personal preference saved.");
+      loadPreferences().catch((error) => {
+        toast("Your preference was saved, but the memory list could not refresh. Reload the page to try again. " + error.message, true, "PERSONAL MEMORY");
+      });
     } catch (error) {
       toast(error.message, true, "PERSONAL MEMORY");
+    } finally {
+      delete preferenceForm.dataset.submitting;
+      preferenceSubmitButton.disabled = false;
+      preferenceSubmitButton.textContent = "Save preference";
     }
   });
 
@@ -1043,7 +1108,11 @@
   if (activePage === "activity") loadActivity().catch(error => toast(error.message, true, "ACTIVITY"));
   if (activePage === "history") {
     const loadOlderButton = $("loadOlderHistory");
-    if (loadOlderButton) loadOlderButton.addEventListener("click", () => refreshHistory(false));
+    if (loadOlderButton) {
+      loadOlderButton.addEventListener("click", () => {
+        refreshHistory(loadOlderButton.dataset.retryReset === "true");
+      });
+    }
     refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"));
   }
   loadSystemStatus();

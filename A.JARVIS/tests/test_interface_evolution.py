@@ -47,7 +47,10 @@ def test_chat_history_is_loaded_by_its_own_feature_page():
     assert 'if (body.dataset.page !== "history" || historyLoading) return;' in script
     assert 'const list = $("historyList")' in script
     assert 'const result = await api(endpoint)' in script
-    assert 'loadOlderButton.addEventListener("click", () => refreshHistory(false))' in script
+    assert 'loadOlderButton.addEventListener("click", () => {' in script
+    assert 'refreshHistory(loadOlderButton.dataset.retryReset === "true")' in script
+    assert 'loadOlderButton.dataset.retryReset = reset ? "true" : "false"' in script
+    assert 'Retry loading history' in script
 
 
 def test_new_chat_uses_server_provided_conversation_boundary():
@@ -102,6 +105,7 @@ def test_cloud_dashboard_has_a_fresh_context_boundary_and_does_not_autoload_save
     script = (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
     assert 'data-context-after-id="{{ context_after_id }}"' in html
     assert 'id="historyList"' in html
+    assert "filename='cloud.js', v='20261112-workflow'" in html
     assert not any(line.strip() == "refreshHistory().catch(() => {});" for line in script.splitlines())
     assert 'if (activePage === "history") {' in script
     assert 'refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"))' in script
