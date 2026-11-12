@@ -405,3 +405,32 @@ def test_desktop_audio_capture_error_pauses_auto_restart_and_keeps_manual_retry(
     assert "shouldListen = true;" in retry_handler
     assert "recognitionBlocked = false;" in retry_handler
     assert "startRecognitionSafely();" in retry_handler
+
+
+
+def test_untrusted_host_is_rejected_before_route_runs(client, monkeypatch):
+    monkeypatch.setattr(local_app.camera, "get_latest_frame", lambda: pytest.fail("Host check must run first"))
+    response = client.post("/register", base_url="http://evil.example", json={"username": "attacker"})
+    assert response.status_code == 421
+
+
+def test_first_local_registration_requires_csrf_and_is_allowed_when_no_users(client, monkeypatch):
+    monkeypatch.setattr(local_app, "_registration_is_allowed", lambda: (True, None))
+    monkeypatch.setattr(local_app.camera, "resume_recognition", lambda: None)
+    denied = client.post("/register", json={"username": "alice"})
+    assert denied.status_code == 403
+    with client.session_transaction() as state:
+        state["csrf_token"] = "x" * 40
+    monkeypatch.setattr(local_app.camera, "get_latest_frame", lambda: None)
+    allowed = client.post("/register", headers={"X-CSRF-Token": "x" * 40}, json={"username": "alice"})
+    assert allowed.status_code == 400
+    assert "Camera not ready" in allowed.get_json()["message"]
+
+
+def test_local_registration_is_closed_after_first_account(client, monkeypatch):
+    monkeypatch.setattr(local_app.camera, "resume_recognition", lambda: None)
+    monkeypatch.setattr(local_app, "_registration_is_allowed", lambda: (False, (local_app.jsonify({"status":"error"}), 403)))
+    with client.session_transaction() as state:
+        state["csrf_token"] = "x" * 40
+    response = client.post("/register", headers={"X-CSRF-Token": "x" * 40}, json={"username": "bob"})
+    assert response.status_code == 403
