@@ -394,8 +394,10 @@ async function testMutationFormGuards() {
       for (const [id, value] of Object.entries(item.fields)) document.querySelector("#" + id).value = value;
       const originalFetch = window.fetch;
       let finishRequest;
+      let postCount = 0;
       window.fetch = async (url, options = {}) => {
         if (url === item.endpoint && String(options.method || "GET").toUpperCase() === "POST") {
+          postCount += 1;
           return await new Promise((resolve) => {
             finishRequest = () => resolve(jsonResponse(item.success, 201));
           });
@@ -409,8 +411,7 @@ async function testMutationFormGuards() {
       assert(button.disabled && button.textContent === item.disabledLabel, item.page + ": submit button did not show its busy state");
 
       form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
-      const mutationCalls = calls.filter((call) => call.url === item.endpoint && call.method === "POST");
-      assert(mutationCalls.length === 1, item.page + ": duplicate submission reached the API");
+      assert(postCount === 1, item.page + ": duplicate submission reached the API");
 
       finishRequest();
       await wait(30);
