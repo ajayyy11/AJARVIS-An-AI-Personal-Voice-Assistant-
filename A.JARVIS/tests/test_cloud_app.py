@@ -65,6 +65,11 @@ class FakeConnection:
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(cloud_app, "ensure_cloud_schema", lambda: None)
+    monkeypatch.setattr(
+        cloud_app,
+        "_database",
+        lambda: FakeConnection(FakeCursor(fetchone_value=(0,))),
+    )
     cloud_app.app.config.update(TESTING=True, SECRET_KEY="test-only-cloud-secret-key-12345678901234567890")
     with cloud_app.app.test_client() as test_client:
         yield test_client
@@ -271,7 +276,7 @@ def test_registration_rejects_short_password_before_database(client, monkeypatch
 
 def test_login_uses_password_hash_and_does_not_reveal_username_exists(client, monkeypatch):
     password_hash = generate_password_hash("my-strong-password-123")
-    cursor = FakeCursor(fetchone_value=(password_hash,))
+    cursor = FakeCursor(fetchone_value=(password_hash, 0))
     connection = FakeConnection(cursor)
     monkeypatch.setattr(cloud_app, "_database", lambda: connection)
 
@@ -837,3 +842,86 @@ def test_history_api_rejects_ambiguous_cursor_parameters(client):
     login_session(client)
     response = client.get("/api/history?after_id=5&before_id=10")
     assert response.status_code == 400
+
+
+
+def test_login_rate_limit_is_per_username_even_when_client_ip_is_shared(client, monkeypatch):
+    password_hash = generate_password_hash("not-the-password")
+    cursor = FakeCursor(fetchone_value=(password_hash, 0))
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    username = "target_account"
+    cloud_app._auth_username_attempts.pop(username, None)
+    ip_address = "198.51.100.72"
+    cloud_app._auth_attempts.pop(ip_address, None)
+    try:
+        for _ in range(cloud_app.MAX_LOGIN_ATTEMPTS):
+            response = client.post(
+                "/api/auth/login",
+                environ_base={"REMOTE_ADDR": ip_address},
+                json={"username": username, "password": "wrong"},
+            )
+            assert response.status_code == 401
+        limited = client.post(
+            "/api/auth/login",
+            environ_base={"REMOTE_ADDR": ip_address},
+            json={"username": username, "password": "wrong"},
+        )
+        assert limited.status_code == 429
+    finally:
+        cloud_app._auth_username_attempts.pop(username, None)
+        cloud_app._auth_attempts.pop(ip_address, None)
+
+
+def test_unknown_username_still_verifies_dummy_password_hash(client, monkeypatch):
+    cursor = FakeCursor(fetchone_value=None)
+    monkeypatch.setattr(cloud_app, "_database", lambda: FakeConnection(cursor))
+    calls = []
+    monkeypatch.setattr(
+        cloud_app,
+        "check_password_hash",
+        lambda encoded, password: calls.append((encoded, password)) or False,
+    )
+    response = client.post(
+        "/api/auth/login",
+        json={"username": "unknown_user", "password": "wrong-password"},
+    )
+    assert response.status_code == 401
+    assert len(calls) == 1
+    assert calls[0][0] == cloud_app._DUMMY_PASSWORD_HASH
+
+
+def test_logout_increments_session_version_and_invalidates_old_cookie(client, monkeypatch):
+    login_session(client, username="revocation_user", csrf="revoke-token")
+    cursor = FakeCursor()
+    cursor.rowcount = 1
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    response = client.post("/api/auth/logout", headers={"X-CSRF-Token": "revoke-token"}, json={})
+    assert response.status_code == 200
+    assert connection.committed is True
+    assert "UPDATE cloud_users SET session_version = session_version + 1" in cursor.executed[0][0]
+    with client.session_transaction() as state:
+        assert "user" not in state
+
+
+def test_cloud_security_headers_include_csp_and_hsts_on_https(client):
+    response = client.get("/healthz", base_url="https://ajarvis-cloud.onrender.com")
+    assert response.status_code == 200
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
+
+
+def test_dashboard_uses_static_scripts_and_pinned_chartjs_with_sri(client, monkeypatch):
+    login_session(client)
+    monkeypatch.setattr(cloud_app, "get_latest_id", lambda **_kwargs: 0)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "cloud-dashboard.js" in html
+    assert "cloud-dashboard.css" in html
+    assert "chart.js@4.5.1" in html
+    assert "integrity=" in html
+    assert "<script>" not in html
+    assert "</head>" in html
