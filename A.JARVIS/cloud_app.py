@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import secrets
 import time
+from urllib.parse import urlsplit
 from threading import Lock
 from typing import Any
 
@@ -67,6 +68,28 @@ app.config["MAX_CONTENT_LENGTH"] = Config.MAX_CONTENT_LENGTH_BYTES
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = Config.SESSION_COOKIE_SECURE
+
+_DEFAULT_CLOUD_HOSTS = {"ajarvis-cloud.onrender.com", "localhost", "127.0.0.1"}
+_CLOUD_ALLOWED_HOSTS = {
+    value.strip().lower()
+    for value in os.getenv("ALLOWED_HOSTS", "").split(",")
+    if value.strip()
+}
+_CLOUD_ALLOWED_HOSTS.update(_DEFAULT_CLOUD_HOSTS)
+if os.getenv("RENDER_EXTERNAL_HOSTNAME"):
+    _CLOUD_ALLOWED_HOSTS.add(os.environ["RENDER_EXTERNAL_HOSTNAME"].strip().lower())
+
+
+@app.before_request
+def reject_untrusted_cloud_host():
+    """Only accept the Render service hostname or explicitly configured domains."""
+    try:
+        hostname = urlsplit("//" + request.host).hostname
+    except ValueError:
+        hostname = None
+    if not hostname or hostname.lower() not in _CLOUD_ALLOWED_HOSTS:
+        return jsonify({"error": "Untrusted Host header."}), 421
+    return None
 
 logger = logging.getLogger(__name__)
 _schema_lock = Lock()
@@ -400,15 +423,6 @@ def _ai_quota_response():
     response.status_code = 429
     response.headers["Retry-After"] = str(ASSISTANT_WINDOW_SECONDS)
     return response
-
-
-def _record_auth_failure() -> None:
-    now = datetime.now(timezone.utc).timestamp()
-    ip_address = request.remote_addr or "unknown"
-    with _auth_lock:
-        attempts = [stamp for stamp in _auth_attempts.get(ip_address, []) if now - stamp < LOGIN_WINDOW_SECONDS]
-        attempts.append(now)
-        _auth_attempts[ip_address] = attempts
 
 
 def _assistant_rate_limited(username: str) -> bool:
@@ -1118,7 +1132,7 @@ def login_account():
         conn = _database()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT password_hash FROM cloud_users WHERE username = %s",
+            "SELECT password_hash, session_version FROM cloud_users WHERE username = %s",
             (account_name,),
         )
         row = cursor.fetchone()
@@ -1127,6 +1141,7 @@ def login_account():
         candidate_hash = row[0] if row else _DUMMY_PASSWORD_HASH
         password_matches = check_password_hash(candidate_hash, password)
         valid = bool(row and password_matches)
+        account_session_version = int(row[1]) if row else 0
     except Exception:
         logger.error("Cloud login store is unavailable.")
         return jsonify({"error": "Login is temporarily unavailable. Please try again."}), 503
