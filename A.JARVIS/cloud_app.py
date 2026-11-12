@@ -20,6 +20,7 @@ from typing import Any
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import Config
 from database.db import get_connection
@@ -58,6 +59,9 @@ from intelligence.multimodal import (
 )
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+# Render sits behind one trusted reverse proxy. Trust exactly one forwarded client
+# address and scheme so rate limits and HTTPS security headers use the real request.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 app.config.from_object(Config)
 app.config["MAX_CONTENT_LENGTH"] = Config.MAX_CONTENT_LENGTH_BYTES
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -70,6 +74,7 @@ _schema_ready = False
 _genai_client = None
 _genai_lock = Lock()
 _auth_attempts: dict[str, list[float]] = {}
+_auth_username_attempts: dict[str, list[float]] = {}
 _auth_lock = Lock()
 _assistant_requests: dict[str, list[float]] = {}
 _assistant_lock = Lock()
@@ -77,8 +82,10 @@ _registration_attempts: dict[str, list[float]] = {}
 _registration_lock = Lock()
 
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,31}$")
-MAX_LOGIN_ATTEMPTS = 10
+MAX_LOGIN_ATTEMPTS = 10  # per username
+MAX_LOGIN_ATTEMPTS_PER_IP = 30
 LOGIN_WINDOW_SECONDS = 15 * 60
+_DUMMY_PASSWORD_HASH = generate_password_hash("AJARVIS timing equalisation value; never used as a credential")
 MAX_ASSISTANT_REQUESTS = 20
 ASSISTANT_WINDOW_SECONDS = 60
 MAX_REGISTRATION_ATTEMPTS = 5
@@ -105,9 +112,11 @@ def ensure_cloud_schema() -> None:
                 id BIGSERIAL PRIMARY KEY,
                 username VARCHAR(32) NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
+                session_version INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """,
+            "ALTER TABLE cloud_users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0",
             """
             CREATE TABLE IF NOT EXISTS cloud_notes (
                 id BIGSERIAL PRIMARY KEY,
@@ -235,7 +244,12 @@ def _database():
 def _is_authenticated() -> bool:
     username = session.get("user")
     login_time_value = session.get("login_time")
-    if not isinstance(username, str) or not username or not isinstance(login_time_value, str):
+    session_version = session.get("session_version", 0)
+    if (
+        not isinstance(username, str) or not username
+        or not isinstance(login_time_value, str)
+        or isinstance(session_version, bool) or not isinstance(session_version, int)
+    ):
         session.clear()
         return False
     try:
@@ -247,6 +261,27 @@ def _is_authenticated() -> bool:
         session.clear()
         return False
     if elapsed < 0 or elapsed > Config.SESSION_TIMEOUT_MINUTES * 60:
+        session.clear()
+        return False
+
+    # Signed cookies are otherwise replayable after logout. Compare a server-side
+    # version on every authenticated request so revoking a session invalidates copies.
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        cursor.execute("SELECT session_version FROM cloud_users WHERE username = %s", (username,))
+        row = cursor.fetchone()
+        current_version = int(row[0]) if row else None
+    except Exception:
+        logger.warning("Cloud session revocation check is unavailable.")
+        return False
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+    if current_version is None or current_version != session_version:
         session.clear()
         return False
     return True
@@ -266,23 +301,74 @@ def _require_csrf():
     return None
 
 
-def _new_session(username: str) -> str:
+def _new_session(username: str, session_version: int = 0) -> str:
     session.clear()
     csrf_token = secrets.token_urlsafe(32)
     session["user"] = username
     session["login_time"] = datetime.now(timezone.utc).isoformat()
+    session["session_version"] = int(session_version)
     session["csrf_token"] = csrf_token
     return csrf_token
 
 
-def _auth_rate_limited() -> bool:
-    now = datetime.now(timezone.utc).timestamp()
+def _auth_rate_limited(username: str | None = None) -> bool:
+    """Limit both a real client IP and a normalized account name independently."""
+    now = time.monotonic()
     ip_address = request.remote_addr or "unknown"
+    account = username.strip().lower()[:32] if isinstance(username, str) and username.strip() else None
     with _auth_lock:
-        attempts = [stamp for stamp in _auth_attempts.get(ip_address, []) if now - stamp < LOGIN_WINDOW_SECONDS]
-        _auth_attempts[ip_address] = attempts
-        return len(attempts) >= MAX_LOGIN_ATTEMPTS
+        ip_attempts = [
+            stamp for stamp in _auth_attempts.get(ip_address, [])
+            if now - stamp < LOGIN_WINDOW_SECONDS
+        ]
+        _auth_attempts[ip_address] = ip_attempts
+        account_attempts = []
+        if account:
+            account_attempts = [
+                stamp for stamp in _auth_username_attempts.get(account, [])
+                if now - stamp < LOGIN_WINDOW_SECONDS
+            ]
+            _auth_username_attempts[account] = account_attempts
+        if len(_auth_attempts) > 2000:
+            for key, stamps in list(_auth_attempts.items()):
+                if not stamps or now - stamps[-1] >= LOGIN_WINDOW_SECONDS:
+                    _auth_attempts.pop(key, None)
+        if len(_auth_username_attempts) > 5000:
+            for key, stamps in list(_auth_username_attempts.items()):
+                if not stamps or now - stamps[-1] >= LOGIN_WINDOW_SECONDS:
+                    _auth_username_attempts.pop(key, None)
+        return (
+            len(ip_attempts) >= MAX_LOGIN_ATTEMPTS_PER_IP
+            or (account is not None and len(account_attempts) >= MAX_LOGIN_ATTEMPTS)
+        )
 
+
+def _record_auth_failure(username: str | None = None) -> None:
+    now = time.monotonic()
+    ip_address = request.remote_addr or "unknown"
+    account = username.strip().lower()[:32] if isinstance(username, str) and username.strip() else None
+    with _auth_lock:
+        ip_attempts = [
+            stamp for stamp in _auth_attempts.get(ip_address, [])
+            if now - stamp < LOGIN_WINDOW_SECONDS
+        ]
+        ip_attempts.append(now)
+        _auth_attempts[ip_address] = ip_attempts
+        if account:
+            account_attempts = [
+                stamp for stamp in _auth_username_attempts.get(account, [])
+                if now - stamp < LOGIN_WINDOW_SECONDS
+            ]
+            account_attempts.append(now)
+            _auth_username_attempts[account] = account_attempts
+
+
+def _clear_auth_failures(username: str) -> None:
+    ip_address = request.remote_addr or "unknown"
+    account = username.strip().lower()[:32]
+    with _auth_lock:
+        _auth_attempts.pop(ip_address, None)
+        _auth_username_attempts.pop(account, None)
 
 def _registration_rate_limited() -> bool:
     """Limit account creation attempts per client address in this process."""
@@ -349,11 +435,24 @@ def _assistant_rate_limited(username: str) -> bool:
 
 @app.after_request
 def add_security_headers(response):
-    """Set baseline browser security headers without disabling same-origin voice."""
+    """Apply same-origin browser policies; Render TLS is identified by ProxyFix."""
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self), geolocation=()")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; "
+        "script-src 'self' https://cdn.jsdelivr.net; "
+        "style-src 'self'; style-src-attr 'unsafe-inline'; "
+        "img-src 'self' data: blob:; font-src 'self' data:; "
+        "connect-src 'self' https://generativelanguage.googleapis.com; "
+        "media-src 'self' blob:; upgrade-insecure-requests"
+    )
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
@@ -994,16 +1093,23 @@ def register_account():
 
 @app.post("/api/auth/login")
 def login_account():
-    if _auth_rate_limited():
-        return jsonify({"error": "Too many login attempts. Wait 15 minutes before trying again."}), 429
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
+        if _auth_rate_limited():
+            return jsonify({"error": "Too many login attempts. Wait 15 minutes before trying again."}), 429
         _record_auth_failure()
         return jsonify({"error": "Username and password are required."}), 400
+
     username = data.get("username")
     password = data.get("password")
+    account_name = username.strip().lower() if isinstance(username, str) else None
+    if _auth_rate_limited(account_name):
+        response = jsonify({"error": "Too many login attempts. Wait 15 minutes before trying again."})
+        response.status_code = 429
+        response.headers["Retry-After"] = str(LOGIN_WINDOW_SECONDS)
+        return response
     if not isinstance(username, str) or not isinstance(password, str) or len(password) > 256:
-        _record_auth_failure()
+        _record_auth_failure(account_name)
         return jsonify({"error": "Invalid username or password."}), 401
 
     conn = cursor = None
@@ -1011,9 +1117,16 @@ def login_account():
     try:
         conn = _database()
         cursor = conn.cursor()
-        cursor.execute("SELECT password_hash FROM cloud_users WHERE username = %s", (username.strip().lower(),))
+        cursor.execute(
+            "SELECT password_hash FROM cloud_users WHERE username = %s",
+            (account_name,),
+        )
         row = cursor.fetchone()
-        valid = bool(row and check_password_hash(row[0], password))
+        # Always perform one password-hash verification, including for unknown
+        # usernames, so response time does not disclose account existence.
+        candidate_hash = row[0] if row else _DUMMY_PASSWORD_HASH
+        password_matches = check_password_hash(candidate_hash, password)
+        valid = bool(row and password_matches)
     except Exception:
         logger.error("Cloud login store is unavailable.")
         return jsonify({"error": "Login is temporarily unavailable. Please try again."}), 503
@@ -1024,13 +1137,11 @@ def login_account():
             conn.close()
 
     if not valid:
-        _record_auth_failure()
+        _record_auth_failure(account_name)
         return jsonify({"error": "Invalid username or password."}), 401
-    with _auth_lock:
-        _auth_attempts.pop(request.remote_addr or "unknown", None)
-    token = _new_session(username.strip().lower())
+    _clear_auth_failures(account_name)
+    token = _new_session(account_name, account_session_version)
     return jsonify({"ok": True, "csrf_token": token})
-
 
 @app.post("/api/auth/logout")
 def logout_account():
@@ -1040,6 +1151,28 @@ def logout_account():
     csrf_error = _require_csrf()
     if csrf_error:
         return csrf_error
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE cloud_users SET session_version = session_version + 1 WHERE username = %s",
+            (session["user"],),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return jsonify({"error": "Your session could not be revoked. Please retry."}), 503
+        conn.commit()
+    except Exception:
+        if conn is not None:
+            conn.rollback()
+        logger.warning("Could not revoke cloud session.")
+        return jsonify({"error": "Logout could not be completed. Please retry."}), 503
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
     session.clear()
     return jsonify({"ok": True})
 
