@@ -103,3 +103,23 @@ def test_camera_frame_accessor_rejects_stale_frames(monkeypatch):
     assert instance.get_latest_frame()==[[1]]
     monkeypatch.setattr(camera_module.time,"monotonic",lambda:103.0)
     assert instance.get_latest_frame() is None
+
+
+
+def test_camera_pause_and_resume_recognition():
+    camera = camera_module.Camera.__new__(camera_module.Camera)
+    camera.lock = threading.RLock()
+    camera.recognition_enabled = True
+    camera.latest_frame = None
+    camera.detected_results = [("alice", (1, 2, 3, 4))]
+    camera._candidate_username = "alice"
+    camera._candidate_count = 2
+    camera._stable_username = "alice"
+    camera.last_recognition_at = 123.0
+    camera._last_recognition_frame_at = 456.0
+    camera.pause_recognition()
+    assert camera.recognition_enabled is False
+    assert camera._stable_username is None
+    camera.resume_recognition()
+    assert camera.recognition_enabled is True
+    assert camera._last_recognition_frame_at == 0.0
