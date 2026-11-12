@@ -505,6 +505,73 @@ async function testDocumentAndVisualFlows() {
   } finally { oversizedImage.dom.window.close(); }
 }
 
+async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
+  const dashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
+  const scriptStart = dashboard.indexOf("<script>");
+  const scriptEnd = dashboard.indexOf("</script>", scriptStart);
+  const source = dashboard.slice(scriptStart + "<script>".length, scriptEnd);
+  const errorStart = source.indexOf("recognition.onerror = (event) => {");
+  const endMarker = "\\n      recognition.onend = () => {";
+  const errorEnd = source.indexOf(endMarker, errorStart);
+  const onendStart = errorEnd + endMarker.length - "recognition.onend = () => {".length;
+  const onendEnd = source.indexOf("\\n      recognition.onresult = async (event) => {", onendStart);
+  const clickStart = source.indexOf("document.getElementById('ai-core').addEventListener('click', () => {");
+  const clickEnd = source.indexOf("\\n      });\\n    } else {", clickStart);
+  assert(errorStart >= 0 && errorEnd > errorStart, "desktop voice: error handler could not be extracted");
+  assert(onendEnd > onendStart, "desktop voice: onend handler could not be extracted");
+  assert(clickStart >= 0 && clickEnd > clickStart, "desktop voice: manual retry handler could not be extracted");
+
+  const dom = new JSDOM('<!doctype html><div id="ai-core"></div><div id="mic-status"></div>', {
+    url: "http://127.0.0.1:5000/dashboard",
+    runScripts: "outside-only",
+    pretendToBeVisual: true,
+  });
+  const { window } = dom;
+  let stoppedStreams = 0;
+  let restartRequests = 0;
+  let recognitionStarts = 0;
+  window.speechSynthesis = { speaking: false, cancel() {} };
+  const handlers = source.slice(errorStart, errorEnd)
+    + "\\n" + source.slice(onendStart, onendEnd)
+    + "\\n" + source.slice(clickStart, clickEnd) + "\\n      });";
+  window.eval(
+    'let recognitionStarting = false;\\n' +
+    'let recognitionActive = false;\\n' +
+    'let recognitionStartWatchdog = null;\\n' +
+    'let recognitionBlocked = false;\\n' +
+    'let shouldListen = true;\\n' +
+    'let speechHold = false;\\n' +
+    'let speechGeneration = 0;\\n' +
+    'let recognitionRestartTimer = null;\\n' +
+    'let audioContext = null;\\n' +
+    'const aiStatus = { textContent: "" };\\n' +
+    'const statusText = document.getElementById("mic-status");\\n' +
+    'const voiceLanguageSelect = { value: "en-IN" };\\n' +
+    'const stopSpeechButton = { disabled: true };\\n' +
+    'const recognition = { lang: "en-IN", start() { recognitionStarts += 1; } };\\n' +
+    'function showToast() {}\\n' +
+    'function stopMicReactiveSystem() { stoppedStreams += 1; }\\n' +
+    'function scheduleRecognitionRestart() { if (shouldListen && !recognitionBlocked) restartRequests += 1; }\\n' +
+    'function startRecognitionSafely() { if (!shouldListen || recognitionBlocked) return false; recognition.start(); return true; }\\n' +
+    'window.__qaCounters = () => ({ recognitionBlocked, shouldListen, stoppedStreams, restartRequests, recognitionStarts, status: statusText.textContent });\\n' +
+    handlers + '\\n' +
+    'recognition.onerror({ error: "audio-capture" });\\n' +
+    'recognition.onend();'
+  );
+  let state = window.__qaCounters();
+  assert(state.recognitionBlocked && !state.shouldListen, "desktop voice: missing microphone did not block automatic restarts");
+  assert(state.stoppedStreams === 1, "desktop voice: microphone visualizer was not stopped");
+  assert(state.restartRequests === 0, "desktop voice: onend scheduled a restart without a microphone");
+  assert(state.status.includes("TAP THE CORE TO RETRY"), "desktop voice: missing microphone recovery instruction is absent");
+
+  window.document.getElementById("ai-core").click();
+  state = window.__qaCounters();
+  assert(!state.recognitionBlocked && state.shouldListen, "desktop voice: reactor tap did not unblock speech recognition");
+  assert(state.recognitionStarts === 1, "desktop voice: reactor tap did not start recognition exactly once");
+  successes.push("desktop microphone-missing recovery blocks restart loop and restores manual retry");
+  dom.window.close();
+}
+
 async function testLocalMicrophoneVisualizerLifecycle() {
   const localDashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
   const scriptStart = localDashboard.indexOf("<script>");
@@ -623,6 +690,7 @@ async function testAuthenticationPages() {
   await testMutationFormGuards();
   await testTaskSaveRefreshFailureIsReportedSeparately();
   await testDocumentAndVisualFlows();
+  await testLocalSpeechRecoveryWhenMicrophoneIsMissing();
   await testLocalMicrophoneVisualizerLifecycle();
   await testAuthenticationPages();
   console.log("BROWSER_SMOKE_OK " + successes.length);
