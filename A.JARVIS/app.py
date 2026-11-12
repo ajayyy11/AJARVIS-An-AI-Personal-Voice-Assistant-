@@ -1,5 +1,8 @@
 from flask import Flask, render_template, Response, redirect, url_for, jsonify, request, session
 import hmac
+import ipaddress
+from functools import wraps
+from urllib.parse import urlsplit
 import secrets
 import threading
 from config import Config
@@ -62,6 +65,65 @@ app.config.update(
         in {"1", "true", "yes", "on"},
 )
 
+LOCAL_ALLOWED_HOSTS = {
+    host.strip().lower()
+    for host in os.getenv("AJARVIS_ALLOWED_HOSTS", "localhost,127.0.0.1,::1").split(",")
+    if host.strip()
+}
+_local_registration_lock = threading.Lock()
+
+
+@app.before_request
+def reject_untrusted_host():
+    """Reject arbitrary Host headers before routes touch the camera or database."""
+    try:
+        hostname = urlsplit("//" + request.host).hostname
+    except ValueError:
+        hostname = None
+    if not hostname or hostname.lower() not in LOCAL_ALLOWED_HOSTS:
+        return jsonify({"error": "Untrusted Host header."}), 421
+    return None
+
+
+def _serialize_registration(handler):
+    @wraps(handler)
+    def wrapper(*args, **kwargs):
+        # This is a local, single-process bootstrap lock. It prevents parallel
+        # first-user registrations from both observing an empty users table.
+        with _local_registration_lock:
+            return handler(*args, **kwargs)
+    return wrapper
+
+
+def _registration_is_allowed():
+    if is_authenticated():
+        return True, None
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users")
+        row = cursor.fetchone()
+        user_count = int(row[0]) if row else 0
+        if user_count == 0:
+            return True, None
+        return False, (jsonify({
+            "status": "error",
+            "message": "Registration is closed. Sign in with an existing account first.",
+        }), 403)
+    except Exception:
+        app.logger.warning("Could not verify first-user registration state", exc_info=True)
+        return False, (jsonify({
+            "status": "error",
+            "message": "Registration is temporarily unavailable.",
+        }), 503)
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
 _face_cache_loaded = False
 _face_cache_lock = threading.Lock()
 def _ensure_face_cache_loaded():
@@ -95,7 +157,9 @@ def _csrf_is_valid():
 @app.route("/")
 def home():
     if is_authenticated():
+        camera.pause_recognition()
         return redirect(url_for("dashboard"))
+    camera.resume_recognition()
     return render_template("home.html")
 
 
@@ -105,7 +169,9 @@ def home():
 @app.route("/login")
 def login():
     if is_authenticated():
+        camera.pause_recognition()
         return redirect(url_for("dashboard"))
+    camera.resume_recognition()
     return render_template("login.html")
 
 
@@ -113,9 +179,29 @@ def login():
 # REGISTER (GET + POST)
 # ==========================================
 @app.route("/register", methods=["GET", "POST"])
+@_serialize_registration
 def register():
+    camera.resume_recognition()
     if request.method == "GET":
-        return render_template("register.html")
+        csrf_token = session.get("csrf_token")
+        if not isinstance(csrf_token, str) or len(csrf_token) < 32:
+            csrf_token = secrets.token_urlsafe(32)
+            session["csrf_token"] = csrf_token
+        return render_template("register.html", csrf_token=csrf_token)
+
+    expected_csrf = session.get("csrf_token")
+    supplied_csrf = request.headers.get("X-CSRF-Token", "")
+    if (
+        not isinstance(expected_csrf, str)
+        or len(expected_csrf) < 32
+        or not supplied_csrf
+        or not hmac.compare_digest(expected_csrf, supplied_csrf)
+    ):
+        return jsonify({"status": "error", "message": "Security token expired. Reload the registration page and try again."}), 403
+
+    allowed, denial = _registration_is_allowed()
+    if not allowed:
+        return denial
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -200,7 +286,17 @@ def register():
 # ==========================================
 @app.route("/video_feed")
 def video_feed():
-    return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    # The local app binds to loopback. Check it again so future bind changes
+    # cannot accidentally publish the biometric stream to a LAN client.
+    try:
+        remote_ip = ipaddress.ip_address(request.remote_addr or "")
+    except ValueError:
+        return jsonify({"error": "Local camera access is restricted."}), 403
+    if not remote_ip.is_loopback:
+        return jsonify({"error": "Local camera access is restricted."}), 403
+    response = Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ==========================================
@@ -209,6 +305,7 @@ def video_feed():
 @app.route("/check_access")
 def check_access():
     if is_authenticated():
+        camera.pause_recognition()
         response = jsonify({"access": True, "user": session.get("user")})
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -225,6 +322,7 @@ def check_access():
         return response
     if detected:
         grant_access(detected)
+        camera.pause_recognition()
         camera.reset_detected_user()
         response = jsonify({"access": True, "user": detected, "camera_ready": camera_ready})
     else:
@@ -240,6 +338,7 @@ def check_access():
 def dashboard():
     if not is_authenticated():
         return redirect(url_for("home"))
+    camera.pause_recognition()
     csrf_token = session.get("csrf_token")
     if not isinstance(csrf_token, str) or len(csrf_token) < 32:
         csrf_token = secrets.token_urlsafe(32)
@@ -721,6 +820,7 @@ def logout():
     except AutomationError:
         app.logger.warning("Could not cancel pending automation plans during logout")
     revoke_access()
+    camera.resume_recognition()
     return redirect(url_for("home"))
 
 
