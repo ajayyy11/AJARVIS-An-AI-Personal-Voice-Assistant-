@@ -210,7 +210,11 @@
 
   async function sendCommand(command) {
     const trimmed = String(command || "").trim();
-    if (!trimmed || isProcessing) return;
+    if (!trimmed) return;
+    if (isProcessing) {
+      toast("AJARVIS is still processing the previous request. Your new command has not been sent yet.", false, "PLEASE WAIT");
+      return;
+    }
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     isSpeaking = false;
     isProcessing = true;
@@ -248,6 +252,11 @@
     event.preventDefault();
     const input = $("commandInput");
     const command = input.value;
+    if (isProcessing) {
+      toast("AJARVIS is still processing your previous message. This message is still here; send it again when the reply is ready.", false, "PLEASE WAIT");
+      return;
+    }
+    if (!command.trim()) return;
     input.value = "";
     sendCommand(command);
   });
@@ -281,12 +290,18 @@
     }
     if (isSpeaking) stopSpokenReply();
     if (isListening && recognitionInstance) {
+      const activeRecognition = recognitionInstance;
       manualStop = true;
-      try { recognitionInstance.stop(); } catch (_error) {}
       isListening = false;
       syncVoiceControls();
-      setAssistantStatus("ready", "READY");
-      toast("Listening stopped.", false, "MICROPHONE");
+      setAssistantStatus("thinking", "FINALIZING");
+      try {
+        activeRecognition.stop();
+      } catch (_error) {
+        if (recognitionInstance === activeRecognition) recognitionInstance = null;
+        if (!isProcessing && !isSpeaking) setAssistantStatus("ready", "READY");
+      }
+      toast("Listening stopped. Processing the speech captured so far…", false, "MICROPHONE");
       return;
     }
 
@@ -358,7 +373,7 @@
         setAssistantStatus("ready", "READY");
       }
 
-      if (submittedTranscript || manualStop || voiceErrorShown) return;
+      if (submittedTranscript || voiceErrorShown) return;
 
       const rawTranscript = capturedFinalTranscript || $("commandInput").value.trim();
       const cleanedTranscript = rawTranscript
@@ -459,14 +474,23 @@
       if (loadOlderButton) {
         loadOlderButton.hidden = historyBeforeId === null;
         loadOlderButton.disabled = historyBeforeId === null;
+        loadOlderButton.dataset.retryReset = "false";
         loadOlderButton.textContent = "Load older exchanges";
       }
     } catch (error) {
-      if (loadOlderButton) loadOlderButton.textContent = "Retry loading older exchanges";
+      if (reset) {
+        list.replaceChildren(make("p", "empty-state", "Chat history could not be loaded. Please retry."));
+      }
+      if (loadOlderButton) {
+        loadOlderButton.hidden = false;
+        loadOlderButton.disabled = false;
+        loadOlderButton.dataset.retryReset = reset ? "true" : "false";
+        loadOlderButton.textContent = reset ? "Retry loading history" : "Retry loading older exchanges";
+      }
       toast(error.message, true, "CHAT HISTORY");
     } finally {
       historyLoading = false;
-      if (loadOlderButton && historyBeforeId !== null) loadOlderButton.disabled = false;
+      if (loadOlderButton && !loadOlderButton.hidden) loadOlderButton.disabled = false;
     }
   }
 
@@ -1043,7 +1067,11 @@
   if (activePage === "activity") loadActivity().catch(error => toast(error.message, true, "ACTIVITY"));
   if (activePage === "history") {
     const loadOlderButton = $("loadOlderHistory");
-    if (loadOlderButton) loadOlderButton.addEventListener("click", () => refreshHistory(false));
+    if (loadOlderButton) {
+      loadOlderButton.addEventListener("click", () => {
+        refreshHistory(loadOlderButton.dataset.retryReset === "true");
+      });
+    }
     refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"));
   }
   loadSystemStatus();
