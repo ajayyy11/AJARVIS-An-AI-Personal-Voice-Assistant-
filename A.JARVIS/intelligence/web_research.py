@@ -22,9 +22,10 @@ DEFAULT_WEB_MODEL = "gemini-2.5-flash"
 
 _WEB_TRIGGER = re.compile(
     r"\b(?:"
-    r"search (?:the )?web|web search|search online|look up online|research online|"
-    r"latest|recent|current|today'?s news|news today|this week'?s news|"
-    r"this month'?s news"
+    r"search (?:the )?web|web search|search online|look up online|research online|find online|"
+    r"today'?s news|news today|this week'?s news|this month'?s news|"
+    r"(?:latest|recent|current)\s+(?:news|events|updates|developments|releases?|versions?|"
+    r"prices?|weather|markets?|elections?|research|announcements?|regulations?)"
     r")\b",
     re.IGNORECASE,
 )
