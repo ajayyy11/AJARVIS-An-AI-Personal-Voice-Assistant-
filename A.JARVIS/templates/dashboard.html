@@ -1931,9 +1931,14 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
           if (statusText) statusText.textContent = "ALLOW MICROPHONE ACCESS TO USE VOICE";
           showToast("Microphone access is blocked. Allow it in your browser's site settings, then tap the core to retry.");
         } else if (errorCode === "audio-capture") {
+          // Stop the automatic restart loop until an input device is reconnected.
+          // The user can retry explicitly by tapping the reactor after checking the device.
+          recognitionBlocked = true;
+          shouldListen = false;
           aiStatus.textContent = "Microphone not found";
-          if (statusText) statusText.textContent = "CHECK MICROPHONE OR HEADSET";
-          showToast("No microphone was found. Check your input device and try again.");
+          if (statusText) statusText.textContent = "CONNECT A MICROPHONE OR HEADSET, THEN TAP THE CORE TO RETRY";
+          showToast("No microphone input is available. Connect or select a microphone, then tap the core to retry.");
+
         } else if (errorCode === "language-not-supported") {
           recognitionBlocked = true;
           shouldListen = false;
