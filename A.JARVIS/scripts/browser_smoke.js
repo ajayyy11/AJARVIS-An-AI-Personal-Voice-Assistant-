@@ -527,9 +527,7 @@ async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
     pretendToBeVisual: true,
   });
   const { window } = dom;
-  let stoppedStreams = 0;
-  let restartRequests = 0;
-  let recognitionStarts = 0;
+  window.__qa = { stoppedStreams: 0, restartRequests: 0, recognitionStarts: 0 };
   window.speechSynthesis = { speaking: false, cancel() {} };
   const handlers = source.slice(errorStart, errorEnd)
     + "\n" + source.slice(onendStart, onendEnd)
@@ -548,12 +546,12 @@ async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
     'const statusText = document.getElementById("mic-status");\n' +
     'const voiceLanguageSelect = { value: "en-IN" };\n' +
     'const stopSpeechButton = { disabled: true };\n' +
-    'const recognition = { lang: "en-IN", start() { recognitionStarts += 1; } };\n' +
+    'const recognition = { lang: "en-IN", start() { window.__qa.recognitionStarts += 1; } };\n' +
     'function showToast() {}\n' +
-    'function stopMicReactiveSystem() { stoppedStreams += 1; }\n' +
-    'function scheduleRecognitionRestart() { if (shouldListen && !recognitionBlocked) restartRequests += 1; }\n' +
+    'function stopMicReactiveSystem() { window.__qa.stoppedStreams += 1; }\n' +
+    'function scheduleRecognitionRestart() { if (shouldListen && !recognitionBlocked) window.__qa.restartRequests += 1; }\n' +
     'function startRecognitionSafely() { if (!shouldListen || recognitionBlocked) return false; recognition.start(); return true; }\n' +
-    'window.__qaCounters = () => ({ recognitionBlocked, shouldListen, stoppedStreams, restartRequests, recognitionStarts, status: statusText.textContent });\n' +
+    'window.__qaCounters = () => ({ recognitionBlocked, shouldListen, ...window.__qa, status: statusText.textContent });\n' +
     handlers + '\n' +
     'recognition.onerror({ error: "audio-capture" });\n' +
     'recognition.onend();'
