@@ -511,12 +511,12 @@ async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
   const scriptEnd = dashboard.indexOf("</script>", scriptStart);
   const source = dashboard.slice(scriptStart + "<script>".length, scriptEnd);
   const errorStart = source.indexOf("recognition.onerror = (event) => {");
-  const endMarker = "\\n      recognition.onend = () => {";
+  const endMarker = "\n      recognition.onend = () => {";
   const errorEnd = source.indexOf(endMarker, errorStart);
   const onendStart = errorEnd + endMarker.length - "recognition.onend = () => {".length;
-  const onendEnd = source.indexOf("\\n      recognition.onresult = async (event) => {", onendStart);
+  const onendEnd = source.indexOf("\n      recognition.onresult = async (event) => {", onendStart);
   const clickStart = source.indexOf("document.getElementById('ai-core').addEventListener('click', () => {");
-  const clickEnd = source.indexOf("\\n      });\\n    } else {", clickStart);
+  const clickEnd = source.indexOf("\n      });\n    } else {", clickStart);
   assert(errorStart >= 0 && errorEnd > errorStart, "desktop voice: error handler could not be extracted");
   assert(onendEnd > onendStart, "desktop voice: onend handler could not be extracted");
   assert(clickStart >= 0 && clickEnd > clickStart, "desktop voice: manual retry handler could not be extracted");
@@ -532,30 +532,30 @@ async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
   let recognitionStarts = 0;
   window.speechSynthesis = { speaking: false, cancel() {} };
   const handlers = source.slice(errorStart, errorEnd)
-    + "\\n" + source.slice(onendStart, onendEnd)
-    + "\\n" + source.slice(clickStart, clickEnd) + "\\n      });";
+    + "\n" + source.slice(onendStart, onendEnd)
+    + "\n" + source.slice(clickStart, clickEnd) + "\n      });";
   window.eval(
-    'let recognitionStarting = false;\\n' +
-    'let recognitionActive = false;\\n' +
-    'let recognitionStartWatchdog = null;\\n' +
-    'let recognitionBlocked = false;\\n' +
-    'let shouldListen = true;\\n' +
-    'let speechHold = false;\\n' +
-    'let speechGeneration = 0;\\n' +
-    'let recognitionRestartTimer = null;\\n' +
-    'let audioContext = null;\\n' +
-    'const aiStatus = { textContent: "" };\\n' +
-    'const statusText = document.getElementById("mic-status");\\n' +
-    'const voiceLanguageSelect = { value: "en-IN" };\\n' +
-    'const stopSpeechButton = { disabled: true };\\n' +
-    'const recognition = { lang: "en-IN", start() { recognitionStarts += 1; } };\\n' +
-    'function showToast() {}\\n' +
-    'function stopMicReactiveSystem() { stoppedStreams += 1; }\\n' +
-    'function scheduleRecognitionRestart() { if (shouldListen && !recognitionBlocked) restartRequests += 1; }\\n' +
-    'function startRecognitionSafely() { if (!shouldListen || recognitionBlocked) return false; recognition.start(); return true; }\\n' +
-    'window.__qaCounters = () => ({ recognitionBlocked, shouldListen, stoppedStreams, restartRequests, recognitionStarts, status: statusText.textContent });\\n' +
-    handlers + '\\n' +
-    'recognition.onerror({ error: "audio-capture" });\\n' +
+    'let recognitionStarting = false;\n' +
+    'let recognitionActive = false;\n' +
+    'let recognitionStartWatchdog = null;\n' +
+    'let recognitionBlocked = false;\n' +
+    'let shouldListen = true;\n' +
+    'let speechHold = false;\n' +
+    'let speechGeneration = 0;\n' +
+    'let recognitionRestartTimer = null;\n' +
+    'let audioContext = null;\n' +
+    'const aiStatus = { textContent: "" };\n' +
+    'const statusText = document.getElementById("mic-status");\n' +
+    'const voiceLanguageSelect = { value: "en-IN" };\n' +
+    'const stopSpeechButton = { disabled: true };\n' +
+    'const recognition = { lang: "en-IN", start() { recognitionStarts += 1; } };\n' +
+    'function showToast() {}\n' +
+    'function stopMicReactiveSystem() { stoppedStreams += 1; }\n' +
+    'function scheduleRecognitionRestart() { if (shouldListen && !recognitionBlocked) restartRequests += 1; }\n' +
+    'function startRecognitionSafely() { if (!shouldListen || recognitionBlocked) return false; recognition.start(); return true; }\n' +
+    'window.__qaCounters = () => ({ recognitionBlocked, shouldListen, stoppedStreams, restartRequests, recognitionStarts, status: statusText.textContent });\n' +
+    handlers + '\n' +
+    'recognition.onerror({ error: "audio-capture" });\n' +
     'recognition.onend();'
   );
   let state = window.__qaCounters();
