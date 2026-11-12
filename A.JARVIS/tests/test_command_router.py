@@ -169,3 +169,44 @@ def test_weather_request_failure_does_not_log_api_key(caplog, monkeypatch):
     assert reply == "Could not fetch weather data. Check your internet connection."
     assert "ConnectionError" in caplog.text
     assert secret not in caplog.text
+
+
+
+@pytest.mark.parametrize("phrase", ["commute to work", "please commute tomorrow"])
+def test_mute_router_does_not_match_commute(monkeypatch, phrase):
+    user_state.activate_user("alice")
+    presses = []
+    monkeypatch.setattr(command_router.pyautogui, "press", lambda key: presses.append(key))
+    monkeypatch.setattr(command_router, "_get_genai_client", lambda: None)
+    reply = command_router.process_command(phrase, "alice")
+    assert presses == []
+    assert "AI responses are not configured" in reply
+
+
+@pytest.mark.parametrize("phrase", ["check battery", "what is my battery", "battery status"])
+def test_battery_status_matches_explicit_intent(monkeypatch, phrase):
+    user_state.activate_user("alice")
+    class Battery:
+        percent = 74
+        power_plugged = False
+    monkeypatch.setattr(command_router.psutil, "sensors_battery", lambda: Battery())
+    reply = command_router.process_command(phrase, "alice")
+    assert "Battery is at 74%" in reply
+
+
+def test_today_question_does_not_get_swallowed_by_date_handler(monkeypatch):
+    user_state.activate_user("alice")
+    monkeypatch.setattr(command_router, "_get_genai_client", lambda: None)
+    reply = command_router.process_command("what's on today?", "alice")
+    assert "AI responses are not configured" in reply
+    assert not reply.startswith("Today is ")
+
+
+def test_find_file_without_name_returns_specific_prompt():
+    user_state.activate_user("alice")
+    assert command_router.process_command("find file", "alice") == "Please specify a file name to find."
+
+
+def test_search_for_file_without_name_returns_specific_prompt():
+    user_state.activate_user("alice")
+    assert command_router.process_command("search for file", "alice") == "Please specify a file name to find."
