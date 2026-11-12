@@ -1877,7 +1877,13 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
 
       try {
         // Text and voice commands share the same explicit activation gate.
-        await processCommand(command);
+        const response = await processCommand(command);
+        // processCommand returns null when fetch/server processing fails. Keep
+        // the user's draft available for retry, but never overwrite newer text
+        // they may have started typing while the request was in flight.
+        if (response === null && !textInput.value.trim()) {
+          textInput.value = command;
+        }
       } finally {
         sendBtn.disabled = false;
       }
