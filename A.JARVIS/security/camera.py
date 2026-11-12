@@ -6,6 +6,7 @@ logger=logging.getLogger(__name__)
 FRAME_MAX_AGE_SECONDS=2.0
 RECOGNITION_MAX_AGE_SECONDS=1.5
 REQUIRED_STABLE_MATCHES=2
+STREAM_INTERVAL_SECONDS=1/15
 class Camera:
     def __init__(self,source=0):
         self.video=cv2.VideoCapture(source)
@@ -14,7 +15,7 @@ class Camera:
         self.latest_frame=None; self.latest_frame_at=0.0; self.detected_results=[]
         self.last_recognition_at=0.0; self._last_recognition_frame_at=0.0
         self._candidate_username=None; self._candidate_count=0; self._stable_username=None
-        self.is_running=True; self.lock=threading.RLock()
+        self.is_running=True; self.recognition_enabled=True; self.lock=threading.RLock()
         self.capture_thread=threading.Thread(target=self._capture_frames,daemon=True,name="ajarvis-camera")
         self.recognition_thread=threading.Thread(target=self._recognize_faces,daemon=True,name="ajarvis-face")
         self.capture_thread.start(); self.recognition_thread.start()
@@ -44,9 +45,10 @@ class Camera:
         while self.is_running:
             frame=None; timestamp=0.0
             with self.lock:
-                if self.latest_frame is not None and self.latest_frame_at>self._last_recognition_frame_at:
+                enabled=self.recognition_enabled
+                if enabled and self.latest_frame is not None and self.latest_frame_at>self._last_recognition_frame_at:
                     frame=self.latest_frame.copy(); timestamp=self.latest_frame_at
-            if frame is None: time.sleep(.05); continue
+            if not enabled or frame is None: time.sleep(.1); continue
             try: results=check_face(frame)
             except Exception:
                 logger.exception("Face recognition failed"); results=[]
@@ -62,6 +64,15 @@ class Camera:
         with self.lock:
             self.detected_results=[]; self._candidate_username=None; self._candidate_count=0
             self._stable_username=None; self.last_recognition_at=0.0
+    def pause_recognition(self):
+        with self.lock:
+            self.recognition_enabled=False
+            self.detected_results=[]; self._candidate_username=None; self._candidate_count=0
+            self._stable_username=None; self.last_recognition_at=0.0
+    def resume_recognition(self):
+        with self.lock:
+            self._last_recognition_frame_at=0.0
+            self.recognition_enabled=True
     def get_latest_frame(self):
         with self.lock:
             if self.latest_frame is None or time.monotonic()-self.latest_frame_at>FRAME_MAX_AGE_SECONDS: return None
@@ -109,3 +120,5 @@ def get_detected_user(): return get_camera().get_detected_user()
 def reset_detected_user(): get_camera().reset_detected_user()
 def get_latest_frame(): return get_camera().get_latest_frame()
 def is_camera_ready(): return get_camera().is_camera_ready()
+def pause_recognition(): get_camera().pause_recognition()
+def resume_recognition(): get_camera().resume_recognition()
