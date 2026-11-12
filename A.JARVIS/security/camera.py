@@ -92,15 +92,25 @@ class Camera:
         return frame
     def generate_frames(self):
         while self.is_running:
+            frame_started=time.monotonic()
             frame=self.get_display_frame()
-            if frame is None: time.sleep(.1); continue
+            if frame is None:
+                time.sleep(.1)
+                continue
             try:
                 ok,buffer=cv2.imencode(".jpg",frame)
-                if not ok: time.sleep(.05); continue
+                if not ok:
+                    time.sleep(.05)
+                    continue
                 payload=buffer.tobytes()
             except Exception:
-                logger.exception("Camera frame encoding failed"); time.sleep(.1); continue
+                logger.exception("Camera frame encoding failed")
+                time.sleep(.1)
+                continue
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"+payload+b"\r\n"
+            remaining=STREAM_INTERVAL_SECONDS-(time.monotonic()-frame_started)
+            if remaining>0:
+                time.sleep(remaining)
     def close(self):
         self.is_running=False
         try: self.video.release()
