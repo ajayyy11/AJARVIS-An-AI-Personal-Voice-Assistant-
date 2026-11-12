@@ -638,6 +638,65 @@ async function testLocalMicrophoneVisualizerLifecycle() {
   dom.window.close();
 }
 
+async function testLocalTextCommandNetworkRecovery() {
+  const dashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
+  const scriptStart = dashboard.indexOf("<script>");
+  const scriptEnd = dashboard.indexOf("</script>", scriptStart);
+  const inlineScript = scriptStart >= 0 && scriptEnd > scriptStart
+    ? dashboard.slice(scriptStart + "<script>".length, scriptEnd)
+    : "";
+  assert(inlineScript, "local dashboard: inline script is missing");
+
+  const start = inlineScript.indexOf("async function executeTextCommand() {");
+  const end = inlineScript.indexOf('\n    textInput.addEventListener("keydown"', start);
+  assert(start >= 0 && end > start, "local dashboard: text command handler is missing");
+  const handler = inlineScript.slice(start, end);
+
+  const dom = new JSDOM(
+    '<!doctype html><input id="text-command-input"><button id="send-command-btn"></button><div id="transcript-box"></div>',
+    { url: "https://ajarvis.test/dashboard", runScripts: "outside-only" }
+  );
+  const { window } = dom;
+  window.eval(
+    'const textInput = document.getElementById("text-command-input");' +
+    'const sendBtn = document.getElementById("send-command-btn");' +
+    'const transcriptBox = document.getElementById("transcript-box");' +
+    'let processCommand = async () => null;\n' +
+    handler +
+    '\nwindow.runDesktopTextCommand = executeTextCommand;' +
+    '\nwindow.setProcessCommand = (fn) => { processCommand = fn; };'
+  );
+
+  const input = window.document.getElementById("text-command-input");
+  const button = window.document.getElementById("send-command-btn");
+  input.value = "open the vessel checklist";
+  await window.runDesktopTextCommand();
+  assert(
+    input.value === "open the vessel checklist",
+    "local dashboard: failed network request discarded the typed command"
+  );
+  assert(!button.disabled, "local dashboard: send button stayed disabled after failure");
+
+  window.setProcessCommand(async () => "Opened the checklist.");
+  await window.runDesktopTextCommand();
+  assert(input.value === "", "local dashboard: successful command was not cleared");
+  assert(!button.disabled, "local dashboard: send button stayed disabled after success");
+
+  // A newer draft typed while the original request is in flight must win.
+  let finishRequest;
+  window.setProcessCommand(() => new Promise((resolve) => { finishRequest = () => resolve(null); }));
+  input.value = "first message";
+  const pending = window.runDesktopTextCommand();
+  await wait(0);
+  input.value = "newer draft";
+  finishRequest();
+  await pending;
+  assert(input.value === "newer draft", "local dashboard: retry restoration overwrote a newer draft");
+
+  successes.push("desktop typed-command network failure preserves retry text and newer drafts");
+  dom.window.close();
+}
+
 async function testAuthenticationPages() {
   const css = fs.readFileSync(path.join(__dirname, "..", "static", "cloud.css"), "utf8");
   assert(css.includes("@keyframes auroraWaveDrift"), "login: animated aurora keyframes are missing");
@@ -690,6 +749,7 @@ async function testAuthenticationPages() {
   await testDocumentAndVisualFlows();
   await testLocalSpeechRecoveryWhenMicrophoneIsMissing();
   await testLocalMicrophoneVisualizerLifecycle();
+  await testLocalTextCommandNetworkRecovery();
   await testAuthenticationPages();
   console.log("BROWSER_SMOKE_OK " + successes.length);
   successes.forEach((item) => console.log("PASS " + item));
