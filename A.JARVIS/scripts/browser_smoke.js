@@ -37,7 +37,7 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
-async function mountPage(page) {
+async function mountPage(page, options = {}) {
   const html = fs.readFileSync(path.join(fixtureDir, page + ".html"), "utf8");
   const virtualConsole = new VirtualConsole();
   const runtimeErrors = [];
@@ -56,6 +56,8 @@ async function mountPage(page) {
     preferences: [],
     documents: [],
     activity: [],
+    failInitialHistory: Boolean(options.failInitialHistory),
+    initialHistoryFailureUsed: false,
     // /api/history returns records newest-first (ORDER BY id DESC).
     history: [
       { command: "Newest saved question", response: "Newest saved answer" },
@@ -82,7 +84,7 @@ async function mountPage(page) {
   class MockRecognition {
     constructor() { window.lastRecognition = this; }
     start() { if (this.onstart) this.onstart(); }
-    stop() {}
+    stop() { if (this.onend) this.onend(); }
   }
   window.SpeechRecognition = MockRecognition;
 
@@ -97,6 +99,10 @@ async function mountPage(page) {
     if (url === "/api/system") return jsonResponse({ cpu_percent: 12, memory_percent: 34 });
     if (url === "/api/reminders/claim") return jsonResponse({ reminders: [] });
     if (url === "/api/history") {
+      if (state.failInitialHistory && !state.initialHistoryFailureUsed) {
+        state.initialHistoryFailureUsed = true;
+        return jsonResponse({ error: "History temporarily unavailable." }, 503);
+      }
       return jsonResponse({ history: state.history, latest_id: 42, has_more: true, next_before_id: 40 });
     }
     if (url === "/api/history?before_id=40") {
@@ -221,7 +227,94 @@ async function testChatAndVoice() {
     assistantCall = calls.filter((call) => call.url === "/api/assistant").at(-1);
     assert(assistantCall && assistantCall.body.command === "What is the current time?", "voice transcript was not submitted exactly once");
     assert(document.querySelector("#chatLog").textContent.includes("It is 12:00 UTC."), "assistant reply was not rendered");
-    successes.push("text chat, fresh context boundary, voice transcript and reply rendering");
+
+    document.querySelector("#commandInput").value = "";
+    document.querySelector("#micButton").click();
+    const manualRecognition = window.lastRecognition;
+    manualRecognition.onresult({
+      results: [
+        Object.assign([{ transcript: "Manual stop should send this command" }], { isFinal: true }),
+      ],
+    });
+    document.querySelector("#micButton").click();
+    await wait(35);
+    assistantCall = calls.filter((call) => call.url === "/api/assistant").at(-1);
+    assert(
+      assistantCall && assistantCall.body.command === "Manual stop should send this command",
+      "manual microphone stop discarded the final transcript"
+    );
+    successes.push("text chat, fresh context boundary, automatic voice end, manual voice stop and reply rendering");
+  } finally {
+    app.dom.window.close();
+  }
+}
+
+async function testBusyChatPreservesDraft() {
+  const app = await mountPage("dashboard");
+  try {
+    const { window, document } = app;
+    const input = document.querySelector("#commandInput");
+    const originalFetch = window.fetch;
+    const commands = [];
+    let finishFirstRequest;
+    window.fetch = async (url, options = {}) => {
+      if (url === "/api/assistant") {
+        const payload = JSON.parse(options.body);
+        commands.push(payload.command);
+        if (commands.length === 1) {
+          return await new Promise((resolve) => {
+            finishFirstRequest = () => resolve(jsonResponse({ response: "First request completed." }));
+          });
+        }
+        return jsonResponse({ response: "Second request completed." });
+      }
+      return originalFetch(url, options);
+    };
+
+    input.value = "First pending message";
+    document.querySelector("#chatForm").dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true })
+    );
+    await wait(0);
+    assert(commands.length === 1, "first chat request did not start");
+
+    input.value = "Second message that must remain in the composer";
+    document.querySelector("#chatForm").dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true })
+    );
+    assert(
+      input.value === "Second message that must remain in the composer",
+      "a message submitted while AJARVIS was busy was cleared"
+    );
+    assert(commands.length === 1, "a second assistant request started before the first finished");
+
+    finishFirstRequest();
+    await wait(30);
+    document.querySelector("#chatForm").dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true })
+    );
+    await wait(30);
+    assert(commands.length === 2 && commands[1] === "Second message that must remain in the composer",
+      "preserved draft was not sent after the first reply completed");
+    successes.push("busy chat preserves the unsent draft and allows retry after completion");
+  } finally {
+    app.dom.window.close();
+  }
+}
+
+async function testHistoryInitialLoadRetry() {
+  const app = await mountPage("history", { failInitialHistory: true });
+  try {
+    const { document } = app;
+    const retry = document.querySelector("#loadOlderHistory");
+    assert(retry && !retry.hidden && !retry.disabled, "history: initial load failure did not expose an enabled retry");
+    assert(retry.textContent === "Retry loading history", "history: initial retry label is incorrect");
+    retry.click();
+    await wait(30);
+    assert(document.querySelector("#historyList").textContent.includes("Newest saved question"),
+      "history: retry after initial failure did not load conversations");
+    assert(retry.textContent === "Load older exchanges", "history: retry label was not reset after success");
+    successes.push("history initial-load failure exposes a working retry");
   } finally {
     app.dom.window.close();
   }
@@ -436,6 +529,8 @@ async function testAuthenticationPages() {
 (async () => {
   for (const [page, route] of routes) await runPageSmoke(page, route);
   await testChatAndVoice();
+  await testBusyChatPreservesDraft();
+  await testHistoryInitialLoadRetry();
   await testFeatureForms();
   await testDocumentAndVisualFlows();
   await testLocalMicrophoneVisualizerLifecycle();
