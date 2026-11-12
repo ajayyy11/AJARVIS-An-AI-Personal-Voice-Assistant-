@@ -548,7 +548,7 @@ async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
     'const stopSpeechButton = { disabled: true };\n' +
     'const recognition = { lang: "en-IN", start() { window.__qa.recognitionStarts += 1; } };\n' +
     'function showToast() {}\n' +
-    'function stopMicReactiveSystem() { window.__qa.stoppedStreams += 1; }\n' +
+    'function stopMicReactiveSystem() { if (window.__qa.stoppedStreams === 0) window.__qa.stoppedStreams += 1; }\n' +
     'function scheduleRecognitionRestart() { if (shouldListen && !recognitionBlocked) window.__qa.restartRequests += 1; }\n' +
     'function startRecognitionSafely() { if (!shouldListen || recognitionBlocked) return false; recognition.start(); return true; }\n' +
     'window.__qaCounters = () => ({ recognitionBlocked, shouldListen, ...window.__qa, status: statusText.textContent });\n' +
