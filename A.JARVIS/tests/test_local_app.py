@@ -391,3 +391,17 @@ def test_logout_rejects_cross_site_get_and_requires_csrf_post(client,monkeypatch
     assert allowed.status_code==302
     with client.session_transaction() as session:
         assert "user" not in session
+
+
+
+def test_desktop_audio_capture_error_pauses_auto_restart_and_keeps_manual_retry():
+    dashboard = (Path(__file__).resolve().parents[1] / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    audio_error = dashboard.split('} else if (errorCode === "audio-capture") {', 1)[1].split('} else if (errorCode === "language-not-supported") {', 1)[0]
+    assert 'recognitionBlocked = true;' in audio_error
+    assert 'shouldListen = false;' in audio_error
+    assert 'TAP THE CORE TO RETRY' in audio_error
+    assert 'scheduleRecognitionRestart(450);' in dashboard
+    retry_handler = dashboard.split("document.getElementById('ai-core').addEventListener('click', () => {", 1)[1].split("});", 1)[0]
+    assert "shouldListen = true;" in retry_handler
+    assert "recognitionBlocked = false;" in retry_handler
+    assert "startRecognitionSafely();" in retry_handler
