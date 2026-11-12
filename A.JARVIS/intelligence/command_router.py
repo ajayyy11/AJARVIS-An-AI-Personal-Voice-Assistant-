@@ -224,7 +224,11 @@ def process_command(command, username):
         return reply
 
     # DATE — match a real date intent, not the "date" substring in "update".
-    if re.search(r"\bdate\b", command) or re.search(r"\bwhat day\b", command) or re.search(r"\btoday\b", command):
+    if re.match(
+        r"^(?:(?:what(?:\s+is|'s)\s+)?(?:the\s+)?date(?:\s+today)?|"
+        r"what\s+day\s+is\s+it(?:\s+today)?|today'?s\s+date)[?.!]*$",
+        command,
+    ):
         today = datetime.datetime.now().strftime("%A, %B %d, %Y")
         reply = f"Today is {today}."
         add_memory(command, reply, username)
@@ -288,7 +292,7 @@ def process_command(command, username):
         return reply
 
     # ── BATTERY STATUS ──
-    if "battery" in command:
+    if re.match(r"^(?:please\s+)?(?:(?:check\s+(?:my\s+)?)?battery(?:\s+(?:status|level))?|what(?:\s+is|'s)\s+(?:my\s+)?battery|how\s+much\s+battery)\b", command):
         battery = psutil.sensors_battery()
         if battery:
             percent = int(battery.percent)
@@ -300,10 +304,13 @@ def process_command(command, username):
         return reply
 
     # ── FILE SEARCH ──
-    if "find file" in command or "search for file" in command:
-        target = command.replace("find file", "").replace("search for file", "").strip()
+    file_search = re.match(r"^(?:please\s+)?(?:find\s+file|search\s+for\s+file)\b(.*)$", command)
+    if file_search:
+        target = file_search.group(1).strip().lstrip(" :,-").strip()
         if not target:
             reply = "Please specify a file name to find."
+            add_memory(command, reply, username)
+            return reply
         else:
             reply = f"Searching for {target}. This might take a moment."
             add_memory(command, reply, username)
@@ -355,7 +362,7 @@ def process_command(command, username):
         add_memory(command, reply, username)
         return reply
 
-    if "mute" in command or "unmute" in command:
+    if re.search(r"\b(?:mute|unmute)\b", command):
         pyautogui.press("volumemute")
         reply = "Volume toggled."
         add_memory(command, reply, username)
