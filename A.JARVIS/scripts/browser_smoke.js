@@ -363,6 +363,93 @@ async function testFeatureForms() {
   } finally { settings.dom.window.close(); }
 }
 
+async function testMutationFormGuards() {
+  const cases = [
+    {
+      page: "tasks", formId: "taskForm", buttonSelector: 'button[type="submit"]',
+      endpoint: "/api/tasks", fields: { taskTitle: "Guarded task" },
+      success: { task: { id: 1, title: "Guarded task", details: "", done: false } },
+      disabledLabel: "Adding…",
+    },
+    {
+      page: "notes", formId: "noteForm", buttonSelector: 'button[type="submit"]',
+      endpoint: "/api/notes", fields: { noteText: "Guarded note" },
+      success: { ok: true, note: { id: 1, text: "Guarded note" } },
+      disabledLabel: "Saving…",
+    },
+    {
+      page: "memory", formId: "preferenceForm", buttonSelector: 'button[type="submit"]',
+      endpoint: "/api/preferences", fields: { preferenceKey: "answer_style", preferenceValue: "concise" },
+      success: { preference: { key: "answer_style", value: "concise" } },
+      disabledLabel: "Saving…",
+    },
+  ];
+
+  for (const item of cases) {
+    const app = await mountPage(item.page);
+    try {
+      const { window, document, calls } = app;
+      const form = document.querySelector("#" + item.formId);
+      const button = form.querySelector(item.buttonSelector);
+      for (const [id, value] of Object.entries(item.fields)) document.querySelector("#" + id).value = value;
+      const originalFetch = window.fetch;
+      let finishRequest;
+      window.fetch = async (url, options = {}) => {
+        if (url === item.endpoint && String(options.method || "GET").toUpperCase() === "POST") {
+          return await new Promise((resolve) => {
+            finishRequest = () => resolve(jsonResponse(item.success, 201));
+          });
+        }
+        return originalFetch(url, options);
+      };
+
+      form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+      await wait(0);
+      assert(form.dataset.submitting === "true", item.page + ": form did not enter its submitting state");
+      assert(button.disabled && button.textContent === item.disabledLabel, item.page + ": submit button did not show its busy state");
+
+      form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+      const mutationCalls = calls.filter((call) => call.url === item.endpoint && call.method === "POST");
+      assert(mutationCalls.length === 1, item.page + ": duplicate submission reached the API");
+
+      finishRequest();
+      await wait(30);
+      assert(!button.disabled && !form.dataset.submitting, item.page + ": form did not recover after the request");
+      successes.push("duplicate-submit guard: " + item.page);
+    } finally {
+      app.dom.window.close();
+    }
+  }
+}
+
+async function testTaskSaveRefreshFailureIsReportedSeparately() {
+  const app = await mountPage("tasks");
+  try {
+    const { window, document } = app;
+    const originalFetch = window.fetch;
+    window.fetch = async (url, options = {}) => {
+      if (url === "/api/tasks" && String(options.method || "GET").toUpperCase() === "POST") {
+        return jsonResponse({ task: { id: 7, title: "Persisted task" } }, 201);
+      }
+      if (url === "/api/tasks" && String(options.method || "GET").toUpperCase() === "GET") {
+        return jsonResponse({ error: "Task list refresh failed." }, 503);
+      }
+      return originalFetch(url, options);
+    };
+    document.querySelector("#taskTitle").value = "Persisted task";
+    document.querySelector("#taskForm").dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true })
+    );
+    await wait(35);
+    const messages = document.querySelector("#toastRegion").textContent;
+    assert(messages.includes("Task saved."), "task: successful save was not acknowledged separately from refresh");
+    assert(messages.includes("Your task was saved, but the task list could not refresh."), "task: refresh failure was misreported as a save failure");
+    successes.push("task save success is preserved when list refresh fails");
+  } finally {
+    app.dom.window.close();
+  }
+}
+
 async function testDocumentAndVisualFlows() {
   const documents = await mountPage("documents");
   try {
@@ -532,6 +619,8 @@ async function testAuthenticationPages() {
   await testBusyChatPreservesDraft();
   await testHistoryInitialLoadRetry();
   await testFeatureForms();
+  await testMutationFormGuards();
+  await testTaskSaveRefreshFailureIsReportedSeparately();
   await testDocumentAndVisualFlows();
   await testLocalMicrophoneVisualizerLifecycle();
   await testAuthenticationPages();
