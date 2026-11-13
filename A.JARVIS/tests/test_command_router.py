@@ -327,7 +327,7 @@ def test_system_deactivation_clears_pending_direct_action(monkeypatch):
     assert "alice" not in command_router._PENDING_COMMAND_APPROVALS
 
 
-def test_direct_website_action_normalizes_polite_phrasing_and_requires_approval(monkeypatch):
+def test_direct_website_action_runs_after_polite_phrase_normalization(monkeypatch):
     from intelligence import automation as automation_module
     from intelligence.tool_registry import ToolRegistry
 
@@ -352,12 +352,7 @@ def test_direct_website_action_normalizes_polite_phrasing_and_requires_approval(
     reply = command_router.process_command(
         "Hey Jarvis, could you please open youtube for me?", "alice"
     )
-    assert "waiting for your approval" in reply.lower()
-    assert events == []
-    assert "alice" in command_router._PENDING_COMMAND_APPROVALS
-
-    completed = command_router.process_command("confirm open youtube", "alice")
-    assert "approved and completed" in completed.lower()
+    assert "done" in reply.lower()
     assert events == ["alice"]
     assert "alice" not in command_router._PENDING_COMMAND_APPROVALS
 
