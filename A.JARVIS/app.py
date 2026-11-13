@@ -1,7 +1,8 @@
 from flask import Flask, render_template, Response, redirect, url_for, jsonify, request, session
 import hmac
+import hashlib
 import ipaddress
-from functools import wraps
+from functools import lru_cache, wraps
 from urllib.parse import urlsplit
 import secrets
 import threading
@@ -66,16 +67,36 @@ app.config.update(
         in {"1", "true", "yes", "on"},
 )
 
+@lru_cache(maxsize=128)
+def asset_version(filename: str) -> str:
+    """Return a stable content hash for static asset cache busting."""
+    safe_name = os.path.basename(str(filename))
+    if not safe_name or safe_name != str(filename):
+        return "invalid"
+    asset_path = os.path.join(app.static_folder, safe_name)
+    try:
+        with open(asset_path, "rb") as asset_file:
+            return hashlib.sha256(asset_file.read()).hexdigest()[:16]
+    except OSError:
+        app.logger.warning("Could not calculate static asset hash for %s", safe_name)
+        return "missing"
+
+
+@app.context_processor
+def inject_asset_version():
+    return {"asset_version": asset_version}
+
+
 @app.after_request
 def add_local_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    if request.endpoint == "dashboard":
+    if request.endpoint in {"dashboard", "login", "register"}:
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
-            "form-action 'self'; script-src 'self'; style-src 'self'; "
+            "form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
             "style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; "
             "font-src 'self' data:; connect-src 'self'; media-src 'self' blob:"
         )
@@ -176,7 +197,7 @@ def _csrf_is_valid():
 @app.route("/")
 def home():
     if is_authenticated():
-        camera.pause_recognition()
+        camera.stop_camera()
         return redirect(url_for("dashboard"))
     camera.resume_recognition()
     return render_template("home.html")
@@ -368,7 +389,7 @@ def check_access():
 def dashboard():
     if not is_authenticated():
         return redirect(url_for("home"))
-    camera.pause_recognition()
+    camera.stop_camera()
     csrf_token = session.get("csrf_token")
     if not isinstance(csrf_token, str) or len(csrf_token) < 32:
         csrf_token = secrets.token_urlsafe(32)
