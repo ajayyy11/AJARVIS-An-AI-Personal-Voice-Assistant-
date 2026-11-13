@@ -915,18 +915,18 @@ def test_cloud_security_headers_include_csp_and_hsts_on_https(client):
     assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
 
 
-def test_dashboard_uses_static_scripts_and_dependency_free_svg_chart(client, monkeypatch):
+def test_workspace_uses_same_origin_static_assets_without_inline_scripts(client, monkeypatch):
     login_session(client)
     monkeypatch.setattr(cloud_app, "get_latest_id", lambda **_kwargs: 0)
     response = client.get("/dashboard")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "cloud-dashboard.js" in html
-    assert "cloud-dashboard.css" in html
-    assert '<div id="usageChart"' in html
+    assert "/static/cloud.css" in html
+    assert "/static/cloud.js" in html
+    assert "/static/interface.js" in html
     assert "chart.js" not in html.lower()
-    assert "<script>" not in html
-    assert "</head>" in html
+    assert "<script>" not in html.lower()
+    assert "</head>" in html.lower()
 
 
 
@@ -994,7 +994,10 @@ def test_session_version_check_fails_when_database_version_changes(client, monke
     login_session(client)
     monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, _version: False)
     response = client.get("/dashboard")
-    assert response.status_code == 401
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+    with client.session_transaction() as state:
+        assert "user" not in state
 
 
 
