@@ -79,7 +79,7 @@ def test_system_stats_requires_auth_and_disables_cache(client,monkeypatch):
 def test_dashboard_uses_server_activation_state(client,monkeypatch):
     login(client); monkeypatch.setattr(local_app,"is_user_active",lambda _username:True)
     response=client.get("/dashboard")
-    dashboard_js = Path(local_app.__file__).parent / "static" / "cloud-dashboard.js"
+    dashboard_js = Path(local_app.__file__).parent / "static" / "local-dashboard.js"
     source = dashboard_js.read_text(encoding="utf-8")
     assert response.status_code==200 and b'data-active="true"' in response.data
     assert 'document.body.dataset.active === "true"' in source
@@ -339,7 +339,7 @@ def test_project_and_task_status_routes_require_csrf_and_scope_owner(client,monk
     assert calls == [("project","alice",2,"paused"),("task","alice",8,"completed")]
 
 def test_dashboard_voice_capture_handles_only_new_final_results_and_preserves_wake_flow():
-    dashboard = Path(local_app.__file__).parent / "static" / "cloud-dashboard.js"
+    dashboard = Path(local_app.__file__).parent / "static" / "local-dashboard.js"
     source = dashboard.read_text(encoding="utf-8")
     assert "result.isFinal" in source
     assert "resultIndex <= lastHandledResultIndex" in source
@@ -350,7 +350,7 @@ def test_dashboard_voice_capture_handles_only_new_final_results_and_preserves_wa
 
 
 def test_dashboard_voice_capture_uses_one_guarded_start_and_recovery_timer():
-    dashboard = Path(local_app.__file__).parent / "static" / "cloud-dashboard.js"
+    dashboard = Path(local_app.__file__).parent / "static" / "local-dashboard.js"
     source = dashboard.read_text(encoding="utf-8")
     assert "function startRecognitionSafely()" in source
     assert "function scheduleRecognitionRestart(" in source
@@ -364,7 +364,7 @@ def test_dashboard_voice_capture_uses_one_guarded_start_and_recovery_timer():
 def test_local_dashboard_microphone_visualizer_reuses_one_stream_and_cleans_up():
     from pathlib import Path
 
-    dashboard = (Path(__file__).resolve().parents[1] / "static" / "cloud-dashboard.js").read_text(encoding="utf-8")
+    dashboard = (Path(__file__).resolve().parents[1] / "static" / "local-dashboard.js").read_text(encoding="utf-8")
     assert "let microphoneStream = null;" in dashboard
     assert "let audioStartPromise = null;" in dashboard
     assert "if (audioContext && audioContext.state !== \"closed\")" in dashboard
@@ -398,7 +398,7 @@ def test_logout_rejects_cross_site_get_and_requires_csrf_post(client,monkeypatch
 
 
 def test_desktop_audio_capture_error_pauses_auto_restart_and_keeps_manual_retry():
-    dashboard = (Path(__file__).resolve().parents[1] / "static" / "cloud-dashboard.js").read_text(encoding="utf-8")
+    dashboard = (Path(__file__).resolve().parents[1] / "static" / "local-dashboard.js").read_text(encoding="utf-8")
     audio_error = dashboard.split('} else if (errorCode === "audio-capture") {', 1)[1].split('} else if (errorCode === "language-not-supported") {', 1)[0]
     assert 'recognitionBlocked = true;' in audio_error
     assert 'shouldListen = false;' in audio_error
@@ -509,3 +509,45 @@ def test_missing_notification_is_404_not_a_database_error(client, monkeypatch):
         headers={"X-CSRF-Token": "test-csrf-token"},
     )
     assert response.status_code == 404
+
+
+def test_login_and_register_pages_use_same_origin_scripts_and_csp(client, monkeypatch):
+    monkeypatch.setattr(local_app, "is_authenticated", lambda: False)
+    monkeypatch.setattr(local_app.camera, "resume_recognition", lambda: None)
+    monkeypatch.setattr(local_app, "_registration_is_allowed", lambda: (True, None))
+
+    login_response = client.get("/login")
+    assert login_response.status_code == 200
+    assert b"local-login.js" in login_response.data
+    assert b"<script>" not in login_response.data.lower()
+    assert "script-src 'self'" in login_response.headers["Content-Security-Policy"]
+
+    register_response = client.get("/register")
+    assert register_response.status_code == 200
+    assert b"local-register.js" in register_response.data
+    assert b"<script>" not in register_response.data.lower()
+    assert b'onclick="capture()"' not in register_response.data
+    assert "script-src 'self'" in register_response.headers["Content-Security-Policy"]
+
+
+def test_dashboard_asset_urls_use_content_hashes(client, monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app, "is_user_active", lambda _username: True)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    assert f"v={local_app.asset_version('local-dashboard.js')}".encode() in response.data
+    assert f"v={local_app.asset_version('local-dashboard.css')}".encode() in response.data
+
+
+def test_local_dashboard_polling_pauses_in_hidden_tabs_and_refreshes_on_return():
+    dashboard = Path(local_app.__file__).parent / "static" / "local-dashboard.js"
+    source = dashboard.read_text(encoding="utf-8")
+    assert "if (!document.hidden) pollPhase6Notifications();" in source
+    assert "if (!document.hidden) updateSystemStats();" in source
+    assert "if (!document.hidden) refreshHistory();" in source
+    assert "if (!document.hidden) updateAnalytics();" in source
+    assert 'document.addEventListener("visibilitychange"' in source
+    resume_handler = source.split('document.addEventListener("visibilitychange"', 1)[1]
+    for name in ("refreshPhase6Reminders();", "refreshPhase6Workflows();", "loadPersonalMemories();",
+                 "updateSystemStats();", "refreshHistory();", "updateAnalytics();"):
+        assert name in resume_handler
