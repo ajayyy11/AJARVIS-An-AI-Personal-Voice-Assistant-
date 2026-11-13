@@ -242,3 +242,20 @@ def test_default_registry_exposes_explainable_personal_focus(monkeypatch):
     result = registry.invoke("get_personal_focus", username="alice")
     assert result["next_tasks"][0]["priority_score"] == 95
     assert all(tool["risk_level"] == "read_only" for tool in registry.list_tools())
+
+def test_agent_uses_default_model_for_tool_enabled_requests_when_model_omitted():
+    registry = ToolRegistry()
+    registry.register("read_value", "Read a value.", lambda *, username: {"value": 7})
+    client = FakeClient([response(text="The value is seven.")])
+
+    result = generate_agent_response(
+        client=client,
+        contents=[{"role": "user", "parts": [{"text": "Read the value"}]}],
+        system_instruction="Test assistant",
+        username="ajay",
+        registry=registry,
+        types_module=FakeTypes,
+    )
+
+    assert result == "The value is seven."
+    assert client.calls[0]["model"] == "gemini-2.5-flash"
