@@ -51,3 +51,25 @@ def test_gemini_client_is_lazy_and_requires_nonempty_api_key():
     assert result == {"client": "fake"}
     assert fake.arguments["api_key"] == "test-key"
     assert fake.arguments["http_options"].values["timeout"] == DEFAULT_GEMINI_TIMEOUT_MS
+
+
+def test_gemini_request_overrides_preserve_remaining_deadline_and_disable_retries():
+    options = build_gemini_http_options(
+        types_module=FakeTypes,
+        timeout_ms_override=7_250,
+        retry_attempts_override=1,
+    )
+    assert options.values["timeout"] == 7_250
+    assert options.values["retry_options"].values["attempts"] == 1
+
+
+@pytest.mark.parametrize("timeout_override", [True, "5000", 0])
+def test_gemini_request_timeout_override_rejects_invalid_values(timeout_override):
+    import pytest
+
+    with pytest.raises(ValueError, match="timeout override"):
+        build_gemini_http_options(
+            types_module=FakeTypes,
+            timeout_ms_override=timeout_override,
+            retry_attempts_override=1,
+        )
