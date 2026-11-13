@@ -915,7 +915,7 @@ def test_cloud_security_headers_include_csp_and_hsts_on_https(client):
     assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
 
 
-def test_dashboard_uses_static_scripts_and_pinned_chartjs_with_sri(client, monkeypatch):
+def test_dashboard_uses_static_scripts_and_dependency_free_svg_chart(client, monkeypatch):
     login_session(client)
     monkeypatch.setattr(cloud_app, "get_latest_id", lambda **_kwargs: 0)
     response = client.get("/dashboard")
@@ -923,8 +923,8 @@ def test_dashboard_uses_static_scripts_and_pinned_chartjs_with_sri(client, monke
     html = response.get_data(as_text=True)
     assert "cloud-dashboard.js" in html
     assert "cloud-dashboard.css" in html
-    assert "chart.js@4.5.1" in html
-    assert "integrity=" in html
+    assert '<div id="usageChart"' in html
+    assert "chart.js" not in html.lower()
     assert "<script>" not in html
     assert "</head>" in html
 
@@ -935,14 +935,59 @@ def test_cloud_host_header_rejects_untrusted_host(client):
     assert response.status_code == 421
 
 
-def test_cloud_proxyfix_uses_forwarded_client_address(client):
-    with client.application.test_request_context(
+def test_cloud_proxyfix_uses_forwarded_client_address(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        cloud_app,
+        "_auth_rate_limited",
+        lambda _username=None: captured.setdefault("remote_addr", cloud_app.request.remote_addr) and False,
+    )
+    monkeypatch.setattr(cloud_app, "_record_auth_failure", lambda *_args: None)
+    response = client.post(
         "/api/auth/login",
         base_url="https://ajarvis-cloud.onrender.com",
-        headers={"X-Forwarded-For": "198.51.100.25", "X-Forwarded-Proto": "https"},
-    ):
-        assert cloud_app.request.remote_addr == "198.51.100.25"
-        assert cloud_app.request.is_secure
+        environ_overrides={
+            "REMOTE_ADDR": "10.0.0.10",
+            "HTTP_X_FORWARDED_FOR": "198.51.100.25",
+            "HTTP_X_FORWARDED_PROTO": "https",
+        },
+        json={"username": None, "password": None},
+    )
+    assert response.status_code == 401
+    assert captured["remote_addr"] == "198.51.100.25"
+    assert response.headers["Strict-Transport-Security"].startswith("max-age=")
+
+
+def test_shared_proxy_failures_do_not_throttle_different_usernames(client, monkeypatch):
+    password_hash = generate_password_hash("not-the-password")
+    username = "target_account"
+    other_username = "other_account"
+    ip_address = "198.51.100.93"
+    cursor = FakeCursor(fetchone_value=(password_hash, 0))
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    cloud_app._auth_username_attempts.pop(username, None)
+    cloud_app._auth_username_attempts.pop(other_username, None)
+    cloud_app._auth_attempts.pop(ip_address, None)
+    try:
+        for _ in range(cloud_app.MAX_LOGIN_ATTEMPTS):
+            response = client.post(
+                "/api/auth/login",
+                environ_base={"REMOTE_ADDR": ip_address},
+                json={"username": username, "password": "wrong"},
+            )
+            assert response.status_code == 401
+        other_user = client.post(
+            "/api/auth/login",
+            environ_base={"REMOTE_ADDR": ip_address},
+            json={"username": other_username, "password": "wrong"},
+        )
+        assert other_user.status_code == 401
+        assert other_user.get_json()["error"] == "Invalid username or password."
+    finally:
+        cloud_app._auth_username_attempts.pop(username, None)
+        cloud_app._auth_username_attempts.pop(other_username, None)
+        cloud_app._auth_attempts.pop(ip_address, None)
 
 
 def test_session_version_check_fails_when_database_version_changes(client, monkeypatch):
