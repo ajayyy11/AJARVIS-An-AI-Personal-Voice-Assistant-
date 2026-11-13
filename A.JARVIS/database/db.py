@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import atexit
+import os
 import threading
 from typing import Any
 
@@ -41,7 +43,9 @@ def _postgres_connection_pool():
             kwargs={"connect_timeout": Config.MYSQL_CONNECT_TIMEOUT_SECONDS},
             min_size=1,
             max_size=Config.DATABASE_POOL_MAX_SIZE,
+            max_waiting=Config.DATABASE_POOL_MAX_SIZE * 4,
             timeout=Config.DATABASE_POOL_TIMEOUT_SECONDS,
+            max_lifetime=1800,
             max_idle=120,
             open=False,
             close_returns=True,
@@ -71,7 +75,7 @@ def _mysql_connection_pool():
             ) from exc
 
         pool = MySQLConnectionPool(
-            pool_name=f"ajarvis_{__import__('os').getpid()}",
+            pool_name=f"ajarvis_{os.getpid()}",
             pool_size=Config.DATABASE_POOL_MAX_SIZE,
             pool_reset_session=True,
             host=Config.MYSQL_HOST,
@@ -110,7 +114,12 @@ def get_connection():
 
 
 def close_pools() -> None:
-    """Close all process-local pools (used by graceful shutdown and tests)."""
+    """Close PostgreSQL pools and release the MySQL pool manager reference.
+
+    mysql-connector-python exposes no public close-all-pool API. Borrowed
+    MySQL connections are returned normally by callers; process shutdown
+    reclaims any remaining sockets.
+    """
     global _postgres_pool, _mysql_pool
 
     with _pool_lock:
@@ -124,3 +133,6 @@ def close_pools() -> None:
         # mysql.connector pools don't expose a public close-all operation.
         # Existing borrowed connections will close normally when returned.
         return
+
+
+atexit.register(close_pools)
