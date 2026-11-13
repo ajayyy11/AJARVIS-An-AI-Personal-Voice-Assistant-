@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from intelligence.agent import build_default_registry, generate_agent_response
+from intelligence.agent import MAX_TOOL_ROUNDS, build_default_registry, generate_agent_response
 from intelligence.tool_registry import ToolRegistry
 
 
@@ -259,3 +259,31 @@ def test_agent_uses_default_model_for_tool_enabled_requests_when_model_omitted()
 
     assert result == "The value is seven."
     assert client.calls[0]["model"] == "gemini-2.5-flash"
+
+
+def test_agent_enforces_bounded_tool_request_rounds():
+    registry = ToolRegistry()
+    registry.register("read_value", "Read a value.", lambda *, username: {"value": 1})
+    model_content = SimpleNamespace(role="model", parts=["function call"])
+    responses = [
+        response(
+            text=f"Round {index + 1}",
+            function_calls=[function_call("read_value")],
+            content=model_content,
+        )
+        for index in range(MAX_TOOL_ROUNDS + 1)
+    ]
+    client = FakeClient(responses)
+
+    result = generate_agent_response(
+        client=client,
+        contents=[],
+        system_instruction="Test",
+        username="ajay",
+        registry=registry,
+        types_module=FakeTypes,
+    )
+
+    assert len(client.calls) == MAX_TOOL_ROUNDS + 1
+    assert len(client.calls) <= 3
+    assert result == f"Round {MAX_TOOL_ROUNDS}"
