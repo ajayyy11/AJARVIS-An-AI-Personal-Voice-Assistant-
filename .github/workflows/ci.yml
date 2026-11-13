@@ -43,19 +43,17 @@ jobs:
           from pathlib import Path
 
           html = Path("templates/dashboard.html").read_text(encoding="utf-8")
+          javascript = Path("static/cloud-dashboard.js").read_text(encoding="utf-8")
           if "cloud-dashboard.js" not in html or "cloud-dashboard.css" not in html:
               raise SystemExit("Dashboard must load its same-origin static assets.")
           if "<script>" in html.lower():
               raise SystemExit("Dashboard must not contain inline scripts.")
           if "</head>" not in html.lower():
               raise SystemExit("Dashboard head element is not closed.")
-          if "chart.js" in html.lower():
+          if "chart.js" in html.lower() or "new Chart(" in javascript:
               raise SystemExit("Dashboard must not load an external chart library.")
-          if "new Chart(" in javascript:
-              raise SystemExit("Dashboard chart must use the dependency-free SVG renderer.")
-          if "<canvas id=\"usageChart\">" in html:
+          if '<div id="usageChart"' not in html:
               raise SystemExit("Dashboard analytics must use the accessible SVG chart container.")
-          javascript = Path("static/cloud-dashboard.js").read_text(encoding="utf-8")
           if "{{" in javascript or "{%" in javascript:
               raise SystemExit("Unrendered Jinja syntax remains in dashboard JavaScript.")
           PY
