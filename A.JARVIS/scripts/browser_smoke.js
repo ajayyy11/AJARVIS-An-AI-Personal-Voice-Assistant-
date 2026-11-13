@@ -506,7 +506,7 @@ async function testDocumentAndVisualFlows() {
 }
 
 async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
-  const source = fs.readFileSync(path.join(__dirname, "..", "static", "cloud-dashboard.js"), "utf8");
+  const source = fs.readFileSync(path.join(__dirname, "..", "static", "local-dashboard.js"), "utf8");
   const errorStart = source.indexOf("recognition.onerror = (event) => {");
   const endMarker = "\n      recognition.onend = () => {";
   const errorEnd = source.indexOf(endMarker, errorStart);
@@ -568,7 +568,7 @@ async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
 }
 
 async function testLocalMicrophoneVisualizerLifecycle() {
-  const localDashboard = fs.readFileSync(path.join(__dirname, "..", "static", "cloud-dashboard.js"), "utf8");
+  const localDashboard = fs.readFileSync(path.join(__dirname, "..", "static", "local-dashboard.js"), "utf8");
   const start = localDashboard.indexOf("/* MIC REACTIVE EFFECT");
   assert(start >= 0, "local dashboard: microphone visualizer block is missing");
   const source = localDashboard.slice(start);
@@ -630,7 +630,7 @@ async function testLocalMicrophoneVisualizerLifecycle() {
 }
 
 async function testLocalTextCommandNetworkRecovery() {
-  const inlineScript = fs.readFileSync(path.join(__dirname, "..", "static", "cloud-dashboard.js"), "utf8");
+  const inlineScript = fs.readFileSync(path.join(__dirname, "..", "static", "local-dashboard.js"), "utf8");
 
   const start = inlineScript.indexOf("async function executeTextCommand() {");
   const end = inlineScript.indexOf('\n    textInput.addEventListener("keydown"', start);
