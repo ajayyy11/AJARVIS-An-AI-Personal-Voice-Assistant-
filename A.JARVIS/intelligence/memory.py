@@ -220,7 +220,7 @@ def get_recent_after(n=5, username=None, after_id=0):
             (username, cursor_id, limit),
         )
         rows = cursor.fetchall()
-        return [{"command": row[0], "response": row[1]} for row in reversed(rows)]
+        return [_safe_history_record(row[0], row[1]) for row in reversed(rows)]
     except Exception:
         logger.warning("Conversation history read failed; refusing to reuse older context.", exc_info=True)
         raise RuntimeError("Conversation history is temporarily unavailable.") from None
@@ -248,7 +248,7 @@ def get_all_recent_after(n=30, username=None, after_id=0):
             (username, cursor_id, limit),
         )
         rows = cursor.fetchall()
-        return [{"command": row[0], "response": row[1]} for row in rows]
+        return [_safe_history_record(row[0], row[1]) for row in rows]
     except Exception:
         logger.warning("Conversation history display failed.", exc_info=True)
         raise RuntimeError("Conversation history is temporarily unavailable.") from None
