@@ -89,13 +89,26 @@ def list_memories(username: str, limit: int = MAX_MEMORIES) -> list[dict[str, st
 
 
 def save_memory(username: str, key: str, value: str) -> dict[str, str]:
+    """Save or update a memory under a per-user MySQL advisory lock.
+
+    The named lock serializes saves across worker threads/processes, so the
+    per-user 30-record cap cannot be bypassed by concurrent SELECT-then-INSERTs.
+    """
     owner = _username(username)
     memory_key = normalize_memory_key(key)
     memory_value = validate_memory_value(value)
     connection = cursor = None
+    lock_name = "ajarvis_mem_" + hashlib.sha256(owner.casefold().encode("utf-8")).hexdigest()[:48]
+    lock_acquired = False
     try:
         connection = get_connection()
         cursor = connection.cursor()
+        cursor.execute("SELECT GET_LOCK(%s, 5)", (lock_name,))
+        lock_row = cursor.fetchone()
+        lock_acquired = bool(lock_row and lock_row[0] == 1)
+        if not lock_acquired:
+            raise ValueError("Personal memory is busy. Please retry your save.")
+
         cursor.execute(
             "SELECT id FROM user_memories WHERE username = %s AND memory_key = %s",
             (owner, memory_key),
@@ -108,6 +121,13 @@ def save_memory(username: str, key: str, value: str) -> dict[str, str]:
                 (memory_value, owner, memory_key),
             )
         else:
+            cursor.execute("SELECT COUNT(*) FROM user_memories WHERE username = %s", (owner,))
+            count_row = cursor.fetchone()
+            current_count = int(count_row[0]) if count_row else 0
+            if current_count >= MAX_MEMORIES:
+                raise ValueError(
+                    f"Personal memory is limited to {MAX_MEMORIES} saved items. Delete an existing item before adding another."
+                )
             cursor.execute(
                 "INSERT INTO user_memories (username, memory_key, memory_value) VALUES (%s, %s, %s)",
                 (owner, memory_key, memory_value),
@@ -120,6 +140,12 @@ def save_memory(username: str, key: str, value: str) -> dict[str, str]:
             except Exception: pass
         raise
     finally:
+        if lock_acquired and cursor is not None:
+            try:
+                cursor.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                cursor.fetchone()
+            except Exception:
+                pass
         _close(cursor, connection)
 
 
