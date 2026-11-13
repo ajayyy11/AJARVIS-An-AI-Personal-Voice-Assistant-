@@ -126,6 +126,7 @@ def test_all_private_note_and_memory_command_variants_are_redacted(command):
 @pytest.mark.parametrize(
     "command",
     [
+        "what did I ask you to remember?",
         "what time is it?",
         "open the browser",
         "explain how DNS works",
