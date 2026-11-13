@@ -122,7 +122,9 @@ def _handle_direct_action_confirmation(command: str, username: str):
 
     if command.startswith("confirm "):
         if not pending:
-            return "There is no desktop action waiting for approval."
+            # Leave legacy shutdown/restart confirmation phrases for the
+            # dedicated destructive power-action confirmation handler.
+            return None
         if command != "confirm " + str(pending["label"]):
             return "That confirmation does not match the pending action. Say 'cancel action' or confirm the exact action."
         with _PENDING_COMMAND_APPROVALS_LOCK:
