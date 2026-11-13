@@ -49,6 +49,7 @@ class Config:
     )
     DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
     CLOUD_MODE = _env_bool("CLOUD_MODE", False)
+    TRUST_CF_CONNECTING_IP = _env_bool("TRUST_CF_CONNECTING_IP", CLOUD_MODE)
     MAX_CONTENT_LENGTH_BYTES = _env_int(
         "MAX_CONTENT_LENGTH_BYTES", 10 * 1024 * 1024, 1024 * 1024, 50 * 1024 * 1024
     )
