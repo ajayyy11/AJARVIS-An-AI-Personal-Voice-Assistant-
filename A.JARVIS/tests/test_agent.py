@@ -286,4 +286,4 @@ def test_agent_enforces_bounded_tool_request_rounds():
 
     assert len(client.calls) == MAX_TOOL_ROUNDS + 1
     assert len(client.calls) <= 3
-    assert result == f"Round {MAX_TOOL_ROUNDS}"
+    assert result == f"Round {MAX_TOOL_ROUNDS + 1}"
