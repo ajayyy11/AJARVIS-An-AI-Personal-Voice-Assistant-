@@ -459,3 +459,14 @@ def test_dashboard_sends_csp_and_security_headers(client, monkeypatch):
     assert response.status_code == 200
     assert "script-src 'self'" in response.headers["Content-Security-Policy"]
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+
+def test_login_page_can_request_same_origin_camera_preview_but_cross_site_cannot(client, monkeypatch):
+    monkeypatch.setattr(local_app, "_registration_is_allowed", lambda: (False, (local_app.jsonify({"error":"closed"}), 403)))
+    monkeypatch.setattr(local_app, "generate_frames", lambda: iter([b"frame"]))
+    denied = client.get("/video_feed", headers={"Sec-Fetch-Site": "cross-site"})
+    assert denied.status_code == 403
+    allowed = client.get("/video_feed", headers={"Sec-Fetch-Site": "same-origin"})
+    assert allowed.status_code == 200
+    assert allowed.headers["Cache-Control"] == "no-store"
