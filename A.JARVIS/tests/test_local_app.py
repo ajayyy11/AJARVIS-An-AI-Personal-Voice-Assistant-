@@ -456,7 +456,7 @@ def test_video_feed_is_not_available_after_first_user_until_authenticated(client
 
 def test_dashboard_sends_csp_and_security_headers(client, monkeypatch):
     login(client)
-    monkeypatch.setattr(local_app.camera, "pause_recognition", lambda: None)
+    monkeypatch.setattr(local_app.camera, "stop_camera", lambda: None)
     monkeypatch.setattr(local_app, "is_user_active", lambda _username: True)
     response = client.get("/dashboard")
     assert response.status_code == 200
