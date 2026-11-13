@@ -38,46 +38,42 @@ jobs:
       - name: Validate dashboard JavaScript syntax
         shell: bash
         run: |
+          node --check static/cloud-dashboard.js
           python - <<'PY'
-          import re
           from pathlib import Path
 
           html = Path("templates/dashboard.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script\s*>", html, flags=re.IGNORECASE | re.DOTALL)
-          inline_scripts = [script for script in scripts if script.strip()]
-          if not inline_scripts:
-              raise SystemExit("No inline dashboard scripts were found.")
-
-          javascript = "\n;\n".join(inline_scripts)
-          javascript = javascript.replace("{{ user | tojson }}", '"ci-user"')
-          javascript = javascript.replace("{{ is_active | tojson }}", "false")
+          if "cloud-dashboard.js" not in html or "cloud-dashboard.css" not in html:
+              raise SystemExit("Dashboard must load its same-origin static assets.")
+          if "<script>" in html.lower():
+              raise SystemExit("Dashboard must not contain inline scripts.")
+          if "</head>" not in html.lower():
+              raise SystemExit("Dashboard head element is not closed.")
+          if "chart.js@4.5.1" not in html or "integrity=" not in html:
+              raise SystemExit("Chart.js must be version-pinned and protected by SRI.")
+          javascript = Path("static/cloud-dashboard.js").read_text(encoding="utf-8")
           if "{{" in javascript or "{%" in javascript:
-              raise SystemExit("Unrendered Jinja template syntax remains in dashboard JavaScript.")
-
-          Path("/tmp/ajarvis-dashboard-check.js").write_text(javascript, encoding="utf-8")
+              raise SystemExit("Unrendered Jinja syntax remains in dashboard JavaScript.")
           PY
-          node --check /tmp/ajarvis-dashboard-check.js
       - name: Validate cloud dashboard JavaScript syntax
         shell: bash
         run: |
           node --check static/cloud.js
           node --check static/interface.js
+          node --check static/cloud-auth.js
+          node --check static/cloud-dashboard.js
           python - <<'PY'
-          import re
           from pathlib import Path
 
           html = Path("templates/cloud_auth.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script\s*>", html, flags=re.IGNORECASE | re.DOTALL)
-          inline_scripts = [script for script in scripts if script.strip()]
-          if not inline_scripts:
-              raise SystemExit("No inline cloud authentication script was found.")
-          javascript = "\n;\n".join(inline_scripts)
-          javascript = javascript.replace("{{ mode|tojson }}", '"login"')
+          javascript = Path("static/cloud-auth.js").read_text(encoding="utf-8")
+          if "cloud-auth.js" not in html:
+              raise SystemExit("Cloud authentication must load its same-origin static script.")
+          if "<script>" in html.lower():
+              raise SystemExit("Cloud authentication must not contain inline scripts.")
           if "{{" in javascript or "{%" in javascript:
               raise SystemExit("Unrendered Jinja syntax remains in cloud authentication JavaScript.")
-          Path("/tmp/ajarvis-cloud-auth-check.js").write_text(javascript, encoding="utf-8")
           PY
-          node --check /tmp/ajarvis-cloud-auth-check.js
       - name: Validate Render Blueprint
         run: |
           python -m pip install pyyaml
