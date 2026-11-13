@@ -223,9 +223,15 @@ def test_note_retrieval_history_is_redacted_before_persistence(monkeypatch, comm
         memory.PRIVATE_HISTORY_COMMAND,
         memory.PRIVATE_HISTORY_RESPONSE,
     )
-    assert memory.get_all_recent(1, username="ajay") == [
-        {
-            "command": memory.PRIVATE_HISTORY_COMMAND,
-            "response": memory.PRIVATE_HISTORY_RESPONSE,
-        }
-    ]
+    assert memory._cache[-1] == {
+        "username": "ajay",
+        "command": memory.PRIVATE_HISTORY_COMMAND,
+        "response": memory.PRIVATE_HISTORY_RESPONSE,
+    }
+    assert memory._safe_history_record(
+        command,
+        "A private note: PRIVATE-TEST-VALUE",
+    ) == {
+        "command": memory.PRIVATE_HISTORY_COMMAND,
+        "response": memory.PRIVATE_HISTORY_RESPONSE,
+    }
