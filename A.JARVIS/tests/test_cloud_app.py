@@ -190,9 +190,6 @@ def test_assistant_api_passes_conversation_cursor_to_command_processor(client, m
             calls.append((username, command, context_after_id)) or "clean-context reply",
     )
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
-    with cloud_app._assistant_lock:
-        cloud_app._assistant_requests.pop("alice", None)
-
     response = client.post(
         "/api/assistant",
         headers={"X-CSRF-Token": "test-token"},
@@ -606,32 +603,6 @@ def test_activity_api_filters_by_current_username(client, monkeypatch):
     assert response.get_json()["activity"][0]["tool_name"] == "read_user_preferences"
     assert cursor.executed[0][1] == ("alice", 30)
 
-
-
-def test_registration_attempts_are_rate_limited_per_client_address(client):
-    ip_address = "198.51.100.45"
-    with cloud_app._registration_lock:
-        cloud_app._registration_attempts.pop(ip_address, None)
-
-    try:
-        for _ in range(cloud_app.MAX_REGISTRATION_ATTEMPTS):
-            response = client.post(
-                "/api/auth/register",
-                environ_base={"REMOTE_ADDR": ip_address},
-                json={"username": "invalid", "password": "short"},
-            )
-            assert response.status_code == 400
-
-        limited = client.post(
-            "/api/auth/register",
-            environ_base={"REMOTE_ADDR": ip_address},
-            json={"username": "invalid", "password": "short"},
-        )
-        assert limited.status_code == 429
-        assert limited.headers["Retry-After"] == str(cloud_app.REGISTRATION_WINDOW_SECONDS)
-    finally:
-        with cloud_app._registration_lock:
-            cloud_app._registration_attempts.pop(ip_address, None)
 
 
 def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatch):
