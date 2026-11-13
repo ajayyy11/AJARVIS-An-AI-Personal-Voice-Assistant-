@@ -246,3 +246,41 @@ def test_plan_expiring_during_slow_read_only_work_does_not_start_next_step(monke
     assert expired["steps"][1]["status"]=="expired"
     assert expired["approval"] is None
     assert events==["read"]
+
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1.nip.io",
+        "https://10.0.0.1.sslip.io",
+        "https://127.0.0.1.localtest.me",
+        "https://printer.local",
+        "https://192.168.1.2",
+    ],
+)
+def test_url_tool_rejects_wildcard_dns_and_local_destinations(url):
+    with pytest.raises(automation.ToolArgumentError):
+        automation._validate_website_url(url)
+
+
+def test_plan_registry_is_bounded_and_prunes_old_terminal_plans(monkeypatch):
+    with automation._lock:
+        for index in range(automation.MAX_STORED_PLANS):
+            automation._plans[str(index)] = {
+                "plan_id": str(index),
+                "username": "alice",
+                "status": "completed",
+                "created_at": 0,
+                "expires_at": 0,
+                "approval_id": None,
+                "approval_expires_at": None,
+                "current_step": 0,
+                "steps": [],
+            }
+    events=[]
+    registry=registry_with_read_and_write_tools(events)
+    created=automation.create_plan("alice","New bounded plan.",[step("read_status")],registry=registry,now=10)
+    with automation._lock:
+        assert len(automation._plans) <= automation.MAX_STORED_PLANS
+        assert created["plan_id"] in automation._plans
