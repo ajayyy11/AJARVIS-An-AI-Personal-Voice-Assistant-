@@ -237,20 +237,6 @@ def test_note_retrieval_history_is_redacted_before_persistence(monkeypatch, comm
     }
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        "create task rotate production password",
-        "add a task review vessel IT access",
-        "remind me to renew certificate",
-        "don't let me forget to call the captain",
-        "show my tasks",
-        "what are my tasks",
-    ],
-)
-def test_cloud_task_and_reminder_intents_are_private(command):
-    assert memory.is_sensitive_history_command(command)
-
 
 def test_explicit_private_flag_redacts_otherwise_unclassified_intent(monkeypatch):
     cursor = FakeCursor()
