@@ -24,7 +24,7 @@ from intelligence.tool_registry import (
 )
 
 logger = logging.getLogger(__name__)
-MAX_TOOL_ROUNDS = 3
+MAX_TOOL_ROUNDS = 2
 MAX_TOOL_CALLS = 5
 MAX_TOOL_RESULT_CHARS = 4000
 
