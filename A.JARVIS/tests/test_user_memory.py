@@ -135,3 +135,20 @@ def test_save_memory_rejects_when_advisory_lock_is_unavailable(monkeypatch):
         user_memory.save_memory("alice","new_fact","A new fact")
     assert not any("INSERT INTO user_memories" in sql for sql,_params in cursor.executed)
     assert connection.closed
+
+
+
+def test_postgres_memory_save_uses_transaction_scoped_advisory_lock(monkeypatch):
+    cursor = FakeCursor(fetchone_values=[None, (0,)])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(user_memory, "get_connection", lambda: connection)
+    monkeypatch.setattr(user_memory.Config, "DATABASE_URL", "postgresql://test")
+
+    result = user_memory.save_memory("alice", "answer_style", "Concise")
+
+    assert result == {"key": "answer_style", "value": "Concise"}
+    assert "pg_advisory_xact_lock" in cursor.executed[0][0]
+    assert cursor.executed[1][1] == ("alice", "answer_style")
+    assert any("INSERT INTO user_memories" in sql for sql, _params in cursor.executed)
+    assert not any("GET_LOCK" in sql or "RELEASE_LOCK" in sql for sql, _params in cursor.executed)
+    assert connection.committed and cursor.closed and connection.closed
