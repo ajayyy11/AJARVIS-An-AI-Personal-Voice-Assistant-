@@ -73,7 +73,8 @@ _PRIVATE_HISTORY_COMMAND = re.compile(
     r"forget|remove\s+from\s+memory"
     r")\b"
     r"|^(?:what\s+do\s+you\s+remember|what\s+did\s+i\s+ask\s+you\s+to\s+remember|show\s+my\s+memories|list\s+my\s+memories|"
-    r"read\s+my\s+preferences|(?:read|show|list|display|search|find)\s+(?:my\s+)?notes?)\b",
+    r"read\s+my\s+preferences|what\s+are\s+(?:my\s+)?(?:saved\s+)?notes?|"
+    r"(?:read|show|list|display|search|find|tell)\s+(?:me\s+)?(?:my\s+)?notes?)\b",
     re.IGNORECASE,
 )
 PRIVATE_HISTORY_COMMAND = "[private command redacted]"
