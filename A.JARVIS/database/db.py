@@ -96,8 +96,8 @@ def _mysql_connection_pool():
 def get_connection():
     """Borrow a connection; calling close() returns it to its pool."""
     if Config.DATABASE_URL:
-        pool = _postgres_connection_pool()
         try:
+            pool = _postgres_connection_pool()
             return pool.getconn(timeout=Config.DATABASE_POOL_TIMEOUT_SECONDS)
         except Exception as exc:
             raise RuntimeError(
