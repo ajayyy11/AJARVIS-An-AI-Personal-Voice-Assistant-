@@ -826,43 +826,62 @@
     refreshHistory();
     setInterval(refreshHistory, 5000);
 
-    /* USAGE ANALYTICS CHART */
-    let analyticsChart = null;
+    /* USAGE ANALYTICS — dependency-free SVG renderer. */
     function updateAnalytics() {
-      fetch('/analytics')
-        .then(res => res.json())
-        .then(data => {
-          const ctx = document.getElementById('usageChart').getContext('2d');
-          
-          if (analyticsChart) {
-            analyticsChart.data.labels = data.labels;
-            analyticsChart.data.datasets[0].data = data.data;
-            analyticsChart.update();
-            return;
+      const root = document.getElementById("usageChart");
+      if (!root) return;
+      fetch("/analytics")
+        .then((response) => {
+          if (!response.ok) throw new Error("Analytics unavailable");
+          return response.json();
+        })
+        .then((data) => {
+          const labels = Array.isArray(data.labels) ? data.labels : [];
+          const values = Array.isArray(data.data)
+            ? data.data.map((value) => Math.max(0, Number(value) || 0))
+            : [];
+          const width = 720, height = 270;
+          const left = 42, right = 16, top = 14, bottom = 54;
+          const plotWidth = width - left - right;
+          const plotHeight = height - top - bottom;
+          const maxValue = Math.max(1, ...values);
+          const step = values.length ? plotWidth / values.length : plotWidth;
+          const namespace = "http://www.w3.org/2000/svg";
+          const svg = document.createElementNS(namespace, "svg");
+          svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+          svg.setAttribute("role", "img");
+          svg.setAttribute("aria-label", "Usage analytics bar chart");
+          svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+          const add = (tag, attrs, text) => {
+            const element = document.createElementNS(namespace, tag);
+            Object.entries(attrs || {}).forEach(([key, value]) => element.setAttribute(key, String(value)));
+            if (text !== undefined) element.textContent = String(text);
+            svg.appendChild(element);
+            return element;
+          };
+
+          for (let tick = 0; tick <= 4; tick += 1) {
+            const y = top + plotHeight - (plotHeight * tick / 4);
+            add("line", { x1: left, x2: width - right, y1: y, y2: y, stroke: "rgba(0,240,255,.14)", "stroke-width": 1 });
+            add("text", { x: left - 8, y: y + 4, "text-anchor": "end", fill: "#b2ebf2", "font-size": 11 }, Math.round(maxValue * tick / 4));
           }
 
-          analyticsChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-              labels: data.labels,
-              datasets: [{
-                label: 'Uses',
-                data: data.data,
-                backgroundColor: 'rgba(0, 240, 255, 0.4)',
-                borderColor: '#00f0ff',
-                borderWidth: 1
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(0, 240, 255, 0.1)' }, ticks: { color: '#b2ebf2', stepSize: 1 } },
-                x: { grid: { display: false }, ticks: { color: '#00f0ff', font: {size: 10} } }
-              }
-            }
+          values.forEach((value, index) => {
+            const barWidth = Math.max(3, step * .58);
+            const barHeight = value / maxValue * plotHeight;
+            const x = left + index * step + (step - barWidth) / 2;
+            const y = top + plotHeight - barHeight;
+            add("rect", { x, y, width: barWidth, height: Math.max(0, barHeight), rx: 3, fill: "rgba(0,240,255,.4)", stroke: "#00f0ff", "stroke-width": 1 });
+            const label = String(labels[index] ?? "").slice(0, 18);
+            add("text", { x: x + barWidth / 2, y: height - 27, "text-anchor": "middle", fill: "#00f0ff", "font-size": 10 }, label);
           });
+
+          root.replaceChildren(svg);
+          root.setAttribute("aria-label", "Usage analytics chart with " + values.length + " bars");
+        })
+        .catch(() => {
+          root.textContent = "Usage analytics are temporarily unavailable.";
         });
     }
     updateAnalytics();
