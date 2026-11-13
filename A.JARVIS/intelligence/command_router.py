@@ -93,6 +93,22 @@ def _queue_direct_action(username: str, command: str, tool_name: str, arguments:
     )
 
 
+def clear_pending_direct_action(username: str) -> bool:
+    """Clear and cancel a pending direct desktop action during logout/deactivation."""
+    if not isinstance(username, str) or not username.strip():
+        return False
+    owner = username.strip()
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        pending = _PENDING_COMMAND_APPROVALS.pop(owner, None)
+    if not pending:
+        return False
+    try:
+        cancel_plan(str(pending["plan_id"]), owner)
+    except AutomationError:
+        pass
+    return True
+
+
 def _handle_direct_action_confirmation(command: str, username: str):
     with _PENDING_COMMAND_APPROVALS_LOCK:
         pending = _PENDING_COMMAND_APPROVALS.get(username)
@@ -209,6 +225,7 @@ def process_command(command, username):
             cancel_user_plans(username)
         except Exception:
             logger.warning("Could not cancel automation plans during deactivation", exc_info=True)
+        clear_pending_direct_action(username)
         reply = f"System deactivating. Until next time, {username}."
         add_memory(command, reply, username)
         return reply
