@@ -1007,7 +1007,7 @@ def test_shared_proxy_failures_do_not_throttle_different_usernames(client, monke
 
 def test_session_version_check_fails_when_database_version_changes(client, monkeypatch):
     login_session(client)
-    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, _version: False)
+    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, _version, _generation: False)
     response = client.get("/dashboard")
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
