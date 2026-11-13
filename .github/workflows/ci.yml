@@ -39,7 +39,19 @@ jobs:
         shell: bash
         run: |
           node --check static/local-dashboard.js
+          node --check static/local-login.js
+          node --check static/local-register.js
           python - <<'PY'
+          from pathlib import Path
+
+          for asset in (
+              "static/local-dashboard.js",
+              "static/local-dashboard.css",
+              "static/local-login.js",
+              "static/local-register.js",
+          ):
+              if not Path(asset).is_file():
+                  raise SystemExit(f"Required local asset is missing: {asset}")
           from pathlib import Path
 
           html = Path("templates/dashboard.html").read_text(encoding="utf-8")
