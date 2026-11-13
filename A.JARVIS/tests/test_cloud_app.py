@@ -277,7 +277,7 @@ def test_registration_rejects_short_password_before_database(client, monkeypatch
 
 def test_login_uses_password_hash_and_does_not_reveal_username_exists(client, monkeypatch):
     password_hash = generate_password_hash("my-strong-password-123")
-    cursor = FakeCursor(fetchone_value=(password_hash, 0))
+    cursor = FakeCursor(fetchone_value=(password_hash, 0, "00000000-0000-4000-8000-000000000001"))
     connection = FakeConnection(cursor)
     monkeypatch.setattr(cloud_app, "_database", lambda: connection)
 
