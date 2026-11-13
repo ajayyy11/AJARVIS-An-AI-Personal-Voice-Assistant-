@@ -85,7 +85,14 @@ if os.getenv("RENDER_EXTERNAL_HOSTNAME"):
 
 @app.before_request
 def reject_untrusted_cloud_host():
-    """Only accept the Render service hostname or explicitly configured domains."""
+    """Only accept configured hosts for application routes.
+
+    Platform health probes intentionally use a provider-controlled Host header.
+    These two endpoints disclose only liveness/readiness, never application data,
+    so they must remain reachable independently of the public hostname.
+    """
+    if request.endpoint in {"healthz", "readyz"}:
+        return None
     try:
         hostname = urlsplit("//" + request.host).hostname
     except ValueError:
@@ -490,7 +497,7 @@ def add_security_headers(response):
         "script-src 'self'; "
         "style-src 'self'; style-src-attr 'unsafe-inline'; "
         "img-src 'self' data: blob:; font-src 'self' data:; "
-        "connect-src 'self' https://generativelanguage.googleapis.com; "
+        "connect-src 'self';"
         "media-src 'self' blob:; upgrade-insecure-requests"
     )
     if request.is_secure:
