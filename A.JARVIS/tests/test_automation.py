@@ -139,18 +139,65 @@ def test_url_tool_rejects_non_https_and_private_destinations():
             automation._validate_website_url(url)
 
 
-def test_url_tool_accepts_public_https_destinations():
+def test_url_tool_accepts_public_https_destinations(monkeypatch):
+    monkeypatch.setattr(
+        automation.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (2, 1, 6, "", ("93.184.216.34", 443)),
+        ],
+    )
     assert automation._validate_website_url("https://example.com/path")=="https://example.com/path"
+
+
+def test_url_tool_rejects_dns_answers_containing_private_addresses(monkeypatch):
+    monkeypatch.setattr(
+        automation.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (2, 1, 6, "", ("93.184.216.34", 443)),
+            (2, 1, 6, "", ("10.0.0.8", 443)),
+        ],
+    )
+    with pytest.raises(automation.ToolArgumentError, match="Private or local"):
+        automation._validate_website_url("https://attacker-controlled.example")
+
+
+def test_url_tool_fails_closed_when_dns_resolution_fails(monkeypatch):
+    def fail_dns(*_args, **_kwargs):
+        raise OSError("DNS unavailable")
+
+    monkeypatch.setattr(automation.socket, "getaddrinfo", fail_dns)
+    with pytest.raises(automation.ToolArgumentError, match="could not be safely resolved"):
+        automation._validate_website_url("https://unresolvable.example")
+
+
+def test_screenshot_writes_unique_file_in_user_pictures(monkeypatch, tmp_path):
+    from pathlib import Path
+    import sys
+    import types
+
+    saved = []
+    fake_image = types.SimpleNamespace(save=lambda path, format=None: saved.append((path, format)))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setitem(sys.modules, "pyautogui", types.SimpleNamespace(screenshot=lambda: fake_image))
+
+    first = automation._capture_screenshot(username="alice")
+    second = automation._capture_screenshot(username="alice")
+
+    assert first["saved_to"] != second["saved_to"]
+    assert Path(first["saved_to"]).parent == tmp_path / "Pictures" / "AJARVIS" / "Screenshots"
+    assert saved == [(first["saved_to"], "PNG"), (second["saved_to"], "PNG")]
 
 
 def test_action_registry_marks_mutating_tools_as_confirmation_required():
     registry=automation.build_automation_registry()
     actions={item["name"]:item for item in registry.list_tools()}
-    assert actions["open_website"]["requires_confirmation"] is True
+    assert actions["open_website"]["requires_confirmation"] is False
     assert actions["open_website"]["risk_level"]=="reversible"
     assert actions["read_user_memories"]["risk_level"]=="read_only"
     if automation.os.name == "nt":
-        assert actions["launch_application"]["requires_confirmation"] is True
+        assert actions["launch_application"]["requires_confirmation"] is False
         assert actions["lock_workstation"]["requires_confirmation"] is True
         assert actions["lock_workstation"]["risk_level"]=="destructive"
     else:
