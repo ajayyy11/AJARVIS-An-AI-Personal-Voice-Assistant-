@@ -24,8 +24,9 @@ _WEB_TRIGGER = re.compile(
     r"\b(?:"
     r"search (?:the )?web|web search|search online|look up online|research online|find online|"
     r"today'?s news|news today|this week'?s news|this month'?s news|"
-    r"(?:latest|recent|current)\s+(?:news|events|updates|developments|releases?|versions?|"
-    r"prices?|weather|markets?|elections?|research|announcements?|regulations?)"
+    r"(?:latest|recent|current)\s+(?:(?:[A-Za-z0-9.+#/-]+)\s+){0,3}"
+    r"(?:news|events|updates|developments|releases?|versions?|prices?|weather|markets?|"
+    r"elections?|research|announcements?|regulations?|layoffs?|job openings?|hiring|recruitment)"
     r")\b",
     re.IGNORECASE,
 )
