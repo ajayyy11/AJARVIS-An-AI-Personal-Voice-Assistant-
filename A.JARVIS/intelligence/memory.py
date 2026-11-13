@@ -74,12 +74,7 @@ _PRIVATE_HISTORY_COMMAND = re.compile(
     r")\b"
     r"|^(?:what\s+do\s+you\s+remember|what\s+did\s+i\s+ask\s+you\s+to\s+remember|show\s+my\s+memories|list\s+my\s+memories|"
     r"read\s+my\s+preferences|what\s+are\s+(?:my\s+)?(?:saved\s+)?notes?|"
-    r"(?:read|show|list|display|search|find|tell)\s+(?:me\s+)?(?:my\s+)?notes?|"
-    r"(?:add|create|make)\s+(?:a\s+)?task|"
-    r"(?:remind\s+me\s+to|don't\s+let\s+me\s+forget\s+to|do\s+not\s+let\s+me\s+forget\s+to)|"
-    r"(?:show|list|read|tell)\s+(?:me\s+)?(?:my\s+)?tasks|"
-    r"what\s+(?:are\s+)?(?:my\s+)?tasks|"
-    r"what(?:'s|\s+is)\s+on\s+my\s+(?:task\s+list|agenda))\b",
+    r"(?:read|show|list|display|search|find|tell)\s+(?:me\s+)?(?:my\s+)?notes?)\b",
     re.IGNORECASE,
 )
 PRIVATE_HISTORY_COMMAND = "[private command redacted]"
