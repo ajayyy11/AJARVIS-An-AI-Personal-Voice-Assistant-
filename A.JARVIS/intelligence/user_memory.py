@@ -10,6 +10,7 @@ import hashlib
 import re
 from typing import Any
 
+from config import Config
 from database.db import get_connection
 
 MAX_MEMORIES = 30
@@ -89,25 +90,38 @@ def list_memories(username: str, limit: int = MAX_MEMORIES) -> list[dict[str, st
 
 
 def save_memory(username: str, key: str, value: str) -> dict[str, str]:
-    """Save or update a memory under a per-user MySQL advisory lock.
+    """Save/update under a database-native per-user transaction lock.
 
-    The named lock serializes saves across worker threads/processes, so the
-    per-user 30-record cap cannot be bypassed by concurrent SELECT-then-INSERTs.
+    PostgreSQL uses pg_advisory_xact_lock, released automatically with the
+    transaction. MySQL uses GET_LOCK/RELEASE_LOCK because its named locks are
+    connection-scoped rather than transaction-scoped.
     """
     owner = _username(username)
     memory_key = normalize_memory_key(key)
     memory_value = validate_memory_value(value)
     connection = cursor = None
     lock_name = "ajarvis_mem_" + hashlib.sha256(owner.casefold().encode("utf-8")).hexdigest()[:48]
+    is_postgres = bool(Config.DATABASE_URL)
     lock_acquired = False
     try:
         connection = get_connection()
         cursor = connection.cursor()
-        cursor.execute("SELECT GET_LOCK(%s, 5)", (lock_name,))
-        lock_row = cursor.fetchone()
-        lock_acquired = bool(lock_row and lock_row[0] == 1)
-        if not lock_acquired:
-            raise ValueError("Personal memory is busy. Please retry your save.")
+        if is_postgres:
+            # Use a deterministic signed 64-bit key. The lock is scoped to this
+            # transaction and is released by commit/rollback on every exit path.
+            lock_key = int.from_bytes(
+                hashlib.sha256(owner.casefold().encode("utf-8")).digest()[:8],
+                byteorder="big",
+                signed=True,
+            )
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
+            lock_acquired = True
+        else:
+            cursor.execute("SELECT GET_LOCK(%s, 5)", (lock_name,))
+            lock_row = cursor.fetchone()
+            lock_acquired = bool(lock_row and lock_row[0] == 1)
+            if not lock_acquired:
+                raise ValueError("Personal memory is busy. Please retry your save.")
 
         cursor.execute(
             "SELECT id FROM user_memories WHERE username = %s AND memory_key = %s",
@@ -140,7 +154,7 @@ def save_memory(username: str, key: str, value: str) -> dict[str, str]:
             except Exception: pass
         raise
     finally:
-        if lock_acquired and cursor is not None:
+        if lock_acquired and cursor is not None and not is_postgres:
             try:
                 cursor.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
                 cursor.fetchone()
