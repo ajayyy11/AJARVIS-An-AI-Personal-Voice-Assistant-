@@ -946,3 +946,48 @@ def test_session_version_check_fails_when_database_version_changes(client, monke
     assert response.headers["Location"].endswith("/login")
     with client.session_transaction() as state:
         assert "user" not in state
+
+
+def test_old_session_cookie_stays_revoked_after_account_recreation(client, monkeypatch):
+    login_session(client, username="recreated_user")
+    monkeypatch.setattr(
+        cloud_app,
+        "_session_version_is_current",
+        lambda _username, _version, generation: generation == "new-account-generation",
+    )
+
+    old_cookie = client.get("/dashboard")
+    assert old_cookie.status_code == 302
+    assert old_cookie.headers["Location"].endswith("/login")
+    with client.session_transaction() as state:
+        assert "user" not in state
+
+    with client.session_transaction() as state:
+        state["user"] = "recreated_user"
+        state["login_time"] = datetime.now(timezone.utc).isoformat()
+        state["session_version"] = 0
+        state["session_generation"] = "new-account-generation"
+        state["csrf_token"] = "fresh-csrf"
+    monkeypatch.setattr(cloud_app, "get_latest_id", lambda **_kwargs: 0)
+
+    new_cookie = client.get("/dashboard")
+    assert new_cookie.status_code == 200
+
+
+def test_readyz_checks_schema_without_running_ddl(client, monkeypatch):
+    cursor = FakeCursor(fetchone_value=None)
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    monkeypatch.setattr(
+        cloud_app, "ensure_cloud_schema",
+        lambda: pytest.fail("Readiness must never run schema migrations"),
+    )
+
+    response = client.get("/readyz")
+
+    assert response.status_code == 503
+    assert cursor.executed
+    assert all(
+        not any(word in sql.upper() for word in ("CREATE ", "ALTER ", "DROP "))
+        for sql, _params in cursor.executed
+    )
