@@ -11,6 +11,8 @@ import logging
 import os
 import re
 from typing import Any
+
+from intelligence.genai_client import build_gemini_http_options
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
@@ -19,6 +21,7 @@ MAX_SOURCES = 5
 MAX_SOURCE_TITLE_CHARS = 140
 MAX_ANSWER_CHARS = 5000
 DEFAULT_WEB_MODEL = "gemini-2.5-flash"
+WEB_RESEARCH_TIMEOUT_MS = 25_000
 
 _WEB_TRIGGER = re.compile(
     r"\b(?:"
@@ -133,6 +136,11 @@ def generate_web_research_response(
         ),
         max_output_tokens=768,
         tools=[search_tool],
+        http_options=build_gemini_http_options(
+            types_module=sdk_types,
+            timeout_ms_override=WEB_RESEARCH_TIMEOUT_MS,
+            retry_attempts_override=1,
+        ),
     )
     response = client.models.generate_content(
         model=model or os.getenv("GEMINI_WEB_MODEL", DEFAULT_WEB_MODEL),
