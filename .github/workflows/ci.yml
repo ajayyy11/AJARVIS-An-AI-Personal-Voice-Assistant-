@@ -38,16 +38,20 @@ jobs:
       - name: Validate dashboard JavaScript syntax
         shell: bash
         run: |
-          node --check static/cloud-dashboard.js
+          node --check static/local-dashboard.js
           python - <<'PY'
           from pathlib import Path
 
           html = Path("templates/dashboard.html").read_text(encoding="utf-8")
-          javascript = Path("static/cloud-dashboard.js").read_text(encoding="utf-8")
-          if "cloud-dashboard.js" not in html or "cloud-dashboard.css" not in html:
+          javascript = Path("static/local-dashboard.js").read_text(encoding="utf-8")
+          if "local-dashboard.js" not in html or "local-dashboard.css" not in html:
               raise SystemExit("Dashboard must load its same-origin static assets.")
           if "<script>" in html.lower():
               raise SystemExit("Dashboard must not contain inline scripts.")
+          for auth_page in ("login.html", "register.html"):
+              auth_html = Path("templates/" + auth_page).read_text(encoding="utf-8")
+              if "<script>" in auth_html.lower():
+                  raise SystemExit(auth_page + " must not contain inline scripts.")
           if "</head>" not in html.lower():
               raise SystemExit("Dashboard head element is not closed.")
           if "chart.js" in html.lower() or "new Chart(" in javascript:
@@ -63,7 +67,7 @@ jobs:
           node --check static/cloud.js
           node --check static/interface.js
           node --check static/cloud-auth.js
-          node --check static/cloud-dashboard.js
+          node --check static/local-dashboard.js
           python - <<'PY'
           from pathlib import Path
 
