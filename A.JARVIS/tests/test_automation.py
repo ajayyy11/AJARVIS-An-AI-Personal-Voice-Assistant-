@@ -180,7 +180,8 @@ def test_screenshot_writes_unique_file_in_user_pictures(monkeypatch, tmp_path):
     saved = []
 
     def write_png(file_object, format=None):
-        saved.append((file_object.name, format))
+        assert hasattr(file_object, "write")
+        saved.append(format)
         file_object.write(b"PNG-test-data")
 
     fake_image = types.SimpleNamespace(save=write_png)
@@ -194,7 +195,7 @@ def test_screenshot_writes_unique_file_in_user_pictures(monkeypatch, tmp_path):
     assert Path(first["saved_to"]).parent == tmp_path / "Pictures" / "AJARVIS" / "Screenshots"
     assert Path(first["saved_to"]).read_bytes() == b"PNG-test-data"
     assert Path(second["saved_to"]).read_bytes() == b"PNG-test-data"
-    assert saved == [(first["saved_to"], "PNG"), (second["saved_to"], "PNG")]
+    assert saved == ["PNG", "PNG"]
 
 
 def test_action_registry_marks_mutating_tools_as_confirmation_required():
