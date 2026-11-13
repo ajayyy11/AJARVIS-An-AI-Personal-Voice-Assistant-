@@ -249,7 +249,7 @@ def generate_agent_response(
     latest_text = ""
     for _ in range(MAX_TOOL_ROUNDS + 1):
         response = client.models.generate_content(
-            model=model,
+            model=selected_model,
             contents=conversation,
             config=config,
         )
