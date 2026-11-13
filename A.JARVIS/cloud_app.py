@@ -111,16 +111,21 @@ REGISTRATION_WINDOW_SECONDS = 60 * 60
 _RATE_LIMIT_CLEANUP_INTERVAL = 200
 _RATE_LIMIT_REQUEST_COUNT = 0
 _RATE_LIMIT_CLEANUP_LOCK = Lock()
-_REQUIRED_CLOUD_TABLES = (
-    "cloud_users",
-    "cloud_notes",
-    "user_preferences",
-    "ajarvis_tasks",
-    "ajarvis_documents",
-    "ajarvis_tool_audit",
-    "command_history",
-    "ajarvis_rate_limits",
-)
+_REQUIRED_CLOUD_COLUMNS = {
+    "cloud_users": {
+        "username", "password_hash", "session_version", "session_generation",
+    },
+    "cloud_notes": {"username", "note_text"},
+    "user_preferences": {"username", "preference_key", "preference_value"},
+    "ajarvis_tasks": {"username", "title", "details", "due_at", "done"},
+    "ajarvis_documents": {"username", "filename", "extracted_text"},
+    "ajarvis_tool_audit": {"username", "tool_name", "outcome", "duration_ms"},
+    "command_history": {"username", "command", "response"},
+    "ajarvis_rate_limits": {
+        "rate_key", "window_started_at", "request_count", "expires_at",
+    },
+}
+_REQUIRED_CLOUD_TABLES = tuple(_REQUIRED_CLOUD_COLUMNS)
 
 
 class RateLimitUnavailable(RuntimeError):
@@ -1062,14 +1067,17 @@ def verify_cloud_schema() -> None:
             row = cursor.fetchone()
             if not row or row[0] is None:
                 raise RuntimeError("A required cloud database table is missing.")
-        cursor.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema = current_schema() AND table_name = 'cloud_users' "
-            "AND column_name IN ('session_version', 'session_generation')"
-        )
-        columns = {row[0] for row in cursor.fetchall()}
-        if not {"session_version", "session_generation"}.issubset(columns):
-            raise RuntimeError("Cloud account session schema is not up to date.")
+        for table_name, required_columns in _REQUIRED_CLOUD_COLUMNS.items():
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = %s",
+                (table_name,),
+            )
+            actual_columns = {row[0] for row in cursor.fetchall()}
+            if not required_columns.issubset(actual_columns):
+                raise RuntimeError(
+                    "A required cloud database table is missing columns."
+                )
     finally:
         if cursor is not None:
             cursor.close()
