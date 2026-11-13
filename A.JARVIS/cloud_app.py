@@ -26,6 +26,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 from database.db import get_connection
 from intelligence.agent import generate_agent_response
+from intelligence.genai_client import create_genai_client
 from intelligence.documents import (
     DocumentError,
     answer_document_question,
@@ -489,8 +490,7 @@ def _genai():
         return None
     with _genai_lock:
         if _genai_client is None:
-            from google import genai
-            _genai_client = genai.Client(api_key=key)
+            _genai_client = create_genai_client(key)
     return _genai_client
 
 
