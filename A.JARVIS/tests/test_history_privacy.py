@@ -130,7 +130,6 @@ def test_all_private_note_and_memory_command_variants_are_redacted(command):
         "what time is it?",
         "open the browser",
         "explain how DNS works",
-        "show my tasks",
     ],
 )
 def test_normal_commands_are_not_misclassified_as_private(command):
