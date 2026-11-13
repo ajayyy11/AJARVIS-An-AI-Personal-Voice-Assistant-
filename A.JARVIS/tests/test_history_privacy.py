@@ -95,3 +95,40 @@ def test_history_page_redacts_legacy_sensitive_rows(monkeypatch):
         "command": history.PRIVATE_HISTORY_COMMAND,
         "response": history.PRIVATE_HISTORY_RESPONSE,
     }]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "note that my passport is stored in the safe",
+        "don't forget my appointment tomorrow",
+        "do not forget that my renewal is due",
+        "write a note: call the electrician",
+        "create a note: collect the package",
+        "save a note: the spare key is with me",
+        "take a note: prepare the report",
+        "make a note: book the service",
+        "remember that my answer style is concise",
+        "save to memory my preferred language is English",
+        "forget my old preference",
+        "remove from memory my old preference",
+        "Hey Jarvis, note that my appointment is on Monday",
+        "show my notes",
+        "search my notes for passport",
+    ],
+)
+def test_all_private_note_and_memory_command_variants_are_redacted(command):
+    assert history.is_sensitive_history_command(command) is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "what time is it?",
+        "open the browser",
+        "explain how DNS works",
+        "show my tasks",
+    ],
+)
+def test_normal_commands_are_not_misclassified_as_private(command):
+    assert history.is_sensitive_history_command(command) is False
