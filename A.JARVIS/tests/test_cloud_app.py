@@ -1046,3 +1046,36 @@ def test_cloud_history_redacts_task_and_reminder_responses_before_persistence(mo
         "username": "alice",
         "private": True,
     }
+
+
+def test_assistant_api_marks_task_creation_history_private(client, monkeypatch):
+    login_session(client, username="private_task_tester", csrf="test-token")
+    monkeypatch.setattr(
+        cloud_app,
+        "create_user_task",
+        lambda username, title: {"title": title, "id": 8},
+    )
+    captured = {}
+
+    def capture(command, response_text, username, *, private=False):
+        captured.update(
+            command=command,
+            response=response_text,
+            username=username,
+            private=private,
+        )
+
+    monkeypatch.setattr(cloud_app, "add_memory", capture)
+    response = client.post(
+        "/api/assistant",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"command": "create task rotate production password"},
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "command": "create task rotate production password",
+        "response": "Task added: rotate production password.",
+        "username": "private_task_tester",
+        "private": True,
+    }
