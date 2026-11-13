@@ -48,6 +48,7 @@ from intelligence.cloud_tasks import (
 )
 from intelligence.memory import (
     add_memory,
+    is_sensitive_history_command,
     get_recent,
     get_recent_after,
     get_all_recent,
@@ -854,7 +855,14 @@ def _save_note(username: str, note_text: str) -> dict[str, Any]:
 
 def _save_history(username: str, command: str, response_text: str) -> None:
     # Use the existing history abstraction for consistent user-scoped history.
-    add_memory(command[:2000], response_text[:12000], username)
+    safe_command = command[:2000]
+    safe_response = response_text[:12000]
+    add_memory(
+        safe_command,
+        safe_response,
+        username,
+        private=is_sensitive_history_command(safe_command),
+    )
 
 
 _WAKE_PREFIX_RE = re.compile(
