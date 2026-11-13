@@ -312,7 +312,12 @@ def video_feed():
     if not is_authenticated():
         allowed, denial = _registration_is_allowed()
         if not allowed:
-            return denial
+            # Preserve the face-login preview only for requests issued by the
+            # local login page. Modern browsers label third-party image loads
+            # with Sec-Fetch-Site: cross-site, which blocks hostile embeds.
+            fetch_site = request.headers.get("Sec-Fetch-Site", "").lower()
+            if fetch_site != "same-origin":
+                return jsonify({"error": "Local camera access is restricted."}), 403
     try:
         remote_ip = ipaddress.ip_address(request.remote_addr or "")
     except ValueError:
