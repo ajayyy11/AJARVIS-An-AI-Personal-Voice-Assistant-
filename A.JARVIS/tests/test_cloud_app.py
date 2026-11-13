@@ -122,7 +122,11 @@ def test_security_headers_are_set(client):
 
 def test_assistant_route_limits_request_bursts_per_user(client, monkeypatch):
     login_session(client, username="voice_tester", csrf="test-token")
-    monkeypatch.setattr(cloud_app, "process_cloud_command", lambda username, command: "test reply")
+    monkeypatch.setattr(
+        cloud_app,
+        "process_cloud_command",
+        lambda username, command, **_kwargs: "test reply",
+    )
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
     counts = {}
 
@@ -200,7 +204,7 @@ def test_assistant_api_passes_conversation_cursor_to_command_processor(client, m
     calls = []
     monkeypatch.setattr(
         cloud_app, "process_cloud_command",
-        lambda username, command, context_after_id=None:
+        lambda username, command, context_after_id=None, history_metadata=None:
             calls.append((username, command, context_after_id)) or "clean-context reply",
     )
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
@@ -629,7 +633,11 @@ def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatc
         return calls["count"] > cloud_app.MAX_ASSISTANT_REQUESTS
 
     monkeypatch.setattr(cloud_app, "_assistant_rate_limited", shared_quota)
-    monkeypatch.setattr(cloud_app, "process_cloud_command", lambda _username, _command: "test reply")
+    monkeypatch.setattr(
+        cloud_app,
+        "process_cloud_command",
+        lambda _username, _command, **_kwargs: "test reply",
+    )
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
     monkeypatch.setattr(cloud_app, "_genai", lambda: object())
     monkeypatch.setattr(
@@ -1029,6 +1037,7 @@ def test_cloud_history_redacts_task_and_reminder_responses_before_persistence(mo
         "alice",
         "create task rotate production password",
         "Task added: rotate production password.",
+        private=True,
     )
 
     assert captured == {
