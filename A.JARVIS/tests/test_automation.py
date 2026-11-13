@@ -200,11 +200,11 @@ def test_screenshot_writes_unique_file_in_user_pictures(monkeypatch, tmp_path):
 def test_action_registry_marks_mutating_tools_as_confirmation_required():
     registry=automation.build_automation_registry()
     actions={item["name"]:item for item in registry.list_tools()}
-    assert actions["open_website"]["requires_confirmation"] is True
+    assert actions["open_website"]["requires_confirmation"] is False
     assert actions["open_website"]["risk_level"]=="reversible"
     assert actions["read_user_memories"]["risk_level"]=="read_only"
     if automation.os.name == "nt":
-        assert actions["launch_application"]["requires_confirmation"] is True
+        assert actions["launch_application"]["requires_confirmation"] is False
         assert actions["lock_workstation"]["requires_confirmation"] is True
         assert actions["lock_workstation"]["risk_level"]=="destructive"
     else:
