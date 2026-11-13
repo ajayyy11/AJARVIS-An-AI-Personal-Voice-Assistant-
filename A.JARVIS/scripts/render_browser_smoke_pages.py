@@ -24,7 +24,7 @@ class _SessionVersionConnection:
     def close(self): pass
 
 
-cloud_app._session_version_is_current = lambda _username, version: version == 0
+cloud_app._session_version_is_current = lambda _username, version, generation: version == 0 and generation == "qa-session-generation"
 cloud_app.get_latest_id = lambda username: 42
 cloud_app.app.config.update(
     TESTING=True,
@@ -54,6 +54,7 @@ def main() -> None:
             session["user"] = "qa_user"
             session["login_time"] = datetime.now(timezone.utc).isoformat()
             session["session_version"] = 0
+            session["session_generation"] = "qa-session-generation"
             session["csrf_token"] = "qa-csrf-token"
         for page, route in ROUTES.items():
             response = client.get(route)
