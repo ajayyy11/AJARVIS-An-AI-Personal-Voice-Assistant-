@@ -434,3 +434,28 @@ def test_local_registration_is_closed_after_first_account(client, monkeypatch):
         state["csrf_token"] = "x" * 40
     response = client.post("/register", headers={"X-CSRF-Token": "x" * 40}, json={"username": "bob"})
     assert response.status_code == 403
+
+
+
+def test_registration_page_is_closed_after_first_user(client, monkeypatch):
+    monkeypatch.setattr(local_app, "_registration_is_allowed", lambda: (False, (local_app.jsonify({"error": "closed"}), 403)))
+    response = client.get("/register")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+def test_video_feed_is_not_available_after_first_user_until_authenticated(client, monkeypatch):
+    monkeypatch.setattr(local_app, "_registration_is_allowed", lambda: (False, (local_app.jsonify({"error": "closed"}), 403)))
+    monkeypatch.setattr(local_app, "generate_frames", lambda: pytest.fail("Camera feed must not start"))
+    response = client.get("/video_feed")
+    assert response.status_code == 403
+
+
+def test_dashboard_sends_csp_and_security_headers(client, monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app.camera, "pause_recognition", lambda: None)
+    monkeypatch.setattr(local_app, "is_user_active", lambda _username: True)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    assert "script-src 'self'" in response.headers["Content-Security-Policy"]
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
