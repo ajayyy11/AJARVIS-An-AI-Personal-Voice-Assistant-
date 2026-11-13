@@ -210,3 +210,84 @@ def test_find_file_without_name_returns_specific_prompt():
 def test_search_for_file_without_name_returns_specific_prompt():
     user_state.activate_user("alice")
     assert command_router.process_command("search for file", "alice") == "Please specify a file name to find."
+
+
+
+def test_direct_desktop_action_waits_for_exact_tool_registry_approval(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_launch",
+        "Launch a test application.",
+        lambda *, username: events.append(username) or {"started": True},
+        risk_level="reversible",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(
+        automation_module,
+        "_activity",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "open chrome",
+        ("test_launch", {}, "open chrome"),
+    )
+
+    waiting = command_router.process_command("open chrome", "alice")
+    assert "waiting for your approval" in waiting.lower()
+    assert events == []
+
+    wrong = command_router.process_command("confirm lock system", "alice")
+    assert "does not match" in wrong.lower()
+    assert events == []
+
+    completed = command_router.process_command("confirm open chrome", "alice")
+    assert "approved and completed" in completed.lower()
+    assert events == ["alice"]
+
+
+def test_direct_desktop_action_can_be_cancelled_without_execution(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_screenshot",
+        "Capture a test screenshot.",
+        lambda *, username: events.append(username) or {"saved": True},
+        risk_level="reversible",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "take screenshot",
+        ("test_screenshot", {}, "take screenshot"),
+    )
+
+    waiting = command_router.process_command("take screenshot", "alice")
+    assert "waiting for your approval" in waiting.lower()
+    cancelled = command_router.process_command("cancel action", "alice")
+    assert "cancelled" in cancelled.lower()
+    assert events == []
+
+
+def test_power_action_confirmation_still_reaches_power_handler(monkeypatch):
+    user_state.activate_user("alice")
+    monkeypatch.setattr(
+        command_router,
+        "handle_power_command",
+        lambda command, username: {"status": "confirmed", "action": "shutdown"},
+    )
+    monkeypatch.setattr(command_router.os, "name", "posix")
+    reply = command_router.process_command("confirm shutdown", "alice")
+    assert "supported only on Windows" in reply
