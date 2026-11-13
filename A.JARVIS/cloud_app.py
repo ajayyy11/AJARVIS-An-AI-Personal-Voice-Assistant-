@@ -366,8 +366,12 @@ def _auth_rate_limited(username: str | None = None) -> bool:
             for key, stamps in list(_auth_username_attempts.items()):
                 if not stamps or now - stamps[-1] >= LOGIN_WINDOW_SECONDS:
                     _auth_username_attempts.pop(key, None)
+        # Render's proxy address can be shared by many unrelated users.
+        # Enforce the IP budget only for malformed/anonymous login requests;
+        # named accounts are throttled independently so one user cannot lock out
+        # every account behind the same proxy address.
         return (
-            len(ip_attempts) >= MAX_LOGIN_ATTEMPTS_PER_IP
+            (account is None and len(ip_attempts) >= MAX_LOGIN_ATTEMPTS_PER_IP)
             or (account is not None and len(account_attempts) >= MAX_LOGIN_ATTEMPTS)
         )
 
