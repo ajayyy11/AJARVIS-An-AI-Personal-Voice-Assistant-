@@ -470,3 +470,39 @@ def test_login_page_can_request_same_origin_camera_preview_but_cross_site_cannot
     allowed = client.get("/video_feed", headers={"Sec-Fetch-Site": "same-origin"})
     assert allowed.status_code == 200
     assert allowed.headers["Cache-Control"] == "no-store"
+
+
+
+def test_reminder_and_notification_database_outages_return_503(client, monkeypatch):
+    from intelligence.reminders import ReminderUnavailable
+
+    login(client)
+    monkeypatch.setattr(
+        local_app,
+        "list_reminders",
+        lambda _username: (_ for _ in ()).throw(ReminderUnavailable("Reminders are temporarily unavailable.")),
+    )
+    response = client.get("/api/reminders")
+    assert response.status_code == 503
+    assert "temporarily unavailable" in response.get_json()["error"]
+
+    monkeypatch.setattr(
+        local_app,
+        "mark_notification_read",
+        lambda *_args: (_ for _ in ()).throw(ReminderUnavailable("Notification updates are temporarily unavailable.")),
+    )
+    response = client.post(
+        "/api/notifications/7/read",
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert response.status_code == 503
+
+
+def test_missing_notification_is_404_not_a_database_error(client, monkeypatch):
+    login(client)
+    monkeypatch.setattr(local_app, "mark_notification_read", lambda *_args: False)
+    response = client.post(
+        "/api/notifications/999/read",
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert response.status_code == 404
