@@ -295,3 +295,33 @@ def test_power_action_confirmation_still_reaches_power_handler(monkeypatch):
     monkeypatch.setattr(command_router.os, "name", "posix")
     reply = command_router.process_command("confirm shutdown", "alice")
     assert "supported only on Windows" in reply
+
+
+
+def test_system_deactivation_clears_pending_direct_action(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    registry = ToolRegistry()
+    registry.register(
+        "test_action",
+        "A test action.",
+        lambda *, username: {"ok": True},
+        risk_level="reversible",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "open chrome",
+        ("test_action", {}, "open chrome"),
+    )
+    queued = command_router.process_command("open chrome", "alice")
+    assert "waiting for your approval" in queued.lower()
+    assert "alice" in command_router._PENDING_COMMAND_APPROVALS
+
+    reply = command_router.process_command("system deactivate", "alice")
+    assert "System deactivating" in reply
+    assert "alice" not in command_router._PENDING_COMMAND_APPROVALS
