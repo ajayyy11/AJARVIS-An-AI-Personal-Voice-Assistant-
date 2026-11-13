@@ -995,3 +995,40 @@ def test_session_version_check_fails_when_database_version_changes(client, monke
     monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, _version: False)
     response = client.get("/dashboard")
     assert response.status_code == 401
+
+
+
+def test_named_login_rate_limit_is_not_shared_by_other_accounts(client, monkeypatch):
+    password_hash = generate_password_hash("not-the-password")
+    cursor = FakeCursor(fetchone_value=(password_hash, 0))
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    remote_addr = "198.51.100.148"
+    usernames = ("alice_shared_proxy", "bob_shared_proxy")
+    for username in usernames:
+        cloud_app._auth_username_attempts.pop(username, None)
+    cloud_app._auth_attempts.pop(remote_addr, None)
+    try:
+        for _ in range(cloud_app.MAX_LOGIN_ATTEMPTS):
+            limited_user = client.post(
+                "/api/auth/login",
+                environ_base={"REMOTE_ADDR": remote_addr},
+                json={"username": usernames[0], "password": "incorrect"},
+            )
+            assert limited_user.status_code == 401
+        blocked_user = client.post(
+            "/api/auth/login",
+            environ_base={"REMOTE_ADDR": remote_addr},
+            json={"username": usernames[0], "password": "incorrect"},
+        )
+        assert blocked_user.status_code == 429
+        other_user = client.post(
+            "/api/auth/login",
+            environ_base={"REMOTE_ADDR": remote_addr},
+            json={"username": usernames[1], "password": "incorrect"},
+        )
+        assert other_user.status_code == 401
+    finally:
+        for username in usernames:
+            cloud_app._auth_username_attempts.pop(username, None)
+        cloud_app._auth_attempts.pop(remote_addr, None)
