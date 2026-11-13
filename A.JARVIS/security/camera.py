@@ -136,3 +136,19 @@ def get_latest_frame(): return get_camera().get_latest_frame()
 def is_camera_ready(): return get_camera().is_camera_ready()
 def pause_recognition(): get_camera().pause_recognition()
 def resume_recognition(): get_camera().resume_recognition()
+
+def stop_camera():
+    """Release the physical camera and clear the shared instance.
+
+    This is used after successful authentication so the camera hardware is not
+    held open throughout the authenticated dashboard session.
+    """
+    global _cam_instance
+    with _camera_lock:
+        instance = _cam_instance
+        _cam_instance = None
+        if instance is None:
+            return False
+        instance.close()
+        return True
+
