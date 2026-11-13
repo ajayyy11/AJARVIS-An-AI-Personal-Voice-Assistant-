@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-DEFAULT_GEMINI_TIMEOUT_MS = 45_000
+DEFAULT_GEMINI_TIMEOUT_MS = 15_000
 DEFAULT_GEMINI_RETRY_ATTEMPTS = 2
 RETRYABLE_HTTP_STATUS_CODES = [408, 429, 500, 502, 503, 504]
 
@@ -29,8 +29,8 @@ def build_gemini_http_options(*, types_module: Any = None) -> Any:
     if types_module is None:
         from google.genai import types as types_module
 
-    timeout_ms = _bounded_env_int("GEMINI_TIMEOUT_MS", DEFAULT_GEMINI_TIMEOUT_MS, 5_000, 180_000)
-    attempts = _bounded_env_int("GEMINI_RETRY_ATTEMPTS", DEFAULT_GEMINI_RETRY_ATTEMPTS, 1, 5)
+    timeout_ms = _bounded_env_int("GEMINI_TIMEOUT_MS", DEFAULT_GEMINI_TIMEOUT_MS, 5_000, 15_000)
+    attempts = _bounded_env_int("GEMINI_RETRY_ATTEMPTS", DEFAULT_GEMINI_RETRY_ATTEMPTS, 1, 2)
     retry_options = types_module.HttpRetryOptions(
         attempts=attempts,
         initial_delay=0.5,
