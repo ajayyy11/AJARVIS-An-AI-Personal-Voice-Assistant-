@@ -392,7 +392,15 @@ def _rate_limit_exceeded(
             should_cleanup = _RATE_LIMIT_REQUEST_COUNT % _RATE_LIMIT_CLEANUP_INTERVAL == 0
         if should_cleanup:
             from database.rate_limiter import cleanup_expired_rate_limits
-            cleanup_expired_rate_limits(connection_factory=_database)
+            try:
+                cleanup_expired_rate_limits(connection_factory=_database)
+            except Exception as cleanup_error:
+                # Cleanup is housekeeping, not part of the security decision.
+                # Keep the already-committed request result and retry cleanup later.
+                logger.warning(
+                    "Expired rate-limit cleanup failed (%s).",
+                    type(cleanup_error).__name__,
+                )
         return exceeded
     except Exception as exc:
         logger.error("Shared rate-limit storage is unavailable (%s).", type(exc).__name__)
