@@ -1151,7 +1151,6 @@ def login_account():
     if not isinstance(data, dict):
         if _auth_rate_limited():
             return jsonify({"error": "Too many login attempts. Wait 15 minutes before trying again."}), 429
-        _record_auth_failure()
         return jsonify({"error": "Username and password are required."}), 400
 
     username = data.get("username")
@@ -1163,7 +1162,6 @@ def login_account():
         response.headers["Retry-After"] = str(LOGIN_WINDOW_SECONDS)
         return response
     if not isinstance(username, str) or not isinstance(password, str) or len(password) > 256:
-        _record_auth_failure(account_name)
         return jsonify({"error": "Invalid username or password."}), 401
 
     conn = cursor = None
@@ -1194,7 +1192,6 @@ def login_account():
             conn.close()
 
     if not valid:
-        _record_auth_failure(account_name)
         return jsonify({"error": "Invalid username or password."}), 401
     _clear_auth_failures(account_name)
     token = _new_session(
