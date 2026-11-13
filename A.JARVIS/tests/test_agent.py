@@ -19,6 +19,14 @@ class FakeTypes:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
 
+    class HttpRetryOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class HttpOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
     class AutomaticFunctionCallingConfig:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
@@ -287,3 +295,105 @@ def test_agent_enforces_bounded_tool_request_rounds():
     assert len(client.calls) == MAX_TOOL_ROUNDS + 1
     assert len(client.calls) <= 3
     assert result == f"Round {MAX_TOOL_ROUNDS + 1}"
+
+
+def test_agent_uses_remaining_wall_clock_budget_for_each_gemini_round(monkeypatch):
+    from intelligence import agent
+
+    registry = ToolRegistry()
+    registry.register("read_value", "Read a value.", lambda *, username: {"value": 1})
+    model_content = SimpleNamespace(role="model", parts=["function call"])
+    responses = [
+        response(
+            text="Reading the value.",
+            function_calls=[function_call("read_value")],
+            content=model_content,
+        ),
+        response(text="The value is one."),
+    ]
+    clock = [100.0]
+    monkeypatch.setattr(agent.time, "monotonic", lambda: clock[0])
+
+    class AdvancingClient:
+        def __init__(self):
+            self.responses = list(responses)
+            self.calls = []
+            self.models = self
+
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            result = self.responses.pop(0)
+            clock[0] += 7.0
+            return result
+
+    client = AdvancingClient()
+    result = generate_agent_response(
+        client=client,
+        contents=[],
+        system_instruction="Test",
+        username="ajay",
+        registry=registry,
+        types_module=FakeTypes,
+        request_timeout_seconds=25.0,
+    )
+
+    assert result == "The value is one."
+    assert len(client.calls) == 2
+    assert client.calls[0]["config"].http_options.timeout == 25_000
+    assert client.calls[1]["config"].http_options.timeout == 18_000
+    assert all(
+        call["config"].http_options.retry_options.attempts == 1
+        for call in client.calls
+    )
+
+
+def test_agent_does_not_start_another_gemini_round_after_deadline(monkeypatch):
+    from intelligence import agent
+
+    registry = ToolRegistry()
+    registry.register("read_value", "Read a value.", lambda *, username: {"value": 1})
+    model_content = SimpleNamespace(role="model", parts=["function call"])
+    clock = [100.0]
+    monkeypatch.setattr(agent.time, "monotonic", lambda: clock[0])
+
+    class AdvancingClient:
+        def __init__(self):
+            self.calls = []
+            self.models = self
+
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            clock[0] += 26.0
+            return response(
+                text="The request is taking too long.",
+                function_calls=[function_call("read_value")],
+                content=model_content,
+            )
+
+    client = AdvancingClient()
+    result = generate_agent_response(
+        client=client,
+        contents=[],
+        system_instruction="Test",
+        username="ajay",
+        registry=registry,
+        types_module=FakeTypes,
+        request_timeout_seconds=25.0,
+    )
+
+    assert result == "The request is taking too long."
+    assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 61, "not-a-number"])
+def test_agent_rejects_invalid_wall_clock_deadline(value):
+    with pytest.raises(ValueError, match="deadline"):
+        generate_agent_response(
+            client=FakeClient([]),
+            contents=[],
+            system_instruction="Test",
+            username="ajay",
+            registry=ToolRegistry(),
+            types_module=FakeTypes,
+            request_timeout_seconds=value,
+        )
