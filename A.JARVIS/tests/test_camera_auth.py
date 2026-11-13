@@ -123,3 +123,20 @@ def test_camera_pause_and_resume_recognition():
     camera.resume_recognition()
     assert camera.recognition_enabled is True
     assert camera._last_recognition_frame_at == 0.0
+
+
+def test_stop_camera_releases_hardware_and_clears_shared_instance(monkeypatch):
+    events = []
+
+    class FakeCamera:
+        def close(self):
+            events.append("closed")
+
+    fake = FakeCamera()
+    monkeypatch.setattr(camera_module, "_cam_instance", fake)
+    monkeypatch.setattr(camera_module, "_camera_lock", threading.Lock())
+
+    assert camera_module.stop_camera() is True
+    assert camera_module._cam_instance is None
+    assert events == ["closed"]
+    assert camera_module.stop_camera() is False
