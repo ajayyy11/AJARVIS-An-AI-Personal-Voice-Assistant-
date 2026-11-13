@@ -325,3 +325,58 @@ def test_system_deactivation_clears_pending_direct_action(monkeypatch):
     reply = command_router.process_command("system deactivate", "alice")
     assert "System deactivating" in reply
     assert "alice" not in command_router._PENDING_COMMAND_APPROVALS
+
+
+def test_direct_website_action_is_low_risk_and_accepts_polite_phrasing(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_open",
+        "Open a test public website.",
+        lambda *, username: events.append(username) or {"opened": True},
+        risk_level="reversible",
+        requires_confirmation=False,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "open youtube",
+        ("test_open", {}, "open youtube"),
+    )
+
+    reply = command_router.process_command("Hey Jarvis, could you please open youtube for me?", "alice")
+    assert "done" in reply.lower()
+    assert events == ["alice"]
+    assert "alice" not in command_router._PENDING_COMMAND_APPROVALS
+
+
+def test_high_impact_direct_actions_still_require_confirmation(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_lock",
+        "Lock a test workstation.",
+        lambda *, username: events.append(username) or {"locked": True},
+        risk_level="destructive",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "lock system",
+        ("test_lock", {}, "lock system"),
+    )
+
+    reply = command_router.process_command("please lock system now", "alice")
+    assert "waiting for your approval" in reply.lower()
+    assert events == []
