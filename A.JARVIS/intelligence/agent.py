@@ -192,7 +192,7 @@ def generate_agent_response(
     contents: list[Any],
     system_instruction: str,
     username: str,
-    model: str = "gemini-2.5-flash",
+    model: str | None = None,
     registry: ToolRegistry | None = None,
     types_module: Any = None,
 ) -> str:
@@ -205,6 +205,10 @@ def generate_agent_response(
         raise ValueError("An authenticated username is required.")
     if registry is None:
         registry = build_default_registry()
+
+    selected_model = (model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")).strip()
+    if not selected_model:
+        selected_model = "gemini-2.5-flash"
 
     config_types = types_module
     if config_types is None:
@@ -221,7 +225,7 @@ def generate_agent_response(
         )
     if not declarations:
         response = client.models.generate_content(
-            model=model,
+            model=selected_model,
             contents=contents,
             config=config_types.GenerateContentConfig(
                 system_instruction=system_instruction,
