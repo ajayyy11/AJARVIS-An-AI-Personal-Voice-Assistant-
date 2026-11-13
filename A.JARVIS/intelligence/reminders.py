@@ -20,6 +20,10 @@ class ReminderError(ValueError):
     """Raised when reminder input or ownership state is invalid."""
 
 
+class ReminderUnavailable(ReminderError):
+    """Raised when the reminder database cannot complete the requested operation."""
+
+
 def _owner(username: str) -> str:
     if not isinstance(username, str) or not username.strip() or len(username.strip()) > 100:
         raise ReminderError("An authenticated username is required.")
@@ -81,7 +85,7 @@ def create_reminder(username: str, title: str, due_at: str) -> dict[str, Any]:
         raise
     except Exception:
         logger.warning("Could not create reminder", exc_info=True)
-        raise ReminderError("Reminder could not be saved. Check the database migration.")
+        raise ReminderUnavailable("Reminder storage is temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()
@@ -117,7 +121,7 @@ def list_reminders(username: str, limit: int = 50) -> list[dict[str, Any]]:
         ]
     except Exception:
         logger.warning("Could not list reminders", exc_info=True)
-        return []
+        raise ReminderUnavailable("Reminders are temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()
@@ -158,7 +162,7 @@ def set_notification_preferences(
         }
     except Exception:
         logger.warning("Could not save notification preferences", exc_info=True)
-        raise ReminderError("Notification preferences could not be saved. Check the database migration.")
+        raise ReminderUnavailable("Notification preferences are temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()
@@ -186,7 +190,7 @@ def get_notification_preferences(username: str) -> dict[str, bool]:
         }
     except Exception:
         logger.warning("Could not load notification preferences", exc_info=True)
-        return {"reminders_enabled": False, "browser_notifications_enabled": False}
+        raise ReminderUnavailable("Notification preferences are temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()
@@ -253,7 +257,7 @@ def collect_due_notifications(username: str, limit: int = 20) -> list[dict[str, 
         if connection is not None:
             try: connection.rollback()
             except Exception: pass
-        return []
+        raise ReminderUnavailable("Reminder alerts are temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()
@@ -281,7 +285,7 @@ def list_unread_notifications(username: str, limit: int = 30) -> list[dict[str, 
         ]
     except Exception:
         logger.warning("Could not list notifications", exc_info=True)
-        return []
+        raise ReminderUnavailable("Notifications are temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()
@@ -309,7 +313,7 @@ def mark_notification_read(username: str, notification_id: int) -> bool:
         return changed
     except Exception:
         logger.warning("Could not mark notification as read", exc_info=True)
-        return False
+        raise ReminderUnavailable("Notification updates are temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()
@@ -341,7 +345,7 @@ def update_reminder_status(username: str, reminder_id: int, status: str) -> bool
         return changed
     except Exception:
         logger.warning("Could not update reminder", exc_info=True)
-        return False
+        raise ReminderUnavailable("Reminder updates are temporarily unavailable. Please retry.") from None
     finally:
         if cursor is not None:
             try: cursor.close()

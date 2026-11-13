@@ -22,8 +22,16 @@ The cloud workspace is deployed at https://ajarvis-cloud.onrender.com. The Rende
    - `DATABASE_URL`: Neon PostgreSQL connection string. Use the provider's pooled connection string if available.
    - `GEMINI_API_KEY`: your Google AI Studio API key. Keep it server-side; never put it in HTML or JavaScript.
    - `SECRET_KEY`: Render generates this automatically.
-5. Deploy and wait for the build. Check `/healthz` and `/readyz`; then create a test account and verify notes, preferences, tasks, documents, and logout.
-6. Keep an export/backup of anything important. A free service is suitable for demos, not critical or confidential data.
+5. **Apply the cloud database migration before deploying the new application version.** From a local terminal with the same Neon `DATABASE_URL` and a valid `SECRET_KEY` configured in `A.JARVIS/.env`, install the pinned environment and run:
+   ```bash
+   cd A.JARVIS
+   python -m pip install -r requirements-web.lock
+   python scripts/migrate_cloud_database.py --apply
+   python scripts/migrate_cloud_database.py --verify
+   ```
+   The migration adds the unique account-generation field and shared rate-limit table. It is idempotent. Keep a database backup before running it. The web application no longer performs schema DDL during normal requests or readiness checks.
+6. Deploy and wait for the build. Check `/healthz` and `/readyz`; then create a test account and verify notes, preferences, tasks, documents, login throttling, and logout. `/readyz` returns ready only after the required schema is present.
+7. Keep an export/backup of anything important. A free service is suitable for demos, not critical or confidential data.
 
 ## Voice interaction
 

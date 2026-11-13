@@ -1,12 +1,16 @@
 from flask import Flask, render_template, Response, redirect, url_for, jsonify, request, session
 import hmac
+import hashlib
+import ipaddress
+from functools import lru_cache, wraps
+from urllib.parse import urlsplit
 import secrets
 import threading
 from config import Config
 from security.camera import generate_frames
 from security.session_manager import is_authenticated, revoke_access, grant_access
 from security.face_auth import load_known_faces
-from intelligence.command_router import process_command, _get_genai_client
+from intelligence.command_router import process_command, _get_genai_client, clear_pending_direct_action
 from intelligence.automation import (
     AutomationError,
     advance_plan,
@@ -32,6 +36,7 @@ from intelligence.personal_intelligence import (
 )
 from intelligence.reminders import (
     ReminderError,
+    ReminderUnavailable,
     create_reminder,
     list_reminders,
     set_notification_preferences,
@@ -61,6 +66,103 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower()
         in {"1", "true", "yes", "on"},
 )
+
+@lru_cache(maxsize=128)
+def asset_version(filename: str) -> str:
+    """Return a stable content hash for static asset cache busting."""
+    safe_name = os.path.basename(str(filename))
+    if not safe_name or safe_name != str(filename):
+        return "invalid"
+    asset_path = os.path.join(app.static_folder, safe_name)
+    try:
+        with open(asset_path, "rb") as asset_file:
+            return hashlib.sha256(asset_file.read()).hexdigest()[:16]
+    except OSError:
+        app.logger.warning("Could not calculate static asset hash for %s", safe_name)
+        return "missing"
+
+
+@app.context_processor
+def inject_asset_version():
+    return {"asset_version": asset_version}
+
+
+@app.after_request
+def add_local_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if request.endpoint in {"dashboard", "login", "register"}:
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+            "form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; "
+            "font-src 'self' data:; connect-src 'self'; media-src 'self' blob:"
+        )
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+LOCAL_ALLOWED_HOSTS = {
+    host.strip().lower()
+    for host in os.getenv("AJARVIS_ALLOWED_HOSTS", "localhost,127.0.0.1,::1").split(",")
+    if host.strip()
+}
+_local_registration_lock = threading.Lock()
+
+
+@app.before_request
+def reject_untrusted_host():
+    """Reject arbitrary Host headers before routes touch the camera or database."""
+    try:
+        hostname = urlsplit("//" + request.host).hostname
+    except ValueError:
+        hostname = None
+    if not hostname or hostname.lower() not in LOCAL_ALLOWED_HOSTS:
+        return jsonify({"error": "Untrusted Host header."}), 421
+    return None
+
+
+def _serialize_registration(handler):
+    @wraps(handler)
+    def wrapper(*args, **kwargs):
+        # This is a local, single-process bootstrap lock. It prevents parallel
+        # first-user registrations from both observing an empty users table.
+        with _local_registration_lock:
+            return handler(*args, **kwargs)
+    return wrapper
+
+
+def _registration_is_allowed():
+    if is_authenticated():
+        return True, None
+    conn = cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users")
+        row = cursor.fetchone()
+        user_count = int(row[0]) if row else 0
+        if user_count == 0:
+            return True, None
+        return False, (jsonify({
+            "status": "error",
+            "message": "Registration is closed. Sign in with an existing account first.",
+        }), 403)
+    except Exception:
+        app.logger.warning("Could not verify first-user registration state", exc_info=True)
+        return False, (jsonify({
+            "status": "error",
+            "message": "Registration is temporarily unavailable.",
+        }), 503)
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
 
 _face_cache_loaded = False
 _face_cache_lock = threading.Lock()
@@ -95,7 +197,9 @@ def _csrf_is_valid():
 @app.route("/")
 def home():
     if is_authenticated():
+        camera.stop_camera()
         return redirect(url_for("dashboard"))
+    camera.resume_recognition()
     return render_template("home.html")
 
 
@@ -105,7 +209,9 @@ def home():
 @app.route("/login")
 def login():
     if is_authenticated():
+        camera.pause_recognition()
         return redirect(url_for("dashboard"))
+    camera.resume_recognition()
     return render_template("login.html")
 
 
@@ -113,9 +219,31 @@ def login():
 # REGISTER (GET + POST)
 # ==========================================
 @app.route("/register", methods=["GET", "POST"])
+@_serialize_registration
 def register():
+    allowed, denial = _registration_is_allowed()
+    if not allowed:
+        if request.method == "GET" and denial[1] == 403:
+            return redirect(url_for("login"))
+        return denial
+
+    camera.resume_recognition()
     if request.method == "GET":
-        return render_template("register.html")
+        csrf_token = session.get("csrf_token")
+        if not isinstance(csrf_token, str) or len(csrf_token) < 32:
+            csrf_token = secrets.token_urlsafe(32)
+            session["csrf_token"] = csrf_token
+        return render_template("register.html", csrf_token=csrf_token)
+
+    expected_csrf = session.get("csrf_token")
+    supplied_csrf = request.headers.get("X-CSRF-Token", "")
+    if (
+        not isinstance(expected_csrf, str)
+        or len(expected_csrf) < 32
+        or not supplied_csrf
+        or not hmac.compare_digest(expected_csrf, supplied_csrf)
+    ):
+        return jsonify({"status": "error", "message": "Security token expired. Reload the registration page and try again."}), 403
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -200,7 +328,26 @@ def register():
 # ==========================================
 @app.route("/video_feed")
 def video_feed():
-    return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    # Only the bootstrap owner (before the first account) or an authenticated
+    # user may read the camera. The loopback check remains a second boundary.
+    if not is_authenticated():
+        allowed, denial = _registration_is_allowed()
+        if not allowed:
+            # Preserve the face-login preview only for requests issued by the
+            # local login page. Modern browsers label third-party image loads
+            # with Sec-Fetch-Site: cross-site, which blocks hostile embeds.
+            fetch_site = request.headers.get("Sec-Fetch-Site", "").lower()
+            if fetch_site != "same-origin":
+                return jsonify({"error": "Local camera access is restricted."}), 403
+    try:
+        remote_ip = ipaddress.ip_address(request.remote_addr or "")
+    except ValueError:
+        return jsonify({"error": "Local camera access is restricted."}), 403
+    if not remote_ip.is_loopback:
+        return jsonify({"error": "Local camera access is restricted."}), 403
+    response = Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ==========================================
@@ -209,6 +356,7 @@ def video_feed():
 @app.route("/check_access")
 def check_access():
     if is_authenticated():
+        camera.pause_recognition()
         response = jsonify({"access": True, "user": session.get("user")})
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -225,6 +373,7 @@ def check_access():
         return response
     if detected:
         grant_access(detected)
+        camera.pause_recognition()
         camera.reset_detected_user()
         response = jsonify({"access": True, "user": detected, "camera_ready": camera_ready})
     else:
@@ -240,6 +389,7 @@ def check_access():
 def dashboard():
     if not is_authenticated():
         return redirect(url_for("home"))
+    camera.stop_camera()
     csrf_token = session.get("csrf_token")
     if not isinstance(csrf_token, str) or len(csrf_token) < 32:
         csrf_token = secrets.token_urlsafe(32)
@@ -466,9 +616,12 @@ def reminders_api():
         return jsonify({"error": "Unauthorized"}), 401
     username = session["user"]
     if request.method == "GET":
-        response = jsonify({"reminders": list_reminders(username)})
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        try:
+            response = jsonify({"reminders": list_reminders(username)})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except ReminderUnavailable as exc:
+            return jsonify({"error": str(exc)}), 503
     if not _csrf_is_valid():
         return jsonify({"error": "CSRF validation failed."}), 403
     data = request.get_json(silent=True)
@@ -480,6 +633,8 @@ def reminders_api():
         response.status_code = 201
         response.headers["Cache-Control"] = "no-store"
         return response
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -495,6 +650,8 @@ def reminder_status_api(reminder_id):
         return jsonify({"error": "A JSON object is required."}), 400
     try:
         changed = update_reminder_status(session["user"], reminder_id, data.get("status"))
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
     if not changed:
@@ -510,9 +667,12 @@ def notification_preferences_api():
         return jsonify({"error": "Unauthorized"}), 401
     username = session["user"]
     if request.method == "GET":
-        response = jsonify({"preferences": get_notification_preferences(username)})
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        try:
+            response = jsonify({"preferences": get_notification_preferences(username)})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except ReminderUnavailable as exc:
+            return jsonify({"error": str(exc)}), 503
     if not _csrf_is_valid():
         return jsonify({"error": "CSRF validation failed."}), 403
     data = request.get_json(silent=True)
@@ -527,6 +687,8 @@ def notification_preferences_api():
         response = jsonify({"preferences": preferences})
         response.headers["Cache-Control"] = "no-store"
         return response
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -536,15 +698,18 @@ def notifications_api():
     if not is_authenticated():
         return jsonify({"error": "Unauthorized"}), 401
     username = session["user"]
-    preferences = get_notification_preferences(username)
-    newly_due = collect_due_notifications(username, limit=20)
-    response = jsonify({
-        "notifications": list_unread_notifications(username, limit=30),
-        "newly_due": newly_due,
-        "preferences": preferences,
-    })
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    try:
+        preferences = get_notification_preferences(username)
+        newly_due = collect_due_notifications(username, limit=20)
+        response = jsonify({
+            "notifications": list_unread_notifications(username, limit=30),
+            "newly_due": newly_due,
+            "preferences": preferences,
+        })
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
 
 
 @app.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
@@ -555,6 +720,8 @@ def mark_notification_read_api(notification_id):
         return jsonify({"error": "CSRF validation failed."}), 403
     try:
         changed = mark_notification_read(session["user"], notification_id)
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
     if not changed:
@@ -720,7 +887,9 @@ def logout():
         cancel_user_plans(session["user"])
     except AutomationError:
         app.logger.warning("Could not cancel pending automation plans during logout")
+    clear_pending_direct_action(session["user"])
     revoke_access()
+    camera.resume_recognition()
     return redirect(url_for("home"))
 
 

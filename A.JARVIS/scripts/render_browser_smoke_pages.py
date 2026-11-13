@@ -12,6 +12,19 @@ sys.path.insert(0, str(APP_DIR))
 import cloud_app  # noqa: E402
 
 cloud_app.ensure_cloud_schema = lambda: None
+
+class _SessionVersionCursor:
+    def execute(self, _sql, _params=None): pass
+    def fetchone(self): return (0,)
+    def close(self): pass
+
+
+class _SessionVersionConnection:
+    def cursor(self): return _SessionVersionCursor()
+    def close(self): pass
+
+
+cloud_app._session_version_is_current = lambda _username, version, generation: version == 0 and generation == "qa-session-generation"
 cloud_app.get_latest_id = lambda username: 42
 cloud_app.app.config.update(
     TESTING=True,
@@ -40,6 +53,8 @@ def main() -> None:
             from datetime import datetime, timezone
             session["user"] = "qa_user"
             session["login_time"] = datetime.now(timezone.utc).isoformat()
+            session["session_version"] = 0
+            session["session_generation"] = "qa-session-generation"
             session["csrf_token"] = "qa-csrf-token"
         for page, route in ROUTES.items():
             response = client.get(route)

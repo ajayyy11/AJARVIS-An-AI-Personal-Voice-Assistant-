@@ -4,8 +4,8 @@ from intelligence import user_memory
 
 
 class FakeCursor:
-    def __init__(self, fetchone=None, fetchall=None, rowcount=1):
-        self.fetchone_value=fetchone
+    def __init__(self, fetchone=None, fetchall=None, rowcount=1, fetchone_values=None):
+        self.fetchone_values=list(fetchone_values) if fetchone_values is not None else ([fetchone] if fetchone is not None else [])
         self.fetchall_value=fetchall or []
         self.rowcount=rowcount
         self.executed=[]
@@ -13,9 +13,7 @@ class FakeCursor:
     def execute(self,sql,params=None):
         self.executed.append((sql,params))
     def fetchone(self):
-        value=self.fetchone_value
-        self.fetchone_value=None
-        return value
+        return self.fetchone_values.pop(0) if self.fetchone_values else None
     def fetchall(self): return self.fetchall_value
     def close(self): self.closed=True
 
@@ -33,24 +31,27 @@ class FakeConnection:
 
 
 def test_save_memory_inserts_user_scoped_record(monkeypatch):
-    cursor=FakeCursor(fetchone=None)
+    cursor=FakeCursor(fetchone_values=[(1,), None, (0,)])
     connection=FakeConnection(cursor)
     monkeypatch.setattr(user_memory,"get_connection",lambda:connection)
     result=user_memory.save_memory("alice","Answer Style","Use concise examples")
     assert result=={"key":"answer_style","value":"Use concise examples"}
-    assert cursor.executed[0][1]==("alice","answer_style")
-    assert cursor.executed[1][1]==("alice","answer_style","Use concise examples")
+    assert "GET_LOCK" in cursor.executed[0][0]
+    assert cursor.executed[1][1]==("alice","answer_style")
+    assert cursor.executed[3][1]==("alice","answer_style","Use concise examples")
+    assert any("RELEASE_LOCK" in sql for sql,_params in cursor.executed)
     assert connection.committed and cursor.closed and connection.closed
 
 
 def test_save_memory_updates_existing_record(monkeypatch):
-    cursor=FakeCursor(fetchone=(7,))
+    cursor=FakeCursor(fetchone_values=[(1,), (7,)])
     connection=FakeConnection(cursor)
     monkeypatch.setattr(user_memory,"get_connection",lambda:connection)
     result=user_memory.save_memory("alice","answer_style","Detailed")
     assert result["value"]=="Detailed"
-    assert len(cursor.executed)==2
-    assert cursor.executed[1][1]==("Detailed","alice","answer_style")
+    assert len(cursor.executed)==4
+    assert cursor.executed[2][1]==("Detailed","alice","answer_style")
+    assert "RELEASE_LOCK" in cursor.executed[3][0]
     assert connection.committed
 
 
@@ -113,3 +114,41 @@ def test_memory_is_scoped_and_requires_valid_user():
 
 def test_memory_key_normalizes_spaces_to_underscores():
     assert user_memory.normalize_memory_key("Answer Style")=="answer_style"
+
+
+
+def test_save_memory_enforces_limit_only_for_new_keys(monkeypatch):
+    cursor=FakeCursor(fetchone_values=[(1,), None, (user_memory.MAX_MEMORIES,)])
+    connection=FakeConnection(cursor)
+    monkeypatch.setattr(user_memory,"get_connection",lambda:connection)
+    with pytest.raises(ValueError,match="limited to 30"):
+        user_memory.save_memory("alice","new_fact","A new fact")
+    assert not any("INSERT INTO user_memories" in sql for sql,_params in cursor.executed)
+    assert connection.rolled_back
+
+
+def test_save_memory_rejects_when_advisory_lock_is_unavailable(monkeypatch):
+    cursor=FakeCursor(fetchone_values=[(0,)])
+    connection=FakeConnection(cursor)
+    monkeypatch.setattr(user_memory,"get_connection",lambda:connection)
+    with pytest.raises(ValueError,match="busy"):
+        user_memory.save_memory("alice","new_fact","A new fact")
+    assert not any("INSERT INTO user_memories" in sql for sql,_params in cursor.executed)
+    assert connection.closed
+
+
+
+def test_postgres_memory_save_uses_transaction_scoped_advisory_lock(monkeypatch):
+    cursor = FakeCursor(fetchone_values=[None, (0,)])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(user_memory, "get_connection", lambda: connection)
+    monkeypatch.setattr(user_memory.Config, "DATABASE_URL", "postgresql://test")
+
+    result = user_memory.save_memory("alice", "answer_style", "Concise")
+
+    assert result == {"key": "answer_style", "value": "Concise"}
+    assert "pg_advisory_xact_lock" in cursor.executed[0][0]
+    assert cursor.executed[1][1] == ("alice", "answer_style")
+    assert any("INSERT INTO user_memories" in sql for sql, _params in cursor.executed)
+    assert not any("GET_LOCK" in sql or "RELEASE_LOCK" in sql for sql, _params in cursor.executed)
+    assert connection.committed and cursor.closed and connection.closed

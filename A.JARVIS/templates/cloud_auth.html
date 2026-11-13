@@ -7,7 +7,7 @@
   <title>AJARVIS Cloud · {{ mode|capitalize }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='cloud.css', v='20261106-ui') }}">
 </head>
-<body class="auth-body">
+<body class="auth-body" data-auth-mode="{{ mode }}">
   <div class="auth-aurora-waves" aria-hidden="true"></div>
   <div class="auth-grid"></div>
   <main class="auth-shell">
@@ -39,38 +39,6 @@
     <p class="privacy-note"><span class="dot"></span> Cloud workspace · Passwords are hashed · Each account has its own data</p>
     <p class="cloud-notice">Cloud mode cannot access your personal webcam or control applications on your Windows computer.</p>
   </main>
-  <script>
-    const authMode = {{ mode|tojson }};
-    const form = document.getElementById("authForm");
-    const errorNode = document.getElementById("authError");
-    const submitButton = document.getElementById("submitButton");
-
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      errorNode.textContent = "";
-      submitButton.disabled = true;
-      submitButton.textContent = authMode === "login" ? "Signing in…" : "Creating account…";
-      const payload = {
-        username: document.getElementById("username").value.trim(),
-        password: document.getElementById("password").value
-      };
-      try {
-        const response = await fetch(authMode === "login" ? "/api/auth/login" : "/api/auth/register", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          credentials: "same-origin",
-          body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "Authentication failed.");
-        window.location.assign("/dashboard");
-      } catch (error) {
-        errorNode.textContent = error.message || "Could not connect to AJARVIS.";
-      } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = authMode === "login" ? "Sign in" : "Create account";
-      }
-    });
-  </script>
+    <script src="{{ url_for('static', filename='cloud-auth.js', v='20261112-hardening') }}" defer></script>
 </body>
 </html>

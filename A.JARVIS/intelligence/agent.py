@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import datetime
 import logging
+import math
 import os
+import time
 from typing import Any, Mapping
 
 
 from intelligence.notes import read_recent_notes, search_personal_notes
+from intelligence.genai_client import build_gemini_http_options
 from intelligence.user_memory import list_memories, search_memories
 from intelligence.personal_intelligence import build_personal_focus
 from intelligence.tool_registry import (
@@ -24,9 +27,63 @@ from intelligence.tool_registry import (
 )
 
 logger = logging.getLogger(__name__)
-MAX_TOOL_ROUNDS = 3
+MAX_TOOL_ROUNDS = 2
 MAX_TOOL_CALLS = 5
 MAX_TOOL_RESULT_CHARS = 4000
+DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS = 25.0
+MAX_AGENT_REQUEST_DEADLINE_SECONDS = 60.0
+AGENT_TIMEOUT_MESSAGE = "That request took too long to complete. Please try a smaller request."
+
+
+def _resolve_agent_deadline_seconds(value: float | None) -> float:
+    """Return a finite, bounded wall-clock budget for the full agent request.
+
+    A malformed environment override falls back to the safe default so one
+    mistyped deployment setting cannot make every assistant request fail.
+    Explicit programmatic overrides, in contrast, are rejected when invalid.
+    """
+    if value is None:
+        raw = os.getenv("GEMINI_REQUEST_DEADLINE_SECONDS", "").strip()
+        try:
+            configured = float(raw) if raw else DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+        except (TypeError, ValueError):
+            configured = DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+        if (
+            not math.isfinite(configured)
+            or configured < 5.0
+            or configured > MAX_AGENT_REQUEST_DEADLINE_SECONDS
+        ):
+            configured = DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+        return configured
+
+    if isinstance(value, bool):
+        raise ValueError("Agent request deadline must be a positive finite number.")
+    try:
+        budget = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Agent request deadline must be a positive finite number.") from exc
+    if (
+        not math.isfinite(budget)
+        or budget <= 0
+        or budget > MAX_AGENT_REQUEST_DEADLINE_SECONDS
+    ):
+        raise ValueError(
+            f"Agent request deadline must be positive and no more than "
+            f"{MAX_AGENT_REQUEST_DEADLINE_SECONDS:g} seconds."
+        )
+    return budget
+
+
+def _deadline_http_options(types_module: Any, deadline: float) -> Any:
+    """Create one-attempt HTTP options using the time left in the outer request."""
+    remaining_ms = int((deadline - time.monotonic()) * 1000)
+    if remaining_ms < 100:
+        raise TimeoutError("The agent request deadline has elapsed.")
+    return build_gemini_http_options(
+        types_module=types_module,
+        timeout_ms_override=remaining_ms,
+        retry_attempts_override=1,
+    )
 
 
 def _current_datetime(*, username: str) -> str:
@@ -192,9 +249,10 @@ def generate_agent_response(
     contents: list[Any],
     system_instruction: str,
     username: str,
-    model: str = "gemini-2.5-flash",
+    model: str | None = None,
     registry: ToolRegistry | None = None,
     types_module: Any = None,
+    request_timeout_seconds: float | None = None,
 ) -> str:
     """Run bounded manual function calling; never invoke side-effecting tools.
 
@@ -203,8 +261,14 @@ def generate_agent_response(
     """
     if not isinstance(username, str) or not username.strip():
         raise ValueError("An authenticated username is required.")
+    request_budget = _resolve_agent_deadline_seconds(request_timeout_seconds)
+    deadline = time.monotonic() + request_budget
     if registry is None:
         registry = build_default_registry()
+
+    selected_model = (model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")).strip()
+    if not selected_model:
+        selected_model = "gemini-2.5-flash"
 
     config_types = types_module
     if config_types is None:
@@ -220,35 +284,53 @@ def generate_agent_response(
             )
         )
     if not declarations:
-        response = client.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config_types.GenerateContentConfig(
+        try:
+            request_config = config_types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 max_output_tokens=512,
-            ),
-        )
+                http_options=_deadline_http_options(config_types, deadline),
+            )
+            response = client.models.generate_content(
+                model=selected_model,
+                contents=contents,
+                config=request_config,
+            )
+        except Exception:
+            if time.monotonic() >= deadline:
+                logger.warning("Gemini request exceeded the agent wall-clock deadline.")
+                return AGENT_TIMEOUT_MESSAGE
+            raise
         return (getattr(response, "text", None) or "").strip()
 
     provider_tool = config_types.Tool(function_declarations=declarations)
-    config = config_types.GenerateContentConfig(
-        system_instruction=system_instruction,
-        max_output_tokens=512,
-        tools=[provider_tool],
-        automatic_function_calling=config_types.AutomaticFunctionCallingConfig(
+    base_config = {
+        "system_instruction": system_instruction,
+        "max_output_tokens": 512,
+        "tools": [provider_tool],
+        "automatic_function_calling": config_types.AutomaticFunctionCallingConfig(
             disable=True
         ),
-    )
+    }
 
     conversation = list(contents)
     calls_executed = 0
     latest_text = ""
     for _ in range(MAX_TOOL_ROUNDS + 1):
-        response = client.models.generate_content(
-            model=model,
-            contents=conversation,
-            config=config,
-        )
+        try:
+            request_config = config_types.GenerateContentConfig(
+                **base_config,
+                http_options=_deadline_http_options(config_types, deadline),
+            )
+            response = client.models.generate_content(
+                model=selected_model,
+                contents=conversation,
+                config=request_config,
+            )
+        except Exception:
+            if time.monotonic() >= deadline:
+                logger.warning("Gemini tool-calling request exceeded the agent wall-clock deadline.")
+                return latest_text or AGENT_TIMEOUT_MESSAGE
+            raise
         latest_text = (getattr(response, "text", None) or "").strip()
         function_calls = getattr(response, "function_calls", None) or []
         if not function_calls:

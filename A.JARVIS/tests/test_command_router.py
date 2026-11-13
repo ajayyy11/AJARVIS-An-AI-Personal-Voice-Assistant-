@@ -23,8 +23,12 @@ from intelligence import user_state
 @pytest.fixture(autouse=True)
 def isolate_activation(monkeypatch):
     user_state.deactivate_user("alice")
+    with command_router._PENDING_COMMAND_APPROVALS_LOCK:
+        command_router._PENDING_COMMAND_APPROVALS.clear()
     monkeypatch.setattr(command_router, "add_memory", lambda *_args, **_kwargs: None)
     yield
+    with command_router._PENDING_COMMAND_APPROVALS_LOCK:
+        command_router._PENDING_COMMAND_APPROVALS.clear()
     user_state.deactivate_user("alice")
 
 
@@ -169,3 +173,212 @@ def test_weather_request_failure_does_not_log_api_key(caplog, monkeypatch):
     assert reply == "Could not fetch weather data. Check your internet connection."
     assert "ConnectionError" in caplog.text
     assert secret not in caplog.text
+
+
+
+@pytest.mark.parametrize("phrase", ["commute to work", "please commute tomorrow"])
+def test_mute_router_does_not_match_commute(monkeypatch, phrase):
+    user_state.activate_user("alice")
+    presses = []
+    monkeypatch.setattr(command_router.pyautogui, "press", lambda key: presses.append(key))
+    monkeypatch.setattr(command_router, "_get_genai_client", lambda: None)
+    reply = command_router.process_command(phrase, "alice")
+    assert presses == []
+    assert "AI responses are not configured" in reply
+
+
+@pytest.mark.parametrize("phrase", ["check battery", "what is my battery", "battery status"])
+def test_battery_status_matches_explicit_intent(monkeypatch, phrase):
+    user_state.activate_user("alice")
+    class Battery:
+        percent = 74
+        power_plugged = False
+    monkeypatch.setattr(command_router.psutil, "sensors_battery", lambda: Battery())
+    reply = command_router.process_command(phrase, "alice")
+    assert "Battery is at 74%" in reply
+
+
+def test_today_question_does_not_get_swallowed_by_date_handler(monkeypatch):
+    user_state.activate_user("alice")
+    monkeypatch.setattr(command_router, "_get_genai_client", lambda: None)
+    reply = command_router.process_command("what's on today?", "alice")
+    assert "AI responses are not configured" in reply
+    assert not reply.startswith("Today is ")
+
+
+def test_find_file_without_name_returns_specific_prompt():
+    user_state.activate_user("alice")
+    assert command_router.process_command("find file", "alice") == "Please specify a file name to find."
+
+
+def test_search_for_file_without_name_returns_specific_prompt():
+    user_state.activate_user("alice")
+    assert command_router.process_command("search for file", "alice") == "Please specify a file name to find."
+
+
+
+def test_direct_desktop_action_waits_for_exact_tool_registry_approval(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_launch",
+        "Launch a test application.",
+        lambda *, username: events.append(username) or {"started": True},
+        risk_level="reversible",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(
+        automation_module,
+        "_activity",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "open chrome",
+        ("test_launch", {}, "open chrome"),
+    )
+
+    waiting = command_router.process_command("open chrome", "alice")
+    assert "waiting for your approval" in waiting.lower()
+    assert events == []
+
+    wrong = command_router.process_command("confirm lock system", "alice")
+    assert "does not match" in wrong.lower()
+    assert events == []
+
+    completed = command_router.process_command("confirm open chrome", "alice")
+    assert "approved and completed" in completed.lower()
+    assert events == ["alice"]
+
+
+def test_direct_desktop_action_can_be_cancelled_without_execution(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_screenshot",
+        "Capture a test screenshot.",
+        lambda *, username: events.append(username) or {"saved": True},
+        risk_level="reversible",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "take screenshot",
+        ("test_screenshot", {}, "take screenshot"),
+    )
+
+    waiting = command_router.process_command("take screenshot", "alice")
+    assert "waiting for your approval" in waiting.lower()
+    cancelled = command_router.process_command("cancel action", "alice")
+    assert "cancelled" in cancelled.lower()
+    assert events == []
+
+
+def test_power_action_confirmation_still_reaches_power_handler(monkeypatch):
+    user_state.activate_user("alice")
+    monkeypatch.setattr(
+        command_router,
+        "handle_power_command",
+        lambda command, username: {"status": "confirmed", "action": "shutdown"},
+    )
+    monkeypatch.setattr(command_router.os, "name", "posix")
+    reply = command_router.process_command("confirm shutdown", "alice")
+    assert "supported only on Windows" in reply
+
+
+
+def test_system_deactivation_clears_pending_direct_action(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    registry = ToolRegistry()
+    registry.register(
+        "test_action",
+        "A test action.",
+        lambda *, username: {"ok": True},
+        risk_level="reversible",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "open chrome",
+        ("test_action", {}, "open chrome"),
+    )
+    queued = command_router.process_command("open chrome", "alice")
+    assert "waiting for your approval" in queued.lower()
+    assert "alice" in command_router._PENDING_COMMAND_APPROVALS
+
+    reply = command_router.process_command("system deactivate", "alice")
+    assert "System deactivating" in reply
+    assert "alice" not in command_router._PENDING_COMMAND_APPROVALS
+
+
+def test_direct_website_action_runs_after_polite_phrase_normalization(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_open",
+        "Open a test public website.",
+        lambda *, username: events.append(username) or {"opened": True},
+        risk_level="reversible",
+        requires_confirmation=False,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "open youtube",
+        ("test_open", {}, "open youtube"),
+    )
+
+    reply = command_router.process_command(
+        "Hey Jarvis, could you please open youtube for me?", "alice"
+    )
+    assert "done" in reply.lower()
+    assert events == ["alice"]
+    assert "alice" not in command_router._PENDING_COMMAND_APPROVALS
+
+
+def test_high_impact_direct_actions_still_require_confirmation(monkeypatch):
+    from intelligence import automation as automation_module
+    from intelligence.tool_registry import ToolRegistry
+
+    user_state.activate_user("alice")
+    events = []
+    registry = ToolRegistry()
+    registry.register(
+        "test_lock",
+        "Lock a test workstation.",
+        lambda *, username: events.append(username) or {"locked": True},
+        risk_level="destructive",
+        requires_confirmation=True,
+    )
+    monkeypatch.setattr(command_router, "build_automation_registry", lambda: registry)
+    monkeypatch.setattr(automation_module, "_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(
+        command_router._DIRECT_ACTIONS,
+        "lock system",
+        ("test_lock", {}, "lock system"),
+    )
+
+    reply = command_router.process_command("please lock system now", "alice")
+    assert "waiting for your approval" in reply.lower()
+    assert events == []

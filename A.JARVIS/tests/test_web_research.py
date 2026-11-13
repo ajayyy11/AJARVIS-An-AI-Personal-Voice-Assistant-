@@ -22,6 +22,14 @@ class FakeTypes:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
 
+    class HttpRetryOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class HttpOptions:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
 
 class FakeClient:
     def __init__(self, response):
@@ -71,6 +79,8 @@ def test_current_information_requests_are_detected(command):
         "take a note buy milk",
         "open chrome",
         "system status",
+        "show recent notes",
+        "read my current notes",
     ],
 )
 def test_ordinary_local_commands_do_not_trigger_web_research(command):
@@ -99,6 +109,8 @@ def test_web_research_uses_google_search_grounding_and_includes_sources():
     call = client.calls[0]
     assert call["model"] == "gemini-2.5-flash"
     assert call["config"].tools[0].google_search is not None
+    assert call["config"].http_options.timeout == 25_000
+    assert call["config"].http_options.retry_options.attempts == 1
     assert "untrusted data" in call["config"].system_instruction
 
 

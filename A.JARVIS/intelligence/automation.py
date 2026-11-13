@@ -10,6 +10,7 @@ import ipaddress
 import logging
 import os
 import subprocess
+import socket
 import threading
 import time
 import uuid
@@ -26,6 +27,8 @@ MAX_PLAN_STEPS = 5
 MAX_PLAN_TEXT = 1000
 PLAN_TTL_SECONDS = 300
 APPROVAL_TTL_SECONDS = 60
+PLAN_RETENTION_SECONDS = 900
+MAX_STORED_PLANS = 500
 
 _plans: dict[str, dict[str, Any]] = {}
 _lock = threading.RLock()
@@ -35,6 +38,39 @@ class AutomationError(ValueError):
     """Raised for invalid automation plans, ownership, or state transitions."""
 
 
+def _prune_plans_locked(*, now_monotonic: float | None = None, now_wall: float | None = None) -> None:
+    """Expire stale plans and bound the in-memory plan registry.
+
+    Caller must hold _lock. Completed plans are retained briefly for UI refresh,
+    then deleted. Active plans never exceed their five-minute TTL.
+    """
+    monotonic_now = time.monotonic() if now_monotonic is None else now_monotonic
+    wall_now = time.time() if now_wall is None else now_wall
+    terminal = {"completed", "cancelled", "failed", "expired"}
+    for plan_id, plan in list(_plans.items()):
+        if plan["status"] not in terminal and monotonic_now >= plan["expires_at"]:
+            plan["status"] = "expired"
+            plan["approval_id"] = None
+            plan["approval_expires_at"] = None
+            for step in plan["steps"]:
+                if step["status"] in {"pending", "awaiting_approval"}:
+                    step["status"] = "expired"
+        if plan["status"] in terminal and wall_now - plan["created_at"] > PLAN_RETENTION_SECONDS:
+            _plans.pop(plan_id, None)
+
+    overflow = len(_plans) - MAX_STORED_PLANS
+    if overflow > 0:
+        completed = sorted(
+            (
+                (plan["created_at"], plan_id)
+                for plan_id, plan in _plans.items()
+                if plan["status"] in terminal
+            )
+        )
+        for _created, plan_id in completed[:overflow]:
+            _plans.pop(plan_id, None)
+
+
 def _valid_owner(username: str) -> str:
     if not isinstance(username, str) or not username.strip() or len(username.strip()) > 100:
         raise AutomationError("An authenticated username is required.")
@@ -42,22 +78,66 @@ def _valid_owner(username: str) -> str:
 
 
 def _validate_website_url(url: str) -> str:
+    """Validate HTTPS URLs and reject DNS names resolving to non-public IPs.
+
+    The browser is opened on the user's workstation, not fetched by the server.
+    DNS validation still prevents the assistant from intentionally navigating
+    to common private/local targets. Every returned A/AAAA address must be
+    globally routable; mixed public/private DNS answers fail closed.
+    """
     if not isinstance(url, str) or len(url) > 2000:
         raise ToolArgumentError("Website URL is invalid.")
     normalized = url.strip()
-    parts = urlsplit(normalized)
-    if parts.scheme.lower() != "https" or not parts.hostname:
+    try:
+        parts = urlsplit(normalized)
+        hostname = parts.hostname
+        port = parts.port or 443
+    except ValueError as exc:
+        raise ToolArgumentError("Website URL is malformed.") from exc
+    if parts.scheme.lower() != "https" or not hostname:
         raise ToolArgumentError("Only HTTPS website URLs are allowed.")
     if parts.username or parts.password:
         raise ToolArgumentError("URLs containing embedded credentials are not allowed.")
-    hostname = parts.hostname.rstrip(".").lower()
-    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
-        raise ToolArgumentError("Local network destinations are not allowed.")
+
     try:
-        address = ipaddress.ip_address(hostname)
+        hostname = hostname.rstrip(".").encode("idna").decode("ascii").lower()
+    except (UnicodeError, AttributeError) as exc:
+        raise ToolArgumentError("Website hostname is invalid.") from exc
+
+    if (
+        not hostname
+        or hostname in {"localhost", "localhost.localdomain"}
+        or hostname.endswith((".localhost", ".local", ".internal", ".home.arpa", ".test"))
+    ):
+        raise ToolArgumentError("Local network destinations are not allowed.")
+
+    try:
+        literal_address = ipaddress.ip_address(hostname)
     except ValueError:
-        address = None
-    if address is not None and not address.is_global:
+        literal_address = None
+    if literal_address is not None:
+        addresses = {literal_address}
+    else:
+        try:
+            records = socket.getaddrinfo(
+                hostname,
+                port,
+                type=socket.SOCK_STREAM,
+            )
+        except (OSError, UnicodeError) as exc:
+            raise ToolArgumentError("Website hostname could not be safely resolved.") from exc
+
+        addresses = set()
+        for record in records:
+            try:
+                raw_address = record[4][0].split("%", 1)[0]
+                addresses.add(ipaddress.ip_address(raw_address))
+            except (IndexError, TypeError, ValueError):
+                continue
+
+    if not addresses:
+        raise ToolArgumentError("Website hostname has no usable public address.")
+    if any(not address.is_global for address in addresses):
         raise ToolArgumentError("Private or local IP destinations are not allowed.")
     return normalized
 
@@ -98,21 +178,59 @@ def _lock_workstation(*, username: str) -> dict[str, str]:
     return {"locked": True}
 
 
+def _capture_screenshot(*, username: str) -> dict[str, str]:
+    """Save a screenshot under the user's Pictures folder without overwriting."""
+    from datetime import datetime, timezone
+    from pathlib import Path
+    import pyautogui
+
+    screenshot_dir = Path.home() / "Pictures" / "AJARVIS" / "Screenshots"
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    destination = screenshot_dir / f"AJARVIS-{timestamp}-{uuid.uuid4().hex}.png"
+
+    image = pyautogui.screenshot()
+    # O_EXCL is the actual no-overwrite guarantee. An exists()-then-save()
+    # sequence has a race in which another process can create the file between
+    # the check and the image write.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    file_descriptor = os.open(os.fspath(destination), flags, 0o600)
+    try:
+        with os.fdopen(file_descriptor, "wb") as screenshot_file:
+            image.save(screenshot_file, format="PNG")
+    except Exception:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Could not remove incomplete screenshot file.")
+        raise
+    return {"saved_to": str(destination)}
+
+
 def build_automation_registry() -> ToolRegistry:
     """Create read-only tools plus a small, explicitly gated action allow-list."""
     registry = build_default_registry()
     registry.register(
         "open_website",
-        "Open one HTTPS website in the default browser.",
+        "Open one validated public HTTPS website in the default browser.",
         _open_website,
         risk_level="reversible",
-        requires_confirmation=True,
+        requires_confirmation=False,
         parameters={
             "type": "object",
             "properties": {"url": {"type": "string", "minLength": 9, "maxLength": 2000}},
             "required": ["url"],
             "additionalProperties": False,
         },
+    )
+    registry.register(
+        "capture_screenshot",
+        "Capture the current desktop screenshot and save a unique file in Pictures/AJARVIS/Screenshots.",
+        _capture_screenshot,
+        risk_level="reversible",
+        requires_confirmation=True,
     )
     # Do not let the model propose Windows-only actions on unsupported hosts.
     if os.name == "nt":
@@ -121,7 +239,7 @@ def build_automation_registry() -> ToolRegistry:
             "Launch one application from the fixed Windows allow-list.",
             _launch_application,
             risk_level="reversible",
-            requires_confirmation=True,
+            requires_confirmation=False,
             parameters={
                 "type": "object",
                 "properties": {
@@ -254,7 +372,11 @@ def create_plan(
             raise AutomationError(f"Step {index + 1} reason must contain 1–240 characters.")
         if spec.name == "open_website":
             _validate_website_url(str(arguments.get("url", "")))
-        needs_confirmation = spec.risk_level != "read_only" or spec.confirmation_required
+        # Confirmation is explicit metadata owned by the registered application
+        # tool, not inferred solely from the broad risk label. The registry
+        # forces destructive tools to require approval; reversible tools may
+        # opt into immediate execution only when registered with that policy.
+        needs_confirmation = spec.confirmation_required
         steps.append({
             "step_id": uuid.uuid4().hex,
             "tool": spec.name,
@@ -283,6 +405,9 @@ def create_plan(
         "created_at": time.time(),
     }
     with _lock:
+        _prune_plans_locked()
+        if len(_plans) >= MAX_STORED_PLANS:
+            raise AutomationError("The automation queue is full. Wait for an existing plan to expire and retry.")
         _plans[plan["plan_id"]] = plan
     _activity(owner, plan, "plan_created")
     return _snapshot(plan)

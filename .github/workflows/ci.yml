@@ -30,57 +30,70 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: A.JARVIS/requirements-web.txt
+          cache-dependency-path: A.JARVIS/requirements-web.lock
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-web.txt mysql-connector-python
+          pip install -r requirements-web.lock
       - name: Validate dashboard JavaScript syntax
         shell: bash
         run: |
+          node --check static/local-dashboard.js
+          node --check static/local-login.js
+          node --check static/local-register.js
           python - <<'PY'
-          import re
+          from pathlib import Path
+
+          for asset in (
+              "static/local-dashboard.js",
+              "static/local-dashboard.css",
+              "static/local-login.js",
+              "static/local-register.js",
+          ):
+              if not Path(asset).is_file():
+                  raise SystemExit(f"Required local asset is missing: {asset}")
           from pathlib import Path
 
           html = Path("templates/dashboard.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script\s*>", html, flags=re.IGNORECASE | re.DOTALL)
-          inline_scripts = [script for script in scripts if script.strip()]
-          if not inline_scripts:
-              raise SystemExit("No inline dashboard scripts were found.")
-
-          javascript = "\n;\n".join(inline_scripts)
-          javascript = javascript.replace("{{ user | tojson }}", '"ci-user"')
-          javascript = javascript.replace("{{ is_active | tojson }}", "false")
+          javascript = Path("static/local-dashboard.js").read_text(encoding="utf-8")
+          if "local-dashboard.js" not in html or "local-dashboard.css" not in html:
+              raise SystemExit("Dashboard must load its same-origin static assets.")
+          if "<script>" in html.lower():
+              raise SystemExit("Dashboard must not contain inline scripts.")
+          for auth_page in ("login.html", "register.html"):
+              auth_html = Path("templates/" + auth_page).read_text(encoding="utf-8")
+              if "<script>" in auth_html.lower():
+                  raise SystemExit(auth_page + " must not contain inline scripts.")
+          if "</head>" not in html.lower():
+              raise SystemExit("Dashboard head element is not closed.")
+          if "chart.js" in html.lower() or "new Chart(" in javascript:
+              raise SystemExit("Dashboard must not load an external chart library.")
+          if '<div id="usageChart"' not in html:
+              raise SystemExit("Dashboard analytics must use the accessible SVG chart container.")
           if "{{" in javascript or "{%" in javascript:
-              raise SystemExit("Unrendered Jinja template syntax remains in dashboard JavaScript.")
-
-          Path("/tmp/ajarvis-dashboard-check.js").write_text(javascript, encoding="utf-8")
+              raise SystemExit("Unrendered Jinja syntax remains in dashboard JavaScript.")
           PY
-          node --check /tmp/ajarvis-dashboard-check.js
       - name: Validate cloud dashboard JavaScript syntax
         shell: bash
         run: |
           node --check static/cloud.js
           node --check static/interface.js
+          node --check static/cloud-auth.js
+          node --check static/local-dashboard.js
           python - <<'PY'
-          import re
           from pathlib import Path
 
           html = Path("templates/cloud_auth.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script\s*>", html, flags=re.IGNORECASE | re.DOTALL)
-          inline_scripts = [script for script in scripts if script.strip()]
-          if not inline_scripts:
-              raise SystemExit("No inline cloud authentication script was found.")
-          javascript = "\n;\n".join(inline_scripts)
-          javascript = javascript.replace("{{ mode|tojson }}", '"login"')
+          javascript = Path("static/cloud-auth.js").read_text(encoding="utf-8")
+          if "cloud-auth.js" not in html:
+              raise SystemExit("Cloud authentication must load its same-origin static script.")
+          if "<script>" in html.lower():
+              raise SystemExit("Cloud authentication must not contain inline scripts.")
           if "{{" in javascript or "{%" in javascript:
               raise SystemExit("Unrendered Jinja syntax remains in cloud authentication JavaScript.")
-          Path("/tmp/ajarvis-cloud-auth-check.js").write_text(javascript, encoding="utf-8")
           PY
-          node --check /tmp/ajarvis-cloud-auth-check.js
       - name: Validate Render Blueprint
         run: |
-          python -m pip install pyyaml
           python - <<'PY'
           from pathlib import Path
           import yaml
@@ -97,7 +110,7 @@ jobs:
               raise SystemExit("Cloud service rootDir must be A.JARVIS.")
           if cloud.get("healthCheckPath") != "/readyz":
               raise SystemExit("Cloud service must use /readyz as its health check.")
-          if "requirements-web.txt" not in cloud.get("buildCommand", ""):
+          if "requirements-web.lock" not in cloud.get("buildCommand", ""):
               raise SystemExit("Cloud build must install the focused web dependencies.")
           if "cloud_app:app" not in cloud.get("startCommand", ""):
               raise SystemExit("Cloud service must run cloud_app:app, not the local webcam app.")
@@ -126,4 +139,53 @@ jobs:
       - name: Run automated tests
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789
-        run: pytest -q tests
+        run: pytest -q tests --ignore=tests/test_postgres_integration.py
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Audit pinned Python dependencies
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: A.JARVIS/requirements-web.lock
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ajarvis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ajarvis_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: A.JARVIS
+    env:
+      SECRET_KEY: integration-only-secret-key-not-for-production-123456
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ajarvis_test
+      CLOUD_MODE: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: A.JARVIS/requirements-web.lock
+      - name: Install pinned cloud dependencies
+        run: python -m pip install -r requirements-web.lock
+      - name: Run real PostgreSQL integration tests
+        run: pytest -q tests/test_postgres_integration.py

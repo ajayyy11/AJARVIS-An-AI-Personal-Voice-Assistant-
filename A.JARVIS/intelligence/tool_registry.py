@@ -50,6 +50,7 @@ class ToolSpec:
 
     @property
     def confirmation_required(self) -> bool:
+        """Only explicitly gated or destructive actions need user approval."""
         return self.requires_confirmation or self.risk_level == "destructive"
 
     def function_declaration(self) -> dict[str, Any]:

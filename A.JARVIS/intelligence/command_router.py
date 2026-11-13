@@ -3,17 +3,27 @@ import logging
 import os
 import re
 import subprocess
+import threading
+import time
 
 import psutil
 import pyautogui
 import requests
-from google import genai
 
+from intelligence.automation import (
+    AutomationError,
+    advance_plan,
+    build_automation_registry,
+    cancel_plan,
+    create_plan,
+    respond_to_approval,
+)
 from intelligence.memory import add_memory, get_recent
 from intelligence.notes import notes_path, read_recent_notes
 from intelligence.web_research import generate_web_research_response, is_web_research_request
 from intelligence.agent import generate_agent_response
 from intelligence.context import build_context_messages, classify_intent
+from intelligence.genai_client import create_genai_client
 from intelligence.power_actions import clear_pending_power_action, handle_power_command
 from intelligence.user_state import activate_user, deactivate_user, is_user_active
 from intelligence.user_memory import (
@@ -27,6 +37,131 @@ from system.stats import get_stats
 logger = logging.getLogger(__name__)
 client = None
 
+_PENDING_COMMAND_APPROVALS: dict[str, dict[str, str | float]] = {}
+_PENDING_COMMAND_APPROVALS_LOCK = threading.RLock()
+
+_DIRECT_ACTIONS = {
+    "open youtube": ("open_website", {"url": "https://www.youtube.com"}, "open youtube"),
+    "open google": ("open_website", {"url": "https://www.google.com"}, "open google"),
+    "open chrome": ("launch_application", {"application": "chrome"}, "open chrome"),
+    "open visual studio": ("launch_application", {"application": "vscode"}, "open visual studio code"),
+    "open vs code": ("launch_application", {"application": "vscode"}, "open visual studio code"),
+    "open visualstudio": ("launch_application", {"application": "vscode"}, "open visual studio code"),
+    "open file explorer": ("launch_application", {"application": "file_explorer"}, "open file explorer"),
+    "lock system": ("lock_workstation", {}, "lock system"),
+    "take screenshot": ("capture_screenshot", {}, "take screenshot"),
+}
+
+
+def _queue_direct_action(username: str, command: str, tool_name: str, arguments: dict, label: str) -> str:
+    """Create a tool-registry plan; no desktop-changing handler runs before approval."""
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        previous = _PENDING_COMMAND_APPROVALS.pop(username, None)
+    if previous:
+        try:
+            cancel_plan(str(previous["plan_id"]), username)
+        except AutomationError:
+            pass
+
+    registry = build_automation_registry()
+    plan = create_plan(
+        username,
+        "User-requested desktop action: " + label,
+        [{
+            "tool": tool_name,
+            "arguments": arguments,
+            "summary": "Request to " + label,
+            "reason": "Execute only as allowed by the registered tool risk policy.",
+        }],
+        registry=registry,
+    )
+    waiting = advance_plan(plan["plan_id"], username, registry=registry)
+    if waiting.get("status") == "completed":
+        return "Done. " + label.capitalize() + " has been opened or started."
+    approval = waiting.get("approval") or {}
+    approval_id = approval.get("approval_id")
+    if waiting.get("status") != "awaiting_approval" or not approval_id:
+        raise AutomationError("The action could not be placed into the approval queue.")
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        _PENDING_COMMAND_APPROVALS[username] = {
+            "plan_id": plan["plan_id"],
+            "approval_id": str(approval_id),
+            "label": label,
+            "expires_at": time.monotonic() + 60,
+        }
+    return (
+        f"{label.capitalize()} is waiting for your approval. Nothing has been executed. "
+        f"Say 'confirm {label}' to proceed, or 'cancel action' to cancel."
+    )
+
+
+def clear_pending_direct_action(username: str) -> bool:
+    """Clear and cancel a pending direct desktop action during logout/deactivation."""
+    if not isinstance(username, str) or not username.strip():
+        return False
+    owner = username.strip()
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        pending = _PENDING_COMMAND_APPROVALS.pop(owner, None)
+    if not pending:
+        return False
+    try:
+        cancel_plan(str(pending["plan_id"]), owner)
+    except AutomationError:
+        pass
+    return True
+
+
+def _handle_direct_action_confirmation(command: str, username: str):
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        pending = _PENDING_COMMAND_APPROVALS.get(username)
+        if pending and time.monotonic() >= float(pending["expires_at"]):
+            _PENDING_COMMAND_APPROVALS.pop(username, None)
+            expired = dict(pending)
+        else:
+            expired = None
+
+    if expired:
+        try:
+            cancel_plan(str(expired["plan_id"]), username)
+        except AutomationError:
+            pass
+        return "The pending desktop approval expired. Request the action again."
+
+    if command in {"cancel action", "cancel pending action"}:
+        if not pending:
+            return "There is no desktop action waiting for approval."
+        with _PENDING_COMMAND_APPROVALS_LOCK:
+            _PENDING_COMMAND_APPROVALS.pop(username, None)
+        try:
+            cancel_plan(str(pending["plan_id"]), username)
+        except AutomationError:
+            pass
+        return "Pending desktop action cancelled."
+
+    if command.startswith("confirm "):
+        if not pending:
+            # Leave legacy shutdown/restart confirmation phrases for the
+            # dedicated destructive power-action confirmation handler.
+            return None
+        if command != "confirm " + str(pending["label"]):
+            return "That confirmation does not match the pending action. Say 'cancel action' or confirm the exact action."
+        with _PENDING_COMMAND_APPROVALS_LOCK:
+            _PENDING_COMMAND_APPROVALS.pop(username, None)
+        try:
+            result = respond_to_approval(
+                str(pending["approval_id"]), username, "approve",
+                registry=build_automation_registry(),
+            )
+        except AutomationError as exc:
+            return str(exc)
+        if result.get("status") == "completed":
+            return "Approved and completed: " + str(pending["label"]) + "."
+        return "The approved action did not complete. Check the Automation activity panel."
+
+    if pending and command in _DIRECT_ACTIONS:
+        return "A different desktop action is already awaiting approval. Confirm it or say 'cancel action' first."
+    return None
+
 
 def _get_genai_client():
     """Create the Gemini client only when a configured key is available."""
@@ -38,7 +173,7 @@ def _get_genai_client():
     if not api_key:
         return None
 
-    client = genai.Client(api_key=api_key)
+    client = create_genai_client(api_key)
     return client
 
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "London")
@@ -58,6 +193,17 @@ def _strip_wake_prefix(command):
     """Remove only a leading wake phrase so the spoken command still runs."""
     normalized = re.sub(r"\s+", " ", str(command).strip())
     return _WAKE_PREFIX_RE.sub("", normalized, count=1).strip()
+
+def _normalize_direct_action_command(command: str) -> str:
+    """Normalize natural polite wrappers without changing the action itself."""
+    normalized = re.sub(r"\s+", " ", str(command).strip().lower())
+    normalized = re.sub(r"[\s,;:.!?]+$", "", normalized)
+    normalized = re.sub(r"^(?:(?:could|can|would|will) you\s+)+", "", normalized)
+    normalized = re.sub(r"^(?:please\s+)+", "", normalized)
+    normalized = re.sub(r"(?:\s+(?:please|for me|now))+$", "", normalized)
+    normalized = re.sub(r"[\s,;:.!?]+$", "", normalized)
+    return normalized
+
 
 def process_command(command, username):
     original_command = _strip_wake_prefix(command)
@@ -92,6 +238,7 @@ def process_command(command, username):
             cancel_user_plans(username)
         except Exception:
             logger.warning("Could not cancel automation plans during deactivation", exc_info=True)
+        clear_pending_direct_action(username)
         reply = f"System deactivating. Until next time, {username}."
         add_memory(command, reply, username)
         return reply
@@ -101,6 +248,11 @@ def process_command(command, username):
     # ──────────────────────────────────────────────
     if not is_user_active(username):
         return "System is offline for this user. Say 'system activate' to begin."
+
+    pending_action_reply = _handle_direct_action_confirmation(command, username)
+    if pending_action_reply is not None:
+        add_memory(command, pending_action_reply, username)
+        return pending_action_reply
 
     # ── EXPLICIT PERSONAL MEMORY ──
     if re.match(r"^(?:what do you remember|show my memories|list my memories|read my preferences)\b", command):
@@ -114,7 +266,7 @@ def process_command(command, username):
         except Exception:
             logger.warning("Could not read personal memory", exc_info=True)
             reply = "Personal memory is unavailable. Apply the user-memory database migration and try again."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     if re.match(r"^(?:remember|save to memory)\b", command):
@@ -142,7 +294,7 @@ def process_command(command, username):
         except Exception:
             logger.warning("Could not save personal memory", exc_info=True)
             reply = "I couldn't save that memory. Check that the user-memory database migration has been applied."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     if re.match(r"^(?:forget|remove from memory)\b", command):
@@ -167,7 +319,7 @@ def process_command(command, username):
             except Exception:
                 logger.warning("Could not delete personal memory", exc_info=True)
                 reply = "Personal memory is unavailable. Check the database connection and try again."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     # Destructive power commands require a second, exact confirmation phrase.
@@ -224,56 +376,24 @@ def process_command(command, username):
         return reply
 
     # DATE — match a real date intent, not the "date" substring in "update".
-    if re.search(r"\bdate\b", command) or re.search(r"\bwhat day\b", command) or re.search(r"\btoday\b", command):
+    if re.match(
+        r"^(?:(?:what(?:\s+is|'s)\s+)?(?:the\s+)?date(?:\s+today)?|"
+        r"what\s+day\s+is\s+it(?:\s+today)?|today'?s\s+date)[?.!]*$",
+        command,
+    ):
         today = datetime.datetime.now().strftime("%A, %B %d, %Y")
         reply = f"Today is {today}."
         add_memory(command, reply, username)
         return reply
 
-    # ── OPEN APPS ──
-    if "open youtube" in command:
-        os.system("start https://youtube.com")
-        reply = "Opening YouTube."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open google" in command:
-        os.system("start https://google.com")
-        reply = "Opening Google."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open chrome" in command:
-        os.system("start chrome")
-        reply = "Opening Chrome."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open visual studio" in command or "open vs code" in command or "open visualstudio" in command:
-        os.system("start code")
-        reply = "Opening Visual Studio Code."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open file explorer" in command:
-        os.system("start explorer")
-        reply = "Opening File Explorer."
-        add_memory(command, reply, username)
-        return reply
-
-    # ── SYSTEM CONTROLS ──
-    # Shutdown/restart are handled above with explicit confirmation.
-    if "lock system" in command:
-        os.system("rundll32.exe user32.dll,LockWorkStation")
-        reply = "System locked."
-        add_memory(command, reply, username)
-        return reply
-
-    # ── SCREENSHOT ──
-    if "take screenshot" in command:
-        screenshot = pyautogui.screenshot()
-        screenshot.save("screenshot.png")
-        reply = "Screenshot captured and saved."
+    # ── DESKTOP ACTIONS — REQUIRE TOOL-REGISTRY APPROVAL ──
+    direct_action = _DIRECT_ACTIONS.get(_normalize_direct_action_command(command))
+    if direct_action:
+        tool_name, arguments, label = direct_action
+        try:
+            reply = _queue_direct_action(username, command, tool_name, arguments, label)
+        except AutomationError as exc:
+            reply = str(exc)
         add_memory(command, reply, username)
         return reply
 
@@ -288,7 +408,7 @@ def process_command(command, username):
         return reply
 
     # ── BATTERY STATUS ──
-    if "battery" in command:
+    if re.match(r"^(?:please\s+)?(?:(?:check\s+(?:my\s+)?)?battery(?:\s+(?:status|level))?|what(?:\s+is|'s)\s+(?:my\s+)?battery|how\s+much\s+battery)\b", command):
         battery = psutil.sensors_battery()
         if battery:
             percent = int(battery.percent)
@@ -300,10 +420,13 @@ def process_command(command, username):
         return reply
 
     # ── FILE SEARCH ──
-    if "find file" in command or "search for file" in command:
-        target = command.replace("find file", "").replace("search for file", "").strip()
+    file_search = re.match(r"^(?:please\s+)?(?:find\s+file|search\s+for\s+file)\b(.*)$", command)
+    if file_search:
+        target = file_search.group(1).strip().lstrip(" :,-").strip()
         if not target:
             reply = "Please specify a file name to find."
+            add_memory(command, reply, username)
+            return reply
         else:
             reply = f"Searching for {target}. This might take a moment."
             add_memory(command, reply, username)
@@ -355,7 +478,7 @@ def process_command(command, username):
         add_memory(command, reply, username)
         return reply
 
-    if "mute" in command or "unmute" in command:
+    if re.search(r"\b(?:mute|unmute)\b", command):
         pyautogui.press("volumemute")
         reply = "Volume toggled."
         add_memory(command, reply, username)
@@ -382,7 +505,7 @@ def process_command(command, username):
                 reply = "Could not save your note. Check folder permissions and try again."
         else:
             reply = "What would you like me to note? Please repeat with the note content."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     if "read my notes" in command or "read notes" in command:
@@ -395,7 +518,7 @@ def process_command(command, username):
                 reply = "You have no saved notes."
         except OSError:
             reply = "Your personal notes are not available right now."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     # ── WEATHER ──

@@ -1,3 +1,5 @@
+import pytest
+
 import intelligence.memory as memory
 
 
@@ -160,3 +162,103 @@ def test_invalid_history_cursor_is_rejected():
 
     with pytest.raises(ValueError):
         memory.get_recent_after(5, username="ajay", after_id=-1)
+
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "remember that my account hint is private",
+        "note that my account hint is private",
+        "don't forget that my account hint is private",
+        "do not forget that my account hint is private",
+        "take a note that my account hint is private",
+        "make a note of my account hint",
+        "save a note that my account hint is private",
+        "write down a note that my account hint is private",
+        "create a note that my account hint is private",
+        "Hey Jarvis, note that my account hint is private",
+        "tell me my notes",
+        "tell me notes",
+        "what are my notes",
+        "what are my saved notes",
+        "what are saved notes",
+        "read my notes",
+        "show me my notes",
+        "list notes",
+        "display my notes",
+        "search my notes",
+        "find notes",
+        "read my preferences",
+        "what do you remember",
+        "show my memories",
+        "list my memories",
+    ],
+)
+def test_supported_note_and_memory_commands_are_private(command):
+    assert memory.is_sensitive_history_command(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tell me my notes",
+        "what are my saved notes",
+    ],
+)
+def test_note_retrieval_history_is_redacted_before_persistence(monkeypatch, command):
+    cursor = FakeCursor()
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(memory, "get_connection", lambda: connection)
+
+    memory.add_memory(
+        command,
+        "A private note: PRIVATE-TEST-VALUE",
+        "ajay",
+    )
+
+    assert connection.committed
+    assert cursor.executed[1] == (
+        "ajay",
+        memory.PRIVATE_HISTORY_COMMAND,
+        memory.PRIVATE_HISTORY_RESPONSE,
+    )
+    assert memory._cache[-1] == {
+        "username": "ajay",
+        "command": memory.PRIVATE_HISTORY_COMMAND,
+        "response": memory.PRIVATE_HISTORY_RESPONSE,
+    }
+    assert memory._safe_history_record(
+        command,
+        "A private note: PRIVATE-TEST-VALUE",
+    ) == {
+        "command": memory.PRIVATE_HISTORY_COMMAND,
+        "response": memory.PRIVATE_HISTORY_RESPONSE,
+    }
+
+
+
+def test_explicit_private_flag_redacts_otherwise_unclassified_intent(monkeypatch):
+    cursor = FakeCursor()
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(memory, "get_connection", lambda: connection)
+
+    memory.add_memory(
+        "custom personal workflow",
+        "PRIVATE-RESPONSE-CONTENT",
+        "ajay",
+        private=True,
+    )
+
+    assert cursor.executed[1] == (
+        "ajay",
+        memory.PRIVATE_HISTORY_COMMAND,
+        memory.PRIVATE_HISTORY_RESPONSE,
+    )
+    assert memory._cache[-1]["command"] == memory.PRIVATE_HISTORY_COMMAND
+    assert memory._cache[-1]["response"] == memory.PRIVATE_HISTORY_RESPONSE
+
+
+def test_private_flag_requires_a_boolean():
+    with pytest.raises(ValueError, match="private history flag"):
+        memory.add_memory("hello", "there", "ajay", private="yes")

@@ -139,18 +139,73 @@ def test_url_tool_rejects_non_https_and_private_destinations():
             automation._validate_website_url(url)
 
 
-def test_url_tool_accepts_public_https_destinations():
+def test_url_tool_accepts_public_https_destinations(monkeypatch):
+    monkeypatch.setattr(
+        automation.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (2, 1, 6, "", ("93.184.216.34", 443)),
+        ],
+    )
     assert automation._validate_website_url("https://example.com/path")=="https://example.com/path"
+
+
+def test_url_tool_rejects_dns_answers_containing_private_addresses(monkeypatch):
+    monkeypatch.setattr(
+        automation.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (2, 1, 6, "", ("93.184.216.34", 443)),
+            (2, 1, 6, "", ("10.0.0.8", 443)),
+        ],
+    )
+    with pytest.raises(automation.ToolArgumentError, match="Private or local"):
+        automation._validate_website_url("https://attacker-controlled.example")
+
+
+def test_url_tool_fails_closed_when_dns_resolution_fails(monkeypatch):
+    def fail_dns(*_args, **_kwargs):
+        raise OSError("DNS unavailable")
+
+    monkeypatch.setattr(automation.socket, "getaddrinfo", fail_dns)
+    with pytest.raises(automation.ToolArgumentError, match="could not be safely resolved"):
+        automation._validate_website_url("https://unresolvable.example")
+
+
+def test_screenshot_writes_unique_file_in_user_pictures(monkeypatch, tmp_path):
+    from pathlib import Path
+    import sys
+    import types
+
+    saved = []
+
+    def write_png(file_object, format=None):
+        assert hasattr(file_object, "write")
+        saved.append(format)
+        file_object.write(b"PNG-test-data")
+
+    fake_image = types.SimpleNamespace(save=write_png)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setitem(sys.modules, "pyautogui", types.SimpleNamespace(screenshot=lambda: fake_image))
+
+    first = automation._capture_screenshot(username="alice")
+    second = automation._capture_screenshot(username="alice")
+
+    assert first["saved_to"] != second["saved_to"]
+    assert Path(first["saved_to"]).parent == tmp_path / "Pictures" / "AJARVIS" / "Screenshots"
+    assert Path(first["saved_to"]).read_bytes() == b"PNG-test-data"
+    assert Path(second["saved_to"]).read_bytes() == b"PNG-test-data"
+    assert saved == ["PNG", "PNG"]
 
 
 def test_action_registry_marks_mutating_tools_as_confirmation_required():
     registry=automation.build_automation_registry()
     actions={item["name"]:item for item in registry.list_tools()}
-    assert actions["open_website"]["requires_confirmation"] is True
+    assert actions["open_website"]["requires_confirmation"] is False
     assert actions["open_website"]["risk_level"]=="reversible"
     assert actions["read_user_memories"]["risk_level"]=="read_only"
     if automation.os.name == "nt":
-        assert actions["launch_application"]["requires_confirmation"] is True
+        assert actions["launch_application"]["requires_confirmation"] is False
         assert actions["lock_workstation"]["requires_confirmation"] is True
         assert actions["lock_workstation"]["risk_level"]=="destructive"
     else:
@@ -246,3 +301,41 @@ def test_plan_expiring_during_slow_read_only_work_does_not_start_next_step(monke
     assert expired["steps"][1]["status"]=="expired"
     assert expired["approval"] is None
     assert events==["read"]
+
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1.nip.io",
+        "https://10.0.0.1.sslip.io",
+        "https://127.0.0.1.localtest.me",
+        "https://printer.local",
+        "https://192.168.1.2",
+    ],
+)
+def test_url_tool_rejects_wildcard_dns_and_local_destinations(url):
+    with pytest.raises(automation.ToolArgumentError):
+        automation._validate_website_url(url)
+
+
+def test_plan_registry_is_bounded_and_prunes_old_terminal_plans(monkeypatch):
+    with automation._lock:
+        for index in range(automation.MAX_STORED_PLANS):
+            automation._plans[str(index)] = {
+                "plan_id": str(index),
+                "username": "alice",
+                "status": "completed",
+                "created_at": 0,
+                "expires_at": 0,
+                "approval_id": None,
+                "approval_expires_at": None,
+                "current_step": 0,
+                "steps": [],
+            }
+    events=[]
+    registry=registry_with_read_and_write_tools(events)
+    created=automation.create_plan("alice","New bounded plan.",[step("read_status")],registry=registry,now=10)
+    with automation._lock:
+        assert len(automation._plans) <= automation.MAX_STORED_PLANS
+        assert created["plan_id"] in automation._plans

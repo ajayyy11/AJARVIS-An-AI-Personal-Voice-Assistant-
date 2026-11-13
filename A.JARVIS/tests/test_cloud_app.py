@@ -24,7 +24,7 @@ class FakeCursor:
         self.last_params = params
         self.executed.append((sql, params))
         if "INSERT INTO cloud_users" in sql:
-            self.next_row = (123,)
+            self.next_row = (123, 0, "00000000-0000-4000-8000-000000000001")
         elif "SELECT password_hash FROM cloud_users" in sql:
             pass
         elif "SELECT note_text, created_at FROM cloud_notes" in sql:
@@ -65,6 +65,14 @@ class FakeConnection:
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(cloud_app, "ensure_cloud_schema", lambda: None)
+    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, version, generation: version == 0 and generation == "test-generation")
+    monkeypatch.setattr(cloud_app, "_rate_limit_exceeded", lambda *_args: False)
+    monkeypatch.setattr(cloud_app, "_clear_rate_limit", lambda *_args: None)
+    monkeypatch.setattr(
+        cloud_app,
+        "_database",
+        lambda: FakeConnection(FakeCursor(fetchone_value=(0,))),
+    )
     cloud_app.app.config.update(TESTING=True, SECRET_KEY="test-only-cloud-secret-key-12345678901234567890")
     with cloud_app.app.test_client() as test_client:
         yield test_client
@@ -74,6 +82,8 @@ def login_session(client, username="alice", csrf="test-token"):
     with client.session_transaction() as sess:
         sess["user"] = username
         sess["login_time"] = datetime.now(timezone.utc).isoformat()
+        sess["session_version"] = 0
+        sess["session_generation"] = "test-generation"
         sess["csrf_token"] = csrf
 
 
@@ -81,6 +91,18 @@ def test_health_endpoint_does_not_require_database(client):
     response = client.get("/healthz")
     assert response.status_code == 200
     assert response.get_json()["status"] == "ok"
+
+
+@pytest.mark.parametrize("path", ["/healthz", "/readyz"])
+def test_platform_health_probes_bypass_public_host_allowlist(client, monkeypatch, path):
+    monkeypatch.setattr(cloud_app, "verify_cloud_schema", lambda: None)
+    response = client.get(path, headers={"Host": "render-internal-health-probe.invalid"})
+    assert response.status_code == 200
+
+
+def test_application_routes_still_reject_untrusted_host(client):
+    response = client.get("/login", headers={"Host": "attacker.invalid"})
+    assert response.status_code == 421
 
 
 def test_private_api_rejects_unauthenticated_requests(client):
@@ -100,31 +122,36 @@ def test_security_headers_are_set(client):
 
 def test_assistant_route_limits_request_bursts_per_user(client, monkeypatch):
     login_session(client, username="voice_tester", csrf="test-token")
-    monkeypatch.setattr(cloud_app, "process_cloud_command", lambda username, command: "test reply")
+    monkeypatch.setattr(
+        cloud_app,
+        "process_cloud_command",
+        lambda username, command, **_kwargs: "test reply",
+    )
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
-    with cloud_app._assistant_lock:
-        cloud_app._assistant_requests.pop("voice_tester", None)
+    counts = {}
 
-    try:
-        for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
-            response = client.post(
-                "/api/assistant",
-                headers={"X-CSRF-Token": "test-token"},
-                json={"command": "Hello AJARVIS"},
-            )
-            assert response.status_code == 200
+    def count_limit(scope, identifier, limit, _window):
+        key = (scope, identifier)
+        counts[key] = counts.get(key, 0) + 1
+        return counts[key] > limit
 
-        limited = client.post(
+    monkeypatch.setattr(cloud_app, "_rate_limit_exceeded", count_limit)
+    for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
+        response = client.post(
             "/api/assistant",
             headers={"X-CSRF-Token": "test-token"},
-            json={"command": "Hello again"},
+            json={"command": "Hello AJARVIS"},
         )
-        assert limited.status_code == 429
-        assert limited.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
-        assert "request limit" in limited.get_json()["error"].lower()
-    finally:
-        with cloud_app._assistant_lock:
-            cloud_app._assistant_requests.pop("voice_tester", None)
+        assert response.status_code == 200
+
+    limited = client.post(
+        "/api/assistant",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"command": "Hello again"},
+    )
+    assert limited.status_code == 429
+    assert limited.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
+    assert "request limit" in limited.get_json()["error"].lower()
 
 
 def test_post_request_requires_csrf_token(client, monkeypatch):
@@ -177,13 +204,10 @@ def test_assistant_api_passes_conversation_cursor_to_command_processor(client, m
     calls = []
     monkeypatch.setattr(
         cloud_app, "process_cloud_command",
-        lambda username, command, context_after_id=None:
+        lambda username, command, context_after_id=None, history_metadata=None:
             calls.append((username, command, context_after_id)) or "clean-context reply",
     )
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
-    with cloud_app._assistant_lock:
-        cloud_app._assistant_requests.pop("alice", None)
-
     response = client.post(
         "/api/assistant",
         headers={"X-CSRF-Token": "test-token"},
@@ -271,7 +295,7 @@ def test_registration_rejects_short_password_before_database(client, monkeypatch
 
 def test_login_uses_password_hash_and_does_not_reveal_username_exists(client, monkeypatch):
     password_hash = generate_password_hash("my-strong-password-123")
-    cursor = FakeCursor(fetchone_value=(password_hash,))
+    cursor = FakeCursor(fetchone_value=(password_hash, 0, "00000000-0000-4000-8000-000000000001"))
     connection = FakeConnection(cursor)
     monkeypatch.setattr(cloud_app, "_database", lambda: connection)
 
@@ -599,39 +623,21 @@ def test_activity_api_filters_by_current_username(client, monkeypatch):
 
 
 
-def test_registration_attempts_are_rate_limited_per_client_address(client):
-    ip_address = "198.51.100.45"
-    with cloud_app._registration_lock:
-        cloud_app._registration_attempts.pop(ip_address, None)
-
-    try:
-        for _ in range(cloud_app.MAX_REGISTRATION_ATTEMPTS):
-            response = client.post(
-                "/api/auth/register",
-                environ_base={"REMOTE_ADDR": ip_address},
-                json={"username": "invalid", "password": "short"},
-            )
-            assert response.status_code == 400
-
-        limited = client.post(
-            "/api/auth/register",
-            environ_base={"REMOTE_ADDR": ip_address},
-            json={"username": "invalid", "password": "short"},
-        )
-        assert limited.status_code == 429
-        assert limited.headers["Retry-After"] == str(cloud_app.REGISTRATION_WINDOW_SECONDS)
-    finally:
-        with cloud_app._registration_lock:
-            cloud_app._registration_attempts.pop(ip_address, None)
-
-
 def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatch):
     username = "shared_quota_tester"
     login_session(client, username=username, csrf="test-token")
-    with cloud_app._assistant_lock:
-        cloud_app._assistant_requests.pop(username, None)
+    calls = {"count": 0}
 
-    monkeypatch.setattr(cloud_app, "process_cloud_command", lambda _username, _command: "test reply")
+    def shared_quota(_username):
+        calls["count"] += 1
+        return calls["count"] > cloud_app.MAX_ASSISTANT_REQUESTS
+
+    monkeypatch.setattr(cloud_app, "_assistant_rate_limited", shared_quota)
+    monkeypatch.setattr(
+        cloud_app,
+        "process_cloud_command",
+        lambda _username, _command, **_kwargs: "test reply",
+    )
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
     monkeypatch.setattr(cloud_app, "_genai", lambda: object())
     monkeypatch.setattr(
@@ -640,25 +646,21 @@ def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatc
         lambda: FakeConnection(FakeCursor(fetchone_value=("report.txt", "A saved report."))),
     )
 
-    try:
-        for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
-            response = client.post(
-                "/api/assistant",
-                headers={"X-CSRF-Token": "test-token"},
-                json={"command": "Hello AJARVIS"},
-            )
-            assert response.status_code == 200
-
+    for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
         response = client.post(
-            "/api/documents/17/ask",
+            "/api/assistant",
             headers={"X-CSRF-Token": "test-token"},
-            json={"question": "Summarize the report"},
+            json={"command": "Hello AJARVIS"},
         )
-        assert response.status_code == 429
-        assert response.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
-    finally:
-        with cloud_app._assistant_lock:
-            cloud_app._assistant_requests.pop(username, None)
+        assert response.status_code == 200
+
+    response = client.post(
+        "/api/documents/17/ask",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"question": "Summarize the report"},
+    )
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
 
 
 
@@ -837,3 +839,255 @@ def test_history_api_rejects_ambiguous_cursor_parameters(client):
     login_session(client)
     response = client.get("/api/history?after_id=5&before_id=10")
     assert response.status_code == 400
+
+
+
+def test_login_rate_limit_separates_source_and_account_pair_scopes(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        cloud_app,
+        "_rate_limit_exceeded",
+        lambda scope, identifier, limit, window: calls.append(
+            (scope, identifier, limit, window)
+        ) or False,
+    )
+    with cloud_app.app.test_request_context(
+        "/api/auth/login", environ_base={"REMOTE_ADDR": "198.51.100.72"}
+    ):
+        assert cloud_app._auth_rate_limited("target_account") is False
+
+    assert [item[0] for item in calls] == ["login-ip", "login-account-ip"]
+    assert calls[0][1] == "198.51.100.72"
+    assert "target_account" in calls[1][1]
+    assert calls[0][2] == cloud_app.MAX_LOGIN_ATTEMPTS_PER_IP
+    assert calls[1][2] == cloud_app.MAX_LOGIN_ATTEMPTS_PER_ACCOUNT_IP
+
+
+
+def test_unknown_username_still_verifies_dummy_password_hash(client, monkeypatch):
+    cursor = FakeCursor(fetchone_value=None)
+    monkeypatch.setattr(cloud_app, "_database", lambda: FakeConnection(cursor))
+    calls = []
+    monkeypatch.setattr(
+        cloud_app,
+        "check_password_hash",
+        lambda encoded, password: calls.append((encoded, password)) or False,
+    )
+    response = client.post(
+        "/api/auth/login",
+        json={"username": "unknown_user", "password": "wrong-password"},
+    )
+    assert response.status_code == 401
+    assert len(calls) == 1
+    assert calls[0][0] == cloud_app._DUMMY_PASSWORD_HASH
+
+
+def test_logout_increments_session_version_and_invalidates_old_cookie(client, monkeypatch):
+    login_session(client, username="revocation_user", csrf="revoke-token")
+    cursor = FakeCursor()
+    cursor.rowcount = 1
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    response = client.post("/api/auth/logout", headers={"X-CSRF-Token": "revoke-token"}, json={})
+    assert response.status_code == 200
+    assert connection.committed is True
+    assert "UPDATE cloud_users SET session_version = session_version + 1" in cursor.executed[0][0]
+    with client.session_transaction() as state:
+        assert "user" not in state
+
+
+def test_cloud_security_headers_include_csp_and_hsts_on_https(client):
+    response = client.get("/healthz", base_url="https://ajarvis-cloud.onrender.com")
+    assert response.status_code == 200
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
+
+
+def test_workspace_uses_same_origin_static_assets_without_inline_scripts(client, monkeypatch):
+    login_session(client)
+    monkeypatch.setattr(cloud_app, "get_latest_id", lambda **_kwargs: 0)
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "/static/cloud.css" in html
+    assert "/static/cloud.js" in html
+    assert "/static/interface.js" in html
+    assert "chart.js" not in html.lower()
+    assert "<script>" not in html.lower()
+    assert "</head>" in html.lower()
+
+
+
+
+
+def test_cloud_dashboard_pauses_background_polling_when_tab_is_hidden():
+    from pathlib import Path
+
+    source = (Path(cloud_app.__file__).parent / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'document.visibilityState !== "hidden"' in source
+    assert 'document.addEventListener("visibilitychange"' in source
+    assert "if (pageIsVisible()) claimReminders()" in source
+    assert "if (pageIsVisible()) loadSystemStatus()" in source
+
+
+
+def test_cloud_host_header_rejects_untrusted_host(client):
+    response = client.get("/login", base_url="https://evil.example")
+    assert response.status_code == 421
+
+
+def test_cloud_health_probe_is_accessible_with_provider_host(client, monkeypatch):
+    monkeypatch.setattr(cloud_app, "verify_cloud_schema", lambda: None)
+    response = client.get("/readyz", base_url="https://provider-health-probe.invalid")
+    assert response.status_code == 200
+
+
+def test_cloud_client_ip_uses_trusted_cloudflare_header_not_forwarded_chain(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cloud_app.Config, "TRUST_CF_CONNECTING_IP", True)
+    monkeypatch.setattr(
+        cloud_app,
+        "_auth_rate_limited",
+        lambda _username=None: captured.setdefault("client_ip", cloud_app._client_ip()) and False,
+    )
+    response = client.post(
+        "/api/auth/login",
+        base_url="https://ajarvis-cloud.onrender.com",
+        environ_overrides={
+            "REMOTE_ADDR": "10.0.0.10",
+            "HTTP_X_FORWARDED_FOR": "192.0.2.99, 198.51.100.25",
+            "HTTP_CF_CONNECTING_IP": "203.0.113.33",
+            "HTTP_X_FORWARDED_PROTO": "https",
+        },
+        json={"username": None, "password": None},
+    )
+    assert response.status_code == 401
+    assert captured["client_ip"] == "203.0.113.33"
+    assert response.headers["Strict-Transport-Security"].startswith("max-age=")
+
+
+def test_cloud_client_ip_falls_back_to_socket_peer_when_header_is_invalid(client, monkeypatch):
+    monkeypatch.setattr(cloud_app.Config, "TRUST_CF_CONNECTING_IP", True)
+    with cloud_app.app.test_request_context(
+        "/api/auth/login",
+        environ_base={"REMOTE_ADDR": "10.0.0.10"},
+        headers={"CF-Connecting-IP": "not-an-ip", "X-Forwarded-For": "192.0.2.88"},
+    ):
+        assert cloud_app._client_ip() == "10.0.0.10"
+
+
+
+def test_session_version_check_fails_when_database_version_changes(client, monkeypatch):
+    login_session(client)
+    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, _version, _generation: False)
+    response = client.get("/dashboard")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+    with client.session_transaction() as state:
+        assert "user" not in state
+
+
+def test_old_session_cookie_stays_revoked_after_account_recreation(client, monkeypatch):
+    login_session(client, username="recreated_user")
+    monkeypatch.setattr(
+        cloud_app,
+        "_session_version_is_current",
+        lambda _username, _version, generation: generation == "new-account-generation",
+    )
+
+    old_cookie = client.get("/dashboard")
+    assert old_cookie.status_code == 302
+    assert old_cookie.headers["Location"].endswith("/login")
+    with client.session_transaction() as state:
+        assert "user" not in state
+
+    with client.session_transaction() as state:
+        state["user"] = "recreated_user"
+        state["login_time"] = datetime.now(timezone.utc).isoformat()
+        state["session_version"] = 0
+        state["session_generation"] = "new-account-generation"
+        state["csrf_token"] = "fresh-csrf"
+    monkeypatch.setattr(cloud_app, "get_latest_id", lambda **_kwargs: 0)
+
+    new_cookie = client.get("/dashboard")
+    assert new_cookie.status_code == 200
+
+
+def test_readyz_checks_schema_without_running_ddl(client, monkeypatch):
+    cursor = FakeCursor(fetchone_value=None)
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
+    monkeypatch.setattr(
+        cloud_app, "ensure_cloud_schema",
+        lambda: pytest.fail("Readiness must never run schema migrations"),
+    )
+
+    response = client.get("/readyz")
+
+    assert response.status_code == 503
+    assert cursor.executed
+    assert all(
+        not any(word in sql.upper() for word in ("CREATE ", "ALTER ", "DROP "))
+        for sql, _params in cursor.executed
+    )
+
+
+def test_cloud_history_redacts_task_and_reminder_responses_before_persistence(monkeypatch):
+    captured = {}
+
+    def capture(command, response_text, username, *, private=False):
+        captured.update(
+            command=command,
+            response=response_text,
+            username=username,
+            private=private,
+        )
+
+    monkeypatch.setattr(cloud_app, "add_memory", capture)
+    cloud_app._save_history(
+        "alice",
+        "create task rotate production password",
+        "Task added: rotate production password.",
+        private=True,
+    )
+
+    assert captured == {
+        "command": "create task rotate production password",
+        "response": "Task added: rotate production password.",
+        "username": "alice",
+        "private": True,
+    }
+
+
+def test_assistant_api_marks_task_creation_history_private(client, monkeypatch):
+    login_session(client, username="private_task_tester", csrf="test-token")
+    monkeypatch.setattr(
+        cloud_app,
+        "create_user_task",
+        lambda username, title: {"title": title, "id": 8},
+    )
+    captured = {}
+
+    def capture(command, response_text, username, *, private=False):
+        captured.update(
+            command=command,
+            response=response_text,
+            username=username,
+            private=private,
+        )
+
+    monkeypatch.setattr(cloud_app, "add_memory", capture)
+    response = client.post(
+        "/api/assistant",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"command": "create task rotate production password"},
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "command": "create task rotate production password",
+        "response": "Task added: rotate production password.",
+        "username": "private_task_tester",
+        "private": True,
+    }

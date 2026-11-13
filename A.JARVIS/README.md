@@ -189,3 +189,10 @@ The hosted dashboard uses browser-based speech recognition and speech synthesis.
 Assistant requests are rate-limited per signed-in account to help protect free API quota. The cloud app still cannot control your local computer; desktop automation must remain in the separate local app and requires explicit safety design.
 
 See [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) before applying the Blueprint, especially its cost, ephemeral service, Gemini API, and data-retention notes.
+
+
+## Cloud database operations
+
+Cloud PostgreSQL schema changes are explicit operator actions, not request-time startup work. Before deploying a cloud release that changes the schema, back up the Neon database and run `python scripts/migrate_cloud_database.py --apply` from the `A.JARVIS` directory with the intended `DATABASE_URL` and `SECRET_KEY` configured. Then run `python scripts/migrate_cloud_database.py --verify`. The Render readiness endpoint is read-only and will report not-ready until all required tables and session columns exist.
+
+Cloud/test dependencies are pinned in `requirements-web.lock`; `requirements-web.txt` includes that lock for compatibility with existing setup commands. The CI workflow audits the pinned dependency set for known vulnerabilities.
