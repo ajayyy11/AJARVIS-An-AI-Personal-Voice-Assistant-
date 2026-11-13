@@ -60,7 +60,7 @@ def _camera_without_hardware():
     instance.detected_results=[]; instance.last_recognition_at=0.0
     instance._last_recognition_frame_at=0.0
     instance._candidate_username=None; instance._candidate_count=0; instance._stable_username=None
-    instance.is_running=True; instance.camera_available=True
+    instance.is_running=True; instance.camera_available=True; instance.recognition_enabled=True
     return instance
 
 
