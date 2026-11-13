@@ -66,6 +66,8 @@ class FakeConnection:
 def client(monkeypatch):
     monkeypatch.setattr(cloud_app, "ensure_cloud_schema", lambda: None)
     monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, version, generation: version == 0 and generation == "test-generation")
+    monkeypatch.setattr(cloud_app, "_rate_limit_exceeded", lambda *_args: False)
+    monkeypatch.setattr(cloud_app, "_clear_rate_limit", lambda *_args: None)
     monkeypatch.setattr(
         cloud_app,
         "_database",
