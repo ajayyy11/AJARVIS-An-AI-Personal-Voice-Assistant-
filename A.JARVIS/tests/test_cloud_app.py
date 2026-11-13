@@ -65,6 +65,7 @@ class FakeConnection:
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(cloud_app, "ensure_cloud_schema", lambda: None)
+    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, version: version == 0)
     monkeypatch.setattr(
         cloud_app,
         "_database",
@@ -79,6 +80,7 @@ def login_session(client, username="alice", csrf="test-token"):
     with client.session_transaction() as sess:
         sess["user"] = username
         sess["login_time"] = datetime.now(timezone.utc).isoformat()
+        sess["session_version"] = 0
         sess["csrf_token"] = csrf
 
 
@@ -925,3 +927,26 @@ def test_dashboard_uses_static_scripts_and_pinned_chartjs_with_sri(client, monke
     assert "integrity=" in html
     assert "<script>" not in html
     assert "</head>" in html
+
+
+
+def test_cloud_host_header_rejects_untrusted_host(client):
+    response = client.get("/healthz", base_url="https://evil.example")
+    assert response.status_code == 421
+
+
+def test_cloud_proxyfix_uses_forwarded_client_address(client):
+    with client.application.test_request_context(
+        "/api/auth/login",
+        base_url="https://ajarvis-cloud.onrender.com",
+        headers={"X-Forwarded-For": "198.51.100.25", "X-Forwarded-Proto": "https"},
+    ):
+        assert cloud_app.request.remote_addr == "198.51.100.25"
+        assert cloud_app.request.is_secure
+
+
+def test_session_version_check_fails_when_database_version_changes(client, monkeypatch):
+    login_session(client)
+    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, _version: False)
+    response = client.get("/dashboard")
+    assert response.status_code == 401
