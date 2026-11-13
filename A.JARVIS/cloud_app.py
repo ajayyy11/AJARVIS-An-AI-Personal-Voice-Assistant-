@@ -8,14 +8,15 @@ Gemini, grounded web research, user-scoped notes, document Q&A, and reminders.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
+import hmac
 import logging
 import os
 from pathlib import Path
 import re
 import secrets
-import time
-from urllib.parse import urlsplit
 from threading import Lock
+from urllib.parse import urlsplit
 from typing import Any
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -97,23 +98,32 @@ _schema_lock = Lock()
 _schema_ready = False
 _genai_client = None
 _genai_lock = Lock()
-_auth_attempts: dict[str, list[float]] = {}
-_auth_username_attempts: dict[str, list[float]] = {}
-_auth_lock = Lock()
-_assistant_requests: dict[str, list[float]] = {}
-_assistant_lock = Lock()
-_registration_attempts: dict[str, list[float]] = {}
-_registration_lock = Lock()
-
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,31}$")
-MAX_LOGIN_ATTEMPTS = 10  # per username
-MAX_LOGIN_ATTEMPTS_PER_IP = 30
+MAX_LOGIN_ATTEMPTS_PER_IP = 120
+MAX_LOGIN_ATTEMPTS_PER_ACCOUNT_IP = 15
 LOGIN_WINDOW_SECONDS = 15 * 60
 _DUMMY_PASSWORD_HASH = generate_password_hash("AJARVIS timing equalisation value; never used as a credential")
 MAX_ASSISTANT_REQUESTS = 20
 ASSISTANT_WINDOW_SECONDS = 60
 MAX_REGISTRATION_ATTEMPTS = 5
 REGISTRATION_WINDOW_SECONDS = 60 * 60
+_RATE_LIMIT_CLEANUP_INTERVAL = 200
+_RATE_LIMIT_REQUEST_COUNT = 0
+_RATE_LIMIT_CLEANUP_LOCK = Lock()
+_REQUIRED_CLOUD_TABLES = (
+    "cloud_users",
+    "cloud_notes",
+    "user_preferences",
+    "ajarvis_tasks",
+    "ajarvis_documents",
+    "ajarvis_tool_audit",
+    "command_history",
+    "ajarvis_rate_limits",
+)
+
+
+class RateLimitUnavailable(RuntimeError):
+    """Raised when a shared rate-limit decision cannot be stored safely."""
 MAX_NOTE_CHARS = 4000
 MAX_DOCUMENT_QUESTION_CHARS = 1500
 MAX_VISUAL_PROMPT_CHARS = 1200
@@ -136,11 +146,13 @@ def ensure_cloud_schema() -> None:
                 id BIGSERIAL PRIMARY KEY,
                 username VARCHAR(32) NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
-                session_version INTEGER NOT NULL DEFAULT 0,
+                session_version BIGINT NOT NULL DEFAULT 0,
+                session_generation UUID NOT NULL DEFAULT gen_random_uuid(),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """,
-            "ALTER TABLE cloud_users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE cloud_users ADD COLUMN IF NOT EXISTS session_version BIGINT NOT NULL DEFAULT 0",
+            "ALTER TABLE cloud_users ADD COLUMN IF NOT EXISTS session_generation UUID NOT NULL DEFAULT gen_random_uuid()",
             """
             CREATE TABLE IF NOT EXISTS cloud_notes (
                 id BIGSERIAL PRIMARY KEY,
@@ -221,6 +233,15 @@ def ensure_cloud_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_command_history_username_id
             ON command_history (username, id DESC)
             """,
+            """
+            CREATE TABLE IF NOT EXISTS ajarvis_rate_limits (
+                rate_key CHAR(64) PRIMARY KEY,
+                window_started_at TIMESTAMPTZ NOT NULL,
+                request_count INTEGER NOT NULL CHECK (request_count >= 0),
+                expires_at TIMESTAMPTZ NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_ajarvis_rate_limits_expires ON ajarvis_rate_limits (expires_at)"
         ]
         conn = cursor = None
         try:
@@ -242,18 +263,9 @@ def ensure_cloud_schema() -> None:
                 conn.close()
 
 
-@app.before_request
-def prepare_cloud_storage():
-    if request.endpoint in {"healthz", "static"}:
-        return None
-    try:
-        ensure_cloud_schema()
-    except Exception:
-        logger.error("Cloud storage readiness check failed.")
-        if request.path.startswith("/api/"):
-            return jsonify({"error": "Cloud storage is temporarily unavailable."}), 503
-        return "AJARVIS storage is temporarily unavailable. Please try again shortly.", 503
-    return None
+@app.errorhandler(RateLimitUnavailable)
+def rate_limit_unavailable(error):
+    return jsonify({"error": str(error)}), 503
 
 
 @app.errorhandler(413)
@@ -265,15 +277,20 @@ def _database():
     return get_connection()
 
 
-def _session_version_is_current(username: str, session_version: int) -> bool:
-    """Validate cookie revocation against the durable account version."""
+def _session_version_is_current(
+    username: str, session_version: int, session_generation: str
+) -> bool:
+    """Validate the version and unique account generation stored in the cookie."""
     conn = cursor = None
     try:
         conn = _database()
         cursor = conn.cursor()
-        cursor.execute("SELECT session_version FROM cloud_users WHERE username = %s", (username,))
-        row = cursor.fetchone()
-        return bool(row is not None and int(row[0]) == session_version)
+        cursor.execute(
+            "SELECT 1 FROM cloud_users "
+            "WHERE username = %s AND session_version = %s AND session_generation = %s",
+            (username, session_version, session_generation),
+        )
+        return cursor.fetchone() is not None
     finally:
         if cursor is not None:
             cursor.close()
@@ -284,11 +301,13 @@ def _session_version_is_current(username: str, session_version: int) -> bool:
 def _is_authenticated() -> bool:
     username = session.get("user")
     login_time_value = session.get("login_time")
-    session_version = session.get("session_version", 0)
+    session_version = session.get("session_version")
+    session_generation = session.get("session_generation")
     if (
         not isinstance(username, str) or not username
         or not isinstance(login_time_value, str)
         or isinstance(session_version, bool) or not isinstance(session_version, int)
+        or not isinstance(session_generation, str) or not session_generation
     ):
         session.clear()
         return False
@@ -307,7 +326,7 @@ def _is_authenticated() -> bool:
     # Signed cookies are otherwise replayable after logout. Compare a server-side
     # version on every authenticated request so revoking a session invalidates copies.
     try:
-        current = _session_version_is_current(username, session_version)
+        current = _session_version_is_current(username, session_version, session_generation)
     except Exception:
         logger.warning("Cloud session revocation check is unavailable.")
         return False
@@ -331,100 +350,99 @@ def _require_csrf():
     return None
 
 
-def _new_session(username: str, session_version: int = 0) -> str:
+def _new_session(
+    username: str, session_version: int, session_generation: str
+) -> str:
+    """Create a fresh session bound to this specific account incarnation."""
+    if not isinstance(session_generation, str) or not session_generation:
+        raise ValueError("A durable account generation is required.")
     session.clear()
     csrf_token = secrets.token_urlsafe(32)
     session["user"] = username
     session["login_time"] = datetime.now(timezone.utc).isoformat()
     session["session_version"] = int(session_version)
+    session["session_generation"] = session_generation
     session["csrf_token"] = csrf_token
     return csrf_token
 
 
-def _auth_rate_limited(username: str | None = None) -> bool:
-    """Limit both a real client IP and a normalized account name independently."""
-    now = time.monotonic()
-    ip_address = request.remote_addr or "unknown"
-    account = username.strip().lower()[:32] if isinstance(username, str) and username.strip() else None
-    with _auth_lock:
-        ip_attempts = [
-            stamp for stamp in _auth_attempts.get(ip_address, [])
-            if now - stamp < LOGIN_WINDOW_SECONDS
-        ]
-        _auth_attempts[ip_address] = ip_attempts
-        account_attempts = []
-        if account:
-            account_attempts = [
-                stamp for stamp in _auth_username_attempts.get(account, [])
-                if now - stamp < LOGIN_WINDOW_SECONDS
-            ]
-            _auth_username_attempts[account] = account_attempts
-        if len(_auth_attempts) > 2000:
-            for key, stamps in list(_auth_attempts.items()):
-                if not stamps or now - stamps[-1] >= LOGIN_WINDOW_SECONDS:
-                    _auth_attempts.pop(key, None)
-        if len(_auth_username_attempts) > 5000:
-            for key, stamps in list(_auth_username_attempts.items()):
-                if not stamps or now - stamps[-1] >= LOGIN_WINDOW_SECONDS:
-                    _auth_username_attempts.pop(key, None)
-        # Render's proxy address can be shared by many unrelated users.
-        # Enforce the IP budget only for malformed/anonymous login requests;
-        # named accounts are throttled independently so one user cannot lock out
-        # every account behind the same proxy address.
-        return (
-            (account is None and len(ip_attempts) >= MAX_LOGIN_ATTEMPTS_PER_IP)
-            or (account is not None and len(account_attempts) >= MAX_LOGIN_ATTEMPTS)
+def _rate_limit_key(scope: str, identifier: str) -> str:
+    """Derive a non-reversible, secret-keyed identifier for database storage."""
+    payload = (scope + "\0" + identifier).encode("utf-8")
+    return hmac.new(Config.SECRET_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def _rate_limit_exceeded(
+    scope: str, identifier: str, limit: int, window_seconds: int
+) -> bool:
+    """Atomically consume one shared rate-limit slot across all app instances."""
+    global _RATE_LIMIT_REQUEST_COUNT
+    from database.rate_limiter import consume_rate_limit
+
+    try:
+        exceeded = consume_rate_limit(
+            _rate_limit_key(scope, identifier),
+            limit=limit,
+            window_seconds=window_seconds,
+            connection_factory=_database,
         )
+        with _RATE_LIMIT_CLEANUP_LOCK:
+            _RATE_LIMIT_REQUEST_COUNT += 1
+            should_cleanup = _RATE_LIMIT_REQUEST_COUNT % _RATE_LIMIT_CLEANUP_INTERVAL == 0
+        if should_cleanup:
+            from database.rate_limiter import cleanup_expired_rate_limits
+            cleanup_expired_rate_limits(connection_factory=_database)
+        return exceeded
+    except Exception as exc:
+        logger.error("Shared rate-limit storage is unavailable (%s).", type(exc).__name__)
+        raise RateLimitUnavailable(
+            "Security rate limiting is temporarily unavailable. Please retry shortly."
+        ) from None
 
 
-def _record_auth_failure(username: str | None = None) -> None:
-    now = time.monotonic()
+def _clear_rate_limit(scope: str, identifier: str) -> None:
+    from database.rate_limiter import clear_rate_limit
+
+    try:
+        clear_rate_limit(
+            _rate_limit_key(scope, identifier),
+            connection_factory=_database,
+        )
+    except Exception as exc:
+        logger.warning("Could not clear a rate-limit counter (%s).", type(exc).__name__)
+
+
+def _auth_rate_limited(username: str | None = None) -> bool:
+    """Limit by source IP and account/IP pair; never globally lock a username."""
     ip_address = request.remote_addr or "unknown"
-    account = username.strip().lower()[:32] if isinstance(username, str) and username.strip() else None
-    with _auth_lock:
-        ip_attempts = [
-            stamp for stamp in _auth_attempts.get(ip_address, [])
-            if now - stamp < LOGIN_WINDOW_SECONDS
-        ]
-        ip_attempts.append(now)
-        _auth_attempts[ip_address] = ip_attempts
-        if account:
-            account_attempts = [
-                stamp for stamp in _auth_username_attempts.get(account, [])
-                if now - stamp < LOGIN_WINDOW_SECONDS
-            ]
-            account_attempts.append(now)
-            _auth_username_attempts[account] = account_attempts
+    if _rate_limit_exceeded(
+        "login-ip", ip_address, MAX_LOGIN_ATTEMPTS_PER_IP, LOGIN_WINDOW_SECONDS
+    ):
+        return True
+    if isinstance(username, str) and username.strip():
+        account = username.strip().lower()[:32]
+        return _rate_limit_exceeded(
+            "login-account-ip",
+            account + "\0" + ip_address,
+            MAX_LOGIN_ATTEMPTS_PER_ACCOUNT_IP,
+            LOGIN_WINDOW_SECONDS,
+        )
+    return False
 
 
 def _clear_auth_failures(username: str) -> None:
+    """Clear only this account/source pair after a successful sign-in."""
     ip_address = request.remote_addr or "unknown"
     account = username.strip().lower()[:32]
-    with _auth_lock:
-        _auth_attempts.pop(ip_address, None)
-        _auth_username_attempts.pop(account, None)
+    _clear_rate_limit("login-account-ip", account + "\0" + ip_address)
+
 
 def _registration_rate_limited() -> bool:
-    """Limit account creation attempts per client address in this process."""
-    now = time.monotonic()
     ip_address = request.remote_addr or "unknown"
-    with _registration_lock:
-        attempts = [
-            stamp for stamp in _registration_attempts.get(ip_address, [])
-            if now - stamp < REGISTRATION_WINDOW_SECONDS
-        ]
-        limited = len(attempts) >= MAX_REGISTRATION_ATTEMPTS
-        if not limited:
-            attempts.append(now)
-        _registration_attempts[ip_address] = attempts
-        if len(_registration_attempts) > 2000:
-            expired = [
-                key for key, stamps in _registration_attempts.items()
-                if not stamps or now - stamps[-1] >= REGISTRATION_WINDOW_SECONDS
-            ]
-            for key in expired:
-                _registration_attempts.pop(key, None)
-        return limited
+    return _rate_limit_exceeded(
+        "registration-ip", ip_address,
+        MAX_REGISTRATION_ATTEMPTS, REGISTRATION_WINDOW_SECONDS,
+    )
 
 
 def _ai_quota_response():
@@ -437,25 +455,10 @@ def _ai_quota_response():
 
 
 def _assistant_rate_limited(username: str) -> bool:
-    """Bound assistant traffic per signed-in user to protect free API quota."""
-    now = time.monotonic()
-    with _assistant_lock:
-        attempts = [
-            stamp for stamp in _assistant_requests.get(username, [])
-            if now - stamp < ASSISTANT_WINDOW_SECONDS
-        ]
-        limited = len(attempts) >= MAX_ASSISTANT_REQUESTS
-        if not limited:
-            attempts.append(now)
-        _assistant_requests[username] = attempts
-        if len(_assistant_requests) > 2000:
-            expired = [
-                key for key, stamps in _assistant_requests.items()
-                if not stamps or now - stamps[-1] >= ASSISTANT_WINDOW_SECONDS
-            ]
-            for key in expired:
-                _assistant_requests.pop(key, None)
-        return limited
+    """Apply the AI quota consistently across all workers and service instances."""
+    return _rate_limit_exceeded(
+        "assistant-user", username, MAX_ASSISTANT_REQUESTS, ASSISTANT_WINDOW_SECONDS
+    )
 
 
 @app.after_request
@@ -1036,18 +1039,42 @@ def healthz():
     return jsonify({"status": "ok", "service": "ajarvis-cloud"}), 200
 
 
+def verify_cloud_schema() -> None:
+    """Check required cloud tables/columns without changing the database."""
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        for table_name in _REQUIRED_CLOUD_TABLES:
+            cursor.execute(
+                "SELECT to_regclass(current_schema() || '.' || %s)",
+                (table_name,),
+            )
+            row = cursor.fetchone()
+            if not row or row[0] is None:
+                raise RuntimeError("A required cloud database table is missing.")
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = 'cloud_users' "
+            "AND column_name IN ('session_version', 'session_generation')"
+        )
+        columns = {row[0] for row in cursor.fetchall()}
+        if not {"session_version", "session_generation"}.issubset(columns):
+            raise RuntimeError("Cloud account session schema is not up to date.")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
 @app.get("/readyz")
 def readyz():
     try:
-        ensure_cloud_schema()
-        conn = _database()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        cursor.fetchone()
-        cursor.close()
-        conn.close()
+        verify_cloud_schema()
         return jsonify({"status": "ready", "database": "ok"}), 200
     except Exception:
+        logger.warning("Cloud readiness check failed.")
         return jsonify({"status": "not_ready", "database": "unavailable"}), 503
 
 
@@ -1096,12 +1123,15 @@ def register_account():
         conn = _database()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO cloud_users (username, password_hash) VALUES (%s, %s) RETURNING id",
+            "INSERT INTO cloud_users (username, password_hash) VALUES (%s, %s) "
+            "RETURNING id, session_version, session_generation",
             (username, generate_password_hash(password)),
         )
-        cursor.fetchone()
+        account = cursor.fetchone()
+        if not account or len(account) < 3:
+            raise RuntimeError("The new account session metadata was not returned.")
         conn.commit()
-        token = _new_session(username)
+        token = _new_session(username, int(account[1]), str(account[2]))
         return jsonify({"ok": True, "csrf_token": token}), 201
     except Exception:
         if conn is not None:
@@ -1142,7 +1172,8 @@ def login_account():
         conn = _database()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT password_hash, session_version FROM cloud_users WHERE username = %s",
+            "SELECT password_hash, session_version, session_generation "
+            "FROM cloud_users WHERE username = %s",
             (account_name,),
         )
         row = cursor.fetchone()
@@ -1152,6 +1183,7 @@ def login_account():
         password_matches = check_password_hash(candidate_hash, password)
         valid = bool(row and password_matches)
         account_session_version = int(row[1]) if row else 0
+        account_session_generation = str(row[2]) if row else ""
     except Exception:
         logger.error("Cloud login store is unavailable.")
         return jsonify({"error": "Login is temporarily unavailable. Please try again."}), 503
@@ -1165,7 +1197,9 @@ def login_account():
         _record_auth_failure(account_name)
         return jsonify({"error": "Invalid username or password."}), 401
     _clear_auth_failures(account_name)
-    token = _new_session(account_name, account_session_version)
+    token = _new_session(
+        account_name, account_session_version, account_session_generation
+    )
     return jsonify({"ok": True, "csrf_token": token})
 
 @app.post("/api/auth/logout")
