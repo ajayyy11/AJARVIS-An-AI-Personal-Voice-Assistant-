@@ -24,7 +24,7 @@ class FakeCursor:
         self.last_params = params
         self.executed.append((sql, params))
         if "INSERT INTO cloud_users" in sql:
-            self.next_row = (123,)
+            self.next_row = (123, 0, "00000000-0000-4000-8000-000000000001")
         elif "SELECT password_hash FROM cloud_users" in sql:
             pass
         elif "SELECT note_text, created_at FROM cloud_notes" in sql:
@@ -65,7 +65,7 @@ class FakeConnection:
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(cloud_app, "ensure_cloud_schema", lambda: None)
-    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, version: version == 0)
+    monkeypatch.setattr(cloud_app, "_session_version_is_current", lambda _username, version, generation: version == 0 and generation == "test-generation")
     monkeypatch.setattr(
         cloud_app,
         "_database",
@@ -81,6 +81,7 @@ def login_session(client, username="alice", csrf="test-token"):
         sess["user"] = username
         sess["login_time"] = datetime.now(timezone.utc).isoformat()
         sess["session_version"] = 0
+        sess["session_generation"] = "test-generation"
         sess["csrf_token"] = csrf
 
 
