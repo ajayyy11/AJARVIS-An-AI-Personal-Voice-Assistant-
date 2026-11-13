@@ -930,6 +930,19 @@ def test_workspace_uses_same_origin_static_assets_without_inline_scripts(client,
 
 
 
+
+
+def test_cloud_dashboard_pauses_background_polling_when_tab_is_hidden():
+    from pathlib import Path
+
+    source = (Path(cloud_app.__file__).parent / "static" / "cloud.js").read_text(encoding="utf-8")
+    assert 'document.visibilityState !== "hidden"' in source
+    assert 'document.addEventListener("visibilitychange"' in source
+    assert "if (pageIsVisible()) claimReminders()" in source
+    assert "if (pageIsVisible()) loadSystemStatus()" in source
+
+
+
 def test_cloud_host_header_rejects_untrusted_host(client):
     response = client.get("/healthz", base_url="https://evil.example")
     assert response.status_code == 421
