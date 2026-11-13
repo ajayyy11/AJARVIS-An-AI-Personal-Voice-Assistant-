@@ -318,55 +318,9 @@
         <input type="text" id="username" placeholder="Enter Username">
         
         <br><br>
-        <button onclick="capture()">Capture & Register</button>
+        <button id="capture-register-button" type="button">Capture & Register</button>
     </div>
 
-    <script>
-        async function capture() {
-            const usernameInput = document.getElementById('username');
-            const username = usernameInput.value.trim();
-            const button = document.querySelector('button[onclick="capture()"]');
-
-            if (!username) {
-                alert('Please enter a username.');
-                usernameInput.focus();
-                return;
-            }
-
-            if (button.disabled) return;
-            const originalText = button.textContent;
-            button.disabled = true;
-            button.textContent = 'REGISTERING...';
-            button.setAttribute('aria-busy', 'true');
-
-            try {
-                const response = await fetch('/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-                    },
-                    body: JSON.stringify({ username })
-                });
-                const data = await response.json().catch(() => ({}));
-
-                if (!response.ok) {
-                    throw new Error(data.message || 'Registration failed. Please try again.');
-                }
-                if (data.status !== 'success') {
-                    throw new Error(data.message || 'Registration was not completed.');
-                }
-
-                alert(data.message || 'Face registered successfully.');
-            } catch (error) {
-                console.error('Registration error:', error);
-                alert(error.message || 'Registration failed. Please check the camera and try again.');
-            } finally {
-                button.disabled = false;
-                button.textContent = originalText;
-                button.removeAttribute('aria-busy');
-            }
-        }
-    </script>
+    <script src="{{ url_for('static', filename='local-register.js', v=asset_version('local-register.js')) }}" defer></script>
 </body>
 </html>
