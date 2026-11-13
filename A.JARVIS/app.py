@@ -65,6 +65,24 @@ app.config.update(
         in {"1", "true", "yes", "on"},
 )
 
+@app.after_request
+def add_local_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if request.endpoint == "dashboard":
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+            "form-action 'self'; script-src 'self'; style-src 'self'; "
+            "style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; "
+            "font-src 'self' data:; connect-src 'self'; media-src 'self' blob:"
+        )
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
 LOCAL_ALLOWED_HOSTS = {
     host.strip().lower()
     for host in os.getenv("AJARVIS_ALLOWED_HOSTS", "localhost,127.0.0.1,::1").split(",")
@@ -181,6 +199,12 @@ def login():
 @app.route("/register", methods=["GET", "POST"])
 @_serialize_registration
 def register():
+    allowed, denial = _registration_is_allowed()
+    if not allowed:
+        if request.method == "GET" and denial[1] == 403:
+            return redirect(url_for("login"))
+        return denial
+
     camera.resume_recognition()
     if request.method == "GET":
         csrf_token = session.get("csrf_token")
@@ -198,10 +222,6 @@ def register():
         or not hmac.compare_digest(expected_csrf, supplied_csrf)
     ):
         return jsonify({"status": "error", "message": "Security token expired. Reload the registration page and try again."}), 403
-
-    allowed, denial = _registration_is_allowed()
-    if not allowed:
-        return denial
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -286,8 +306,12 @@ def register():
 # ==========================================
 @app.route("/video_feed")
 def video_feed():
-    # The local app binds to loopback. Check it again so future bind changes
-    # cannot accidentally publish the biometric stream to a LAN client.
+    # Only the bootstrap owner (before the first account) or an authenticated
+    # user may read the camera. The loopback check remains a second boundary.
+    if not is_authenticated():
+        allowed, denial = _registration_is_allowed()
+        if not allowed:
+            return denial
     try:
         remote_ip = ipaddress.ip_address(request.remote_addr or "")
     except ValueError:
