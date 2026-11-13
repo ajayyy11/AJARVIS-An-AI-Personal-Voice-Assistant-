@@ -65,10 +65,15 @@ _PRIVATE_HISTORY_PREFIX = re.compile(
     re.IGNORECASE,
 )
 _PRIVATE_HISTORY_COMMAND = re.compile(
-    r"^(?:remember(?:\s+that)?|save\s+to\s+memory|save\s+(?:a\s+)?note|"
-    r"take\s+a\s+note|make\s+a\s+note|forget|remove\s+from\s+memory)\b"
-    r"|^(?:what\s+do\s+you\s+remember|show\s+my\s+memories|list\s+my\s+memories|"
-    r"read\s+my\s+preferences|(?:read|show|list|display|search|find)\s+(?:my\s+)?notes?)\b",
+    r"^(?:"
+    r"remember(?:\\s+that)?|note\\s+that|"
+    r"don't\\s+forget(?:\\s+that)?|do\\s+not\\s+forget(?:\\s+that)?|"
+    r"save\\s+to\\s+memory|"
+    r"(?:take|make|save|write|create)(?:\\s+down)?\\s+(?:a\\s+)?note(?:\\s+that)?|"
+    r"forget|remove\\s+from\\s+memory"
+    r")\\b"
+    r"|^(?:what\\s+do\\s+you\\s+remember|show\\s+my\\s+memories|list\\s+my\\s+memories|"
+    r"read\\s+my\\s+preferences|(?:read|show|list|display|search|find)\\s+(?:my\\s+)?notes?)\\b",
     re.IGNORECASE,
 )
 PRIVATE_HISTORY_COMMAND = "[private command redacted]"
