@@ -350,7 +350,7 @@ def test_dashboard_voice_capture_handles_only_new_final_results_and_preserves_wa
 
 
 def test_dashboard_voice_capture_uses_one_guarded_start_and_recovery_timer():
-    dashboard = Path(local_app.__file__).parent / "templates" / "dashboard.html"
+    dashboard = Path(local_app.__file__).parent / "static" / "cloud-dashboard.js"
     source = dashboard.read_text(encoding="utf-8")
     assert "function startRecognitionSafely()" in source
     assert "function scheduleRecognitionRestart(" in source
@@ -398,7 +398,7 @@ def test_logout_rejects_cross_site_get_and_requires_csrf_post(client,monkeypatch
 
 
 def test_desktop_audio_capture_error_pauses_auto_restart_and_keeps_manual_retry():
-    dashboard = (Path(__file__).resolve().parents[1] / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    dashboard = (Path(__file__).resolve().parents[1] / "static" / "cloud-dashboard.js").read_text(encoding="utf-8")
     audio_error = dashboard.split('} else if (errorCode === "audio-capture") {', 1)[1].split('} else if (errorCode === "language-not-supported") {', 1)[0]
     assert 'recognitionBlocked = true;' in audio_error
     assert 'shouldListen = false;' in audio_error
