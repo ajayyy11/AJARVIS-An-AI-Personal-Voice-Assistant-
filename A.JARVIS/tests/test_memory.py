@@ -235,3 +235,44 @@ def test_note_retrieval_history_is_redacted_before_persistence(monkeypatch, comm
         "command": memory.PRIVATE_HISTORY_COMMAND,
         "response": memory.PRIVATE_HISTORY_RESPONSE,
     }
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "create task rotate production password",
+        "add a task review vessel IT access",
+        "remind me to renew certificate",
+        "don't let me forget to call the captain",
+        "show my tasks",
+        "what are my tasks",
+    ],
+)
+def test_cloud_task_and_reminder_intents_are_private(command):
+    assert memory.is_sensitive_history_command(command)
+
+
+def test_explicit_private_flag_redacts_otherwise_unclassified_intent(monkeypatch):
+    cursor = FakeCursor()
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(memory, "get_connection", lambda: connection)
+
+    memory.add_memory(
+        "custom personal workflow",
+        "PRIVATE-RESPONSE-CONTENT",
+        "ajay",
+        private=True,
+    )
+
+    assert cursor.executed[1] == (
+        "ajay",
+        memory.PRIVATE_HISTORY_COMMAND,
+        memory.PRIVATE_HISTORY_RESPONSE,
+    )
+    assert memory._cache[-1]["command"] == memory.PRIVATE_HISTORY_COMMAND
+    assert memory._cache[-1]["response"] == memory.PRIVATE_HISTORY_RESPONSE
+
+
+def test_private_flag_requires_a_boolean():
+    with pytest.raises(ValueError, match="private history flag"):
+        memory.add_memory("hello", "there", "ajay", private="yes")
