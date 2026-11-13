@@ -124,3 +124,15 @@ jobs:
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789
         run: pytest -q tests
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Audit pinned Python dependencies
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: A.JARVIS/requirements-web.lock
