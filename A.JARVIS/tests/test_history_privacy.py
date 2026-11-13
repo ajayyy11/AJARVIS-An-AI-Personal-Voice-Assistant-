@@ -114,6 +114,7 @@ def test_history_page_redacts_legacy_sensitive_rows(monkeypatch):
         "save to memory my preferred language is English",
         "forget my old preference",
         "remove from memory my old preference",
+        "what did I ask you to remember?",
         "Hey Jarvis, note that my appointment is on Monday",
         "show my notes",
         "search my notes for passport",
@@ -126,7 +127,6 @@ def test_all_private_note_and_memory_command_variants_are_redacted(command):
 @pytest.mark.parametrize(
     "command",
     [
-        "what did I ask you to remember?",
         "what time is it?",
         "open the browser",
         "explain how DNS works",
