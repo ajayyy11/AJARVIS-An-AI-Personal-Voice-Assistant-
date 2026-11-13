@@ -925,8 +925,14 @@ def test_cloud_dashboard_pauses_background_polling_when_tab_is_hidden():
 
 
 def test_cloud_host_header_rejects_untrusted_host(client):
-    response = client.get("/healthz", base_url="https://evil.example")
+    response = client.get("/login", base_url="https://evil.example")
     assert response.status_code == 421
+
+
+def test_cloud_health_probe_is_accessible_with_provider_host(client, monkeypatch):
+    monkeypatch.setattr(cloud_app, "verify_cloud_schema", lambda: None)
+    response = client.get("/readyz", base_url="https://provider-health-probe.invalid")
+    assert response.status_code == 200
 
 
 def test_cloud_proxyfix_uses_forwarded_client_address(client, monkeypatch):
