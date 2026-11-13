@@ -30,6 +30,10 @@ class Camera:
     def _record_recognition(self,results,*,recognized_at=None,frame_timestamp=None):
         recognized_at=time.monotonic() if recognized_at is None else recognized_at
         with self.lock:
+            # A recognition call may finish after pause_recognition() is invoked.
+            # Discard its result so it cannot re-enable a stale post-login match.
+            if not self.recognition_enabled:
+                return
             if frame_timestamp is not None:
                 if frame_timestamp<=self._last_recognition_frame_at: return
                 self._last_recognition_frame_at=frame_timestamp
