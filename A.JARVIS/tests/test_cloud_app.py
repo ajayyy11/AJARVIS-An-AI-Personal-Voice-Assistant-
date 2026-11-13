@@ -1011,3 +1011,29 @@ def test_readyz_checks_schema_without_running_ddl(client, monkeypatch):
         not any(word in sql.upper() for word in ("CREATE ", "ALTER ", "DROP "))
         for sql, _params in cursor.executed
     )
+
+
+def test_cloud_history_redacts_task_and_reminder_responses_before_persistence(monkeypatch):
+    captured = {}
+
+    def capture(command, response_text, username, *, private=False):
+        captured.update(
+            command=command,
+            response=response_text,
+            username=username,
+            private=private,
+        )
+
+    monkeypatch.setattr(cloud_app, "add_memory", capture)
+    cloud_app._save_history(
+        "alice",
+        "create task rotate production password",
+        "Task added: rotate production password.",
+    )
+
+    assert captured == {
+        "command": "[private command redacted]",
+        "response": "[private response redacted]",
+        "username": "alice",
+        "private": True,
+    }
