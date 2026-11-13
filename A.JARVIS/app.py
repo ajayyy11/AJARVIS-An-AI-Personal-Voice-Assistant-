@@ -589,9 +589,12 @@ def reminders_api():
         return jsonify({"error": "Unauthorized"}), 401
     username = session["user"]
     if request.method == "GET":
-        response = jsonify({"reminders": list_reminders(username)})
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        try:
+            response = jsonify({"reminders": list_reminders(username)})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except ReminderUnavailable as exc:
+            return jsonify({"error": str(exc)}), 503
     if not _csrf_is_valid():
         return jsonify({"error": "CSRF validation failed."}), 403
     data = request.get_json(silent=True)
@@ -618,6 +621,8 @@ def reminder_status_api(reminder_id):
         return jsonify({"error": "A JSON object is required."}), 400
     try:
         changed = update_reminder_status(session["user"], reminder_id, data.get("status"))
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
     if not changed:
@@ -633,9 +638,12 @@ def notification_preferences_api():
         return jsonify({"error": "Unauthorized"}), 401
     username = session["user"]
     if request.method == "GET":
-        response = jsonify({"preferences": get_notification_preferences(username)})
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        try:
+            response = jsonify({"preferences": get_notification_preferences(username)})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except ReminderUnavailable as exc:
+            return jsonify({"error": str(exc)}), 503
     if not _csrf_is_valid():
         return jsonify({"error": "CSRF validation failed."}), 403
     data = request.get_json(silent=True)
@@ -659,15 +667,18 @@ def notifications_api():
     if not is_authenticated():
         return jsonify({"error": "Unauthorized"}), 401
     username = session["user"]
-    preferences = get_notification_preferences(username)
-    newly_due = collect_due_notifications(username, limit=20)
-    response = jsonify({
-        "notifications": list_unread_notifications(username, limit=30),
-        "newly_due": newly_due,
-        "preferences": preferences,
-    })
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    try:
+        preferences = get_notification_preferences(username)
+        newly_due = collect_due_notifications(username, limit=20)
+        response = jsonify({
+            "notifications": list_unread_notifications(username, limit=30),
+            "newly_due": newly_due,
+            "preferences": preferences,
+        })
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
 
 
 @app.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
@@ -678,6 +689,8 @@ def mark_notification_read_api(notification_id):
         return jsonify({"error": "CSRF validation failed."}), 403
     try:
         changed = mark_notification_read(session["user"], notification_id)
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
     if not changed:
