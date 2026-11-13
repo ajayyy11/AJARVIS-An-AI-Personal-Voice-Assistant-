@@ -9,7 +9,6 @@ import time
 import psutil
 import pyautogui
 import requests
-from google import genai
 
 from intelligence.automation import (
     AutomationError,
@@ -24,6 +23,7 @@ from intelligence.notes import notes_path, read_recent_notes
 from intelligence.web_research import generate_web_research_response, is_web_research_request
 from intelligence.agent import generate_agent_response
 from intelligence.context import build_context_messages, classify_intent
+from intelligence.genai_client import create_genai_client
 from intelligence.power_actions import clear_pending_power_action, handle_power_command
 from intelligence.user_state import activate_user, deactivate_user, is_user_active
 from intelligence.user_memory import (
@@ -171,7 +171,7 @@ def _get_genai_client():
     if not api_key:
         return None
 
-    client = genai.Client(api_key=api_key)
+    client = create_genai_client(api_key)
     return client
 
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "London")
