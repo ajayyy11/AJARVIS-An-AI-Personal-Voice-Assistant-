@@ -49,8 +49,12 @@ jobs:
               raise SystemExit("Dashboard must not contain inline scripts.")
           if "</head>" not in html.lower():
               raise SystemExit("Dashboard head element is not closed.")
-          if "chart.js@4.5.1" not in html or "integrity=" not in html:
-              raise SystemExit("Chart.js must be version-pinned and protected by SRI.")
+          if "chart.js" in html.lower():
+              raise SystemExit("Dashboard must not load an external chart library.")
+          if "new Chart(" in javascript:
+              raise SystemExit("Dashboard chart must use the dependency-free SVG renderer.")
+          if "<canvas id=\"usageChart\">" in html:
+              raise SystemExit("Dashboard analytics must use the accessible SVG chart container.")
           javascript = Path("static/cloud-dashboard.js").read_text(encoding="utf-8")
           if "{{" in javascript or "{%" in javascript:
               raise SystemExit("Unrendered Jinja syntax remains in dashboard JavaScript.")
