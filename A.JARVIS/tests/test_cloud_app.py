@@ -608,9 +608,13 @@ def test_activity_api_filters_by_current_username(client, monkeypatch):
 def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatch):
     username = "shared_quota_tester"
     login_session(client, username=username, csrf="test-token")
-    with cloud_app._assistant_lock:
-        cloud_app._assistant_requests.pop(username, None)
+    calls = {"count": 0}
 
+    def shared_quota(_username):
+        calls["count"] += 1
+        return calls["count"] > cloud_app.MAX_ASSISTANT_REQUESTS
+
+    monkeypatch.setattr(cloud_app, "_assistant_rate_limited", shared_quota)
     monkeypatch.setattr(cloud_app, "process_cloud_command", lambda _username, _command: "test reply")
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
     monkeypatch.setattr(cloud_app, "_genai", lambda: object())
@@ -620,25 +624,21 @@ def test_document_ai_uses_the_same_account_quota_as_assistant(client, monkeypatc
         lambda: FakeConnection(FakeCursor(fetchone_value=("report.txt", "A saved report."))),
     )
 
-    try:
-        for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
-            response = client.post(
-                "/api/assistant",
-                headers={"X-CSRF-Token": "test-token"},
-                json={"command": "Hello AJARVIS"},
-            )
-            assert response.status_code == 200
-
+    for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
         response = client.post(
-            "/api/documents/17/ask",
+            "/api/assistant",
             headers={"X-CSRF-Token": "test-token"},
-            json={"question": "Summarize the report"},
+            json={"command": "Hello AJARVIS"},
         )
-        assert response.status_code == 429
-        assert response.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
-    finally:
-        with cloud_app._assistant_lock:
-            cloud_app._assistant_requests.pop(username, None)
+        assert response.status_code == 200
+
+    response = client.post(
+        "/api/documents/17/ask",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"question": "Summarize the report"},
+    )
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
 
 
 
