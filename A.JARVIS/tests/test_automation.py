@@ -178,7 +178,12 @@ def test_screenshot_writes_unique_file_in_user_pictures(monkeypatch, tmp_path):
     import types
 
     saved = []
-    fake_image = types.SimpleNamespace(save=lambda path, format=None: saved.append((path, format)))
+
+    def write_png(file_object, format=None):
+        saved.append((file_object.name, format))
+        file_object.write(b"PNG-test-data")
+
+    fake_image = types.SimpleNamespace(save=write_png)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setitem(sys.modules, "pyautogui", types.SimpleNamespace(screenshot=lambda: fake_image))
 
@@ -187,6 +192,8 @@ def test_screenshot_writes_unique_file_in_user_pictures(monkeypatch, tmp_path):
 
     assert first["saved_to"] != second["saved_to"]
     assert Path(first["saved_to"]).parent == tmp_path / "Pictures" / "AJARVIS" / "Screenshots"
+    assert Path(first["saved_to"]).read_bytes() == b"PNG-test-data"
+    assert Path(second["saved_to"]).read_bytes() == b"PNG-test-data"
     assert saved == [(first["saved_to"], "PNG"), (second["saved_to"], "PNG")]
 
 
