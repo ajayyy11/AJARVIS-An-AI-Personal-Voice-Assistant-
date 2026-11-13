@@ -23,8 +23,12 @@ from intelligence import user_state
 @pytest.fixture(autouse=True)
 def isolate_activation(monkeypatch):
     user_state.deactivate_user("alice")
+    with command_router._PENDING_COMMAND_APPROVALS_LOCK:
+        command_router._PENDING_COMMAND_APPROVALS.clear()
     monkeypatch.setattr(command_router, "add_memory", lambda *_args, **_kwargs: None)
     yield
+    with command_router._PENDING_COMMAND_APPROVALS_LOCK:
+        command_router._PENDING_COMMAND_APPROVALS.clear()
     user_state.deactivate_user("alice")
 
 
