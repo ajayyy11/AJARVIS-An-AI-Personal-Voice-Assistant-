@@ -49,8 +49,9 @@ def test_save_memory_updates_existing_record(monkeypatch):
     monkeypatch.setattr(user_memory,"get_connection",lambda:connection)
     result=user_memory.save_memory("alice","answer_style","Detailed")
     assert result["value"]=="Detailed"
-    assert len(cursor.executed)==3
+    assert len(cursor.executed)==4
     assert cursor.executed[2][1]==("Detailed","alice","answer_style")
+    assert "RELEASE_LOCK" in cursor.executed[3][0]
     assert connection.committed
 
 
