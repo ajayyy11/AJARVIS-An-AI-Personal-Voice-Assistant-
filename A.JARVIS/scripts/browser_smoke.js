@@ -704,12 +704,14 @@ async function testAuthenticationPages() {
         json: async () => ({ error: "Expected QA authentication rejection." }),
       };
     };
-    const script = window.document.querySelector("script");
+    const script = window.document.querySelector('script[src*="cloud-auth.js"]');
+    assert(script, page + ": same-origin authentication script is not referenced");
     assert(window.document.querySelector(".auth-aurora-waves"), page + ": aurora background is missing");
     assert(window.document.querySelector(".auth-product-title")?.textContent === "AJARVIS", page + ": product title is incorrect");
     assert(!window.document.body.textContent.includes("Secure Cloud Access"), page + ": generic access heading remains");
     assert(!window.document.body.textContent.includes("Welcome back"), page + ": generic welcome heading remains");
-    window.eval(script.textContent);
+    const authScript = fs.readFileSync(path.join(__dirname, "..", "static", "cloud-auth.js"), "utf8");
+    window.eval(authScript);
     window.document.querySelector("#username").value = "qa_user";
     window.document.querySelector("#password").value = page === "login" ? "qa-password" : "qa-password-123";
     window.document.querySelector("#authForm").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
