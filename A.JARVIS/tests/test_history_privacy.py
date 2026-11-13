@@ -1,3 +1,5 @@
+import pytest
+
 from intelligence import memory as history
 
 
