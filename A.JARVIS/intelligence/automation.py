@@ -10,6 +10,7 @@ import ipaddress
 import logging
 import os
 import subprocess
+import socket
 import threading
 import time
 import uuid
@@ -77,30 +78,66 @@ def _valid_owner(username: str) -> str:
 
 
 def _validate_website_url(url: str) -> str:
+    """Validate HTTPS URLs and reject DNS names resolving to non-public IPs.
+
+    The browser is opened on the user's workstation, not fetched by the server.
+    DNS validation still prevents the assistant from intentionally navigating
+    to common private/local targets. Every returned A/AAAA address must be
+    globally routable; mixed public/private DNS answers fail closed.
+    """
     if not isinstance(url, str) or len(url) > 2000:
         raise ToolArgumentError("Website URL is invalid.")
     normalized = url.strip()
-    parts = urlsplit(normalized)
-    if parts.scheme.lower() != "https" or not parts.hostname:
+    try:
+        parts = urlsplit(normalized)
+        hostname = parts.hostname
+        port = parts.port or 443
+    except ValueError as exc:
+        raise ToolArgumentError("Website URL is malformed.") from exc
+    if parts.scheme.lower() != "https" or not hostname:
         raise ToolArgumentError("Only HTTPS website URLs are allowed.")
     if parts.username or parts.password:
         raise ToolArgumentError("URLs containing embedded credentials are not allowed.")
-    hostname = parts.hostname.rstrip(".").encode("idna").decode("ascii").lower()
-    blocked_suffixes = (
-        ".local", ".internal", ".home.arpa", ".nip.io", ".sslip.io",
-        ".localtest.me", ".lvh.me", ".localhost.direct", ".traefik.me",
-    )
+
+    try:
+        hostname = hostname.rstrip(".").encode("idna").decode("ascii").lower()
+    except (UnicodeError, AttributeError) as exc:
+        raise ToolArgumentError("Website hostname is invalid.") from exc
+
     if (
-        hostname in {"localhost", "localhost.localdomain"}
-        or hostname.endswith(blocked_suffixes)
-        or hostname.endswith(".test")
+        not hostname
+        or hostname in {"localhost", "localhost.localdomain"}
+        or hostname.endswith((".localhost", ".local", ".internal", ".home.arpa", ".test"))
     ):
         raise ToolArgumentError("Local network destinations are not allowed.")
+
     try:
-        address = ipaddress.ip_address(hostname)
+        literal_address = ipaddress.ip_address(hostname)
     except ValueError:
-        address = None
-    if address is not None and not address.is_global:
+        literal_address = None
+    if literal_address is not None:
+        addresses = {literal_address}
+    else:
+        try:
+            records = socket.getaddrinfo(
+                hostname,
+                port,
+                type=socket.SOCK_STREAM,
+            )
+        except (OSError, UnicodeError) as exc:
+            raise ToolArgumentError("Website hostname could not be safely resolved.") from exc
+
+        addresses = set()
+        for record in records:
+            try:
+                raw_address = record[4][0].split("%", 1)[0]
+                addresses.add(ipaddress.ip_address(raw_address))
+            except (IndexError, TypeError, ValueError):
+                continue
+
+    if not addresses:
+        raise ToolArgumentError("Website hostname has no usable public address.")
+    if any(not address.is_global for address in addresses):
         raise ToolArgumentError("Private or local IP destinations are not allowed.")
     return normalized
 
@@ -142,13 +179,22 @@ def _lock_workstation(*, username: str) -> dict[str, str]:
 
 
 def _capture_screenshot(*, username: str) -> dict[str, str]:
-    """Capture a screenshot to the application directory after approval."""
+    """Save a screenshot under the user's Pictures folder without overwriting."""
+    from datetime import datetime, timezone
     from pathlib import Path
     import pyautogui
 
-    destination = Path.cwd() / "screenshot.png"
+    screenshot_dir = Path.home() / "Pictures" / "AJARVIS" / "Screenshots"
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    destination = screenshot_dir / f"AJARVIS-{timestamp}-{uuid.uuid4().hex}.png"
+
     image = pyautogui.screenshot()
-    image.save(str(destination))
+    # UUID names make collisions exceptionally unlikely; the exclusive-create
+    # check also fails closed rather than replacing any existing screenshot.
+    if destination.exists():
+        raise FileExistsError("A screenshot with this generated name already exists.")
+    image.save(str(destination), format="PNG")
     return {"saved_to": str(destination)}
 
 
@@ -157,10 +203,10 @@ def build_automation_registry() -> ToolRegistry:
     registry = build_default_registry()
     registry.register(
         "open_website",
-        "Open one HTTPS website in the default browser.",
+        "Open one validated public HTTPS website in the default browser.",
         _open_website,
         risk_level="reversible",
-        requires_confirmation=True,
+        requires_confirmation=False,
         parameters={
             "type": "object",
             "properties": {"url": {"type": "string", "minLength": 9, "maxLength": 2000}},
@@ -170,7 +216,7 @@ def build_automation_registry() -> ToolRegistry:
     )
     registry.register(
         "capture_screenshot",
-        "Capture the current desktop screenshot and save it to screenshot.png.",
+        "Capture the current desktop screenshot and save a unique file in Pictures/AJARVIS/Screenshots.",
         _capture_screenshot,
         risk_level="reversible",
         requires_confirmation=True,
@@ -182,7 +228,7 @@ def build_automation_registry() -> ToolRegistry:
             "Launch one application from the fixed Windows allow-list.",
             _launch_application,
             risk_level="reversible",
-            requires_confirmation=True,
+            requires_confirmation=False,
             parameters={
                 "type": "object",
                 "properties": {
