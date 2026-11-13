@@ -64,9 +64,10 @@ from intelligence.multimodal import (
 )
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-# Render sits behind one trusted reverse proxy. Trust exactly one forwarded client
-# address and scheme so rate limits and HTTPS security headers use the real request.
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+# Render public web services sit behind Cloudflare and Render's load balancer.
+# Trust only the forwarded scheme here. X-Forwarded-For is an appended chain and
+# can contain caller-supplied values; rate limits use the validated CF-Connecting-IP.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1)
 app.config.from_object(Config)
 app.config["MAX_CONTENT_LENGTH"] = Config.MAX_CONTENT_LENGTH_BYTES
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -434,9 +435,27 @@ def _clear_rate_limit(scope: str, identifier: str) -> None:
         logger.warning("Could not clear a rate-limit counter (%s).", type(exc).__name__)
 
 
+def _client_ip() -> str:
+    """Return the validated visitor IP from the trusted ingress, when configured.
+
+    Render documents that Cloudflare overwrites CF-Connecting-IP on public web
+    service requests. Do not parse X-Forwarded-For here: it can contain
+    caller-supplied entries before proxy-added entries.
+    """
+    if getattr(Config, "TRUST_CF_CONNECTING_IP", False):
+        candidate = request.headers.get("CF-Connecting-IP", "").strip()
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            # Missing or malformed trusted metadata must not be used as an
+            # attacker-controlled rate-limit key. Fall back to the socket peer.
+            logger.warning("Trusted client IP header was missing or invalid.")
+    return request.remote_addr or "unknown"
+
+
 def _auth_rate_limited(username: str | None = None) -> bool:
     """Limit by source IP and account/IP pair; never globally lock a username."""
-    ip_address = request.remote_addr or "unknown"
+    ip_address = _client_ip()
     if _rate_limit_exceeded(
         "login-ip", ip_address, MAX_LOGIN_ATTEMPTS_PER_IP, LOGIN_WINDOW_SECONDS
     ):
@@ -454,13 +473,13 @@ def _auth_rate_limited(username: str | None = None) -> bool:
 
 def _clear_auth_failures(username: str) -> None:
     """Clear only this account/source pair after a successful sign-in."""
-    ip_address = request.remote_addr or "unknown"
+    ip_address = _client_ip()
     account = username.strip().lower()[:32]
     _clear_rate_limit("login-account-ip", account + "\0" + ip_address)
 
 
 def _registration_rate_limited() -> bool:
-    ip_address = request.remote_addr or "unknown"
+    ip_address = _client_ip()
     return _rate_limit_exceeded(
         "registration-ip", ip_address,
         MAX_REGISTRATION_ATTEMPTS, REGISTRATION_WINDOW_SECONDS,
