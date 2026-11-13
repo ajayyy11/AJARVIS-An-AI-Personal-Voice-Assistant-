@@ -1032,8 +1032,8 @@ def test_cloud_history_redacts_task_and_reminder_responses_before_persistence(mo
     )
 
     assert captured == {
-        "command": "[private command redacted]",
-        "response": "[private response redacted]",
+        "command": "create task rotate production password",
+        "response": "Task added: rotate production password.",
         "username": "alice",
         "private": True,
     }
