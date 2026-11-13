@@ -74,7 +74,12 @@ _PRIVATE_HISTORY_COMMAND = re.compile(
     r")\b"
     r"|^(?:what\s+do\s+you\s+remember|what\s+did\s+i\s+ask\s+you\s+to\s+remember|show\s+my\s+memories|list\s+my\s+memories|"
     r"read\s+my\s+preferences|what\s+are\s+(?:my\s+)?(?:saved\s+)?notes?|"
-    r"(?:read|show|list|display|search|find|tell)\s+(?:me\s+)?(?:my\s+)?notes?)\b",
+    r"(?:read|show|list|display|search|find|tell)\s+(?:me\s+)?(?:my\s+)?notes?|"
+    r"(?:add|create|make)\s+(?:a\s+)?task|"
+    r"(?:remind\s+me\s+to|don't\s+let\s+me\s+forget\s+to|do\s+not\s+let\s+me\s+forget\s+to)|"
+    r"(?:show|list|read|tell)\s+(?:me\s+)?(?:my\s+)?tasks|"
+    r"what\s+(?:are\s+)?(?:my\s+)?tasks|"
+    r"what(?:'s|\s+is)\s+on\s+my\s+(?:task\s+list|agenda))\b",
     re.IGNORECASE,
 )
 PRIVATE_HISTORY_COMMAND = "[private command redacted]"
@@ -96,12 +101,19 @@ def _safe_history_record(command, response):
     return {"command": command, "response": response}
 
 
-def add_memory(command, response, username):
-    """Persist user-scoped command history without note or memory contents."""
+def add_memory(command, response, username, *, private: bool = False):
+    """Persist user-scoped history, with explicit private-intent redaction.
+
+    The private flag is supplied by command handlers that know the semantic
+    intent. The classifier remains a defence-in-depth layer for legacy callers,
+    cloud commands and historical records.
+    """
     if not isinstance(username, str) or not username.strip():
         raise ValueError("A username is required to store command history.")
+    if not isinstance(private, bool):
+        raise ValueError("The private history flag must be a boolean.")
     username = username.strip()
-    if is_sensitive_history_command(command):
+    if private or is_sensitive_history_command(command):
         command = PRIVATE_HISTORY_COMMAND
         response = PRIVATE_HISTORY_RESPONSE
 
