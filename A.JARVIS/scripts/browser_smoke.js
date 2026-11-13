@@ -506,10 +506,7 @@ async function testDocumentAndVisualFlows() {
 }
 
 async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
-  const dashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
-  const scriptStart = dashboard.indexOf("<script>");
-  const scriptEnd = dashboard.indexOf("</script>", scriptStart);
-  const source = dashboard.slice(scriptStart + "<script>".length, scriptEnd);
+  const source = fs.readFileSync(path.join(__dirname, "..", "static", "cloud-dashboard.js"), "utf8");
   const errorStart = source.indexOf("recognition.onerror = (event) => {");
   const endMarker = "\n      recognition.onend = () => {";
   const errorEnd = source.indexOf(endMarker, errorStart);
@@ -571,16 +568,10 @@ async function testLocalSpeechRecoveryWhenMicrophoneIsMissing() {
 }
 
 async function testLocalMicrophoneVisualizerLifecycle() {
-  const localDashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
-  const scriptStart = localDashboard.indexOf("<script>");
-  const scriptEnd = localDashboard.indexOf("</script>", scriptStart);
-  const inlineScript = scriptStart >= 0 && scriptEnd > scriptStart
-    ? localDashboard.slice(scriptStart + "<script>".length, scriptEnd)
-    : "";
-  assert(inlineScript, "local dashboard: inline script is missing");
-  const start = inlineScript.indexOf("/* MIC REACTIVE EFFECT");
+  const localDashboard = fs.readFileSync(path.join(__dirname, "..", "static", "cloud-dashboard.js"), "utf8");
+  const start = localDashboard.indexOf("/* MIC REACTIVE EFFECT");
   assert(start >= 0, "local dashboard: microphone visualizer block is missing");
-  const source = inlineScript.slice(start);
+  const source = localDashboard.slice(start);
 
   const dom = new JSDOM('<!doctype html><div id="ai-core"></div><div class="bar"></div><div class="bar"></div>', {
     url: "https://ajarvis.test/dashboard",
@@ -639,13 +630,7 @@ async function testLocalMicrophoneVisualizerLifecycle() {
 }
 
 async function testLocalTextCommandNetworkRecovery() {
-  const dashboard = fs.readFileSync(path.join(__dirname, "..", "templates", "dashboard.html"), "utf8");
-  const scriptStart = dashboard.indexOf("<script>");
-  const scriptEnd = dashboard.indexOf("</script>", scriptStart);
-  const inlineScript = scriptStart >= 0 && scriptEnd > scriptStart
-    ? dashboard.slice(scriptStart + "<script>".length, scriptEnd)
-    : "";
-  assert(inlineScript, "local dashboard: inline script is missing");
+  const inlineScript = fs.readFileSync(path.join(__dirname, "..", "static", "cloud-dashboard.js"), "utf8");
 
   const start = inlineScript.indexOf("async function executeTextCommand() {");
   const end = inlineScript.indexOf('\n    textInput.addEventListener("keydown"', start);
