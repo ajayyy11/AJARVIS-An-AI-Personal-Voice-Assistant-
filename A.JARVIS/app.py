@@ -35,6 +35,7 @@ from intelligence.personal_intelligence import (
 )
 from intelligence.reminders import (
     ReminderError,
+    ReminderUnavailable,
     create_reminder,
     list_reminders,
     set_notification_preferences,
@@ -606,6 +607,8 @@ def reminders_api():
         response.status_code = 201
         response.headers["Cache-Control"] = "no-store"
         return response
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -658,6 +661,8 @@ def notification_preferences_api():
         response = jsonify({"preferences": preferences})
         response.headers["Cache-Control"] = "no-store"
         return response
+    except ReminderUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
     except ReminderError as exc:
         return jsonify({"error": str(exc)}), 400
 
