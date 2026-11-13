@@ -555,3 +555,7 @@ body { height:auto; min-height:100vh; overflow:auto; padding:24px 0; }
     .phase7-tab.active{border-color:#00f0ff;color:#00f0ff;background:rgba(0,240,255,.08)}
     @media(max-width:860px){.phase7-panel{width:96%;padding:14px}.phase7-columns{grid-template-columns:1fr}}
     @media(max-width:540px){.phase7-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.phase7-row{grid-template-columns:1fr}}
+
+#usageChart { width: 100%; min-height: 260px; position: relative; }
+#usageChart svg { display: block; width: 100%; height: 260px; overflow: visible; }
+#usageChart text { font-family: inherit; }
