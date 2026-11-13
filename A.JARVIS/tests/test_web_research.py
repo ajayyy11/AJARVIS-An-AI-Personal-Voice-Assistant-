@@ -71,6 +71,8 @@ def test_current_information_requests_are_detected(command):
         "take a note buy milk",
         "open chrome",
         "system status",
+        "show recent notes",
+        "read my current notes",
     ],
 )
 def test_ordinary_local_commands_do_not_trigger_web_research(command):
