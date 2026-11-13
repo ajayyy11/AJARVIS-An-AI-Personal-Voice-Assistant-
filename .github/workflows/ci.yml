@@ -94,7 +94,7 @@ jobs:
               raise SystemExit("Cloud service rootDir must be A.JARVIS.")
           if cloud.get("healthCheckPath") != "/readyz":
               raise SystemExit("Cloud service must use /readyz as its health check.")
-          if "requirements-web.txt" not in cloud.get("buildCommand", ""):
+          if "requirements-web.lock" not in cloud.get("buildCommand", ""):
               raise SystemExit("Cloud build must install the focused web dependencies.")
           if "cloud_app:app" not in cloud.get("startCommand", ""):
               raise SystemExit("Cloud service must run cloud_app:app, not the local webcam app.")
