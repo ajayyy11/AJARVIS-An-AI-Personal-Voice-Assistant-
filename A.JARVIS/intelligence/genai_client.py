@@ -44,7 +44,9 @@ def build_gemini_http_options(
     if timeout_ms_override is not None:
         if isinstance(timeout_ms_override, bool) or not isinstance(timeout_ms_override, int):
             raise ValueError("Gemini timeout override must be an integer number of milliseconds.")
-        timeout_ms = max(100, min(timeout_ms_override, 180_000))
+        if not 100 <= timeout_ms_override <= 180_000:
+            raise ValueError("Gemini timeout override must be between 100 and 180,000 milliseconds.")
+        timeout_ms = timeout_ms_override
 
     attempts = _bounded_env_int(
         "GEMINI_RETRY_ATTEMPTS",
@@ -55,7 +57,9 @@ def build_gemini_http_options(
     if retry_attempts_override is not None:
         if isinstance(retry_attempts_override, bool) or not isinstance(retry_attempts_override, int):
             raise ValueError("Gemini retry override must be an integer.")
-        attempts = max(1, min(retry_attempts_override, 5))
+        if not 1 <= retry_attempts_override <= 5:
+            raise ValueError("Gemini retry override must be between 1 and 5.")
+        attempts = retry_attempts_override
 
     retry_options = types_module.HttpRetryOptions(
         attempts=attempts,
