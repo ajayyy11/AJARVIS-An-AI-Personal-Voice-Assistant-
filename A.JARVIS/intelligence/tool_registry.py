@@ -50,8 +50,8 @@ class ToolSpec:
 
     @property
     def confirmation_required(self) -> bool:
-        """Report the same approval rule used by automation-plan execution."""
-        return self.risk_level != "read_only" or self.requires_confirmation
+        """Only explicitly gated or destructive actions need user approval."""
+        return self.requires_confirmation or self.risk_level == "destructive"
 
     def function_declaration(self) -> dict[str, Any]:
         """Provider-neutral declaration; excludes local Python handler."""
