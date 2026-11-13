@@ -79,7 +79,10 @@ def test_system_stats_requires_auth_and_disables_cache(client,monkeypatch):
 def test_dashboard_uses_server_activation_state(client,monkeypatch):
     login(client); monkeypatch.setattr(local_app,"is_user_active",lambda _username:True)
     response=client.get("/dashboard")
-    assert response.status_code==200 and b"const initialActive = true" in response.data
+    dashboard_js = Path(local_app.__file__).parent / "static" / "cloud-dashboard.js"
+    source = dashboard_js.read_text(encoding="utf-8")
+    assert response.status_code==200 and b'data-active="true"' in response.data
+    assert 'document.body.dataset.active === "true"' in source
 
 
 def test_command_route_rejects_missing_csrf_token(client,monkeypatch):
@@ -336,7 +339,7 @@ def test_project_and_task_status_routes_require_csrf_and_scope_owner(client,monk
     assert calls == [("project","alice",2,"paused"),("task","alice",8,"completed")]
 
 def test_dashboard_voice_capture_handles_only_new_final_results_and_preserves_wake_flow():
-    dashboard = Path(local_app.__file__).parent / "templates" / "dashboard.html"
+    dashboard = Path(local_app.__file__).parent / "static" / "cloud-dashboard.js"
     source = dashboard.read_text(encoding="utf-8")
     assert "result.isFinal" in source
     assert "resultIndex <= lastHandledResultIndex" in source
@@ -361,7 +364,7 @@ def test_dashboard_voice_capture_uses_one_guarded_start_and_recovery_timer():
 def test_local_dashboard_microphone_visualizer_reuses_one_stream_and_cleans_up():
     from pathlib import Path
 
-    dashboard = (Path(__file__).resolve().parents[1] / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    dashboard = (Path(__file__).resolve().parents[1] / "static" / "cloud-dashboard.js").read_text(encoding="utf-8")
     assert "let microphoneStream = null;" in dashboard
     assert "let audioStartPromise = null;" in dashboard
     assert "if (audioContext && audioContext.state !== \"closed\")" in dashboard
