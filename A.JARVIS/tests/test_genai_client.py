@@ -1,3 +1,5 @@
+import pytest
+
 from intelligence.genai_client import (
     DEFAULT_GEMINI_RETRY_ATTEMPTS,
     DEFAULT_GEMINI_TIMEOUT_MS,
