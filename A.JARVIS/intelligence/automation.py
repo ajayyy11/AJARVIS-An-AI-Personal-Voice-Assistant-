@@ -190,11 +190,22 @@ def _capture_screenshot(*, username: str) -> dict[str, str]:
     destination = screenshot_dir / f"AJARVIS-{timestamp}-{uuid.uuid4().hex}.png"
 
     image = pyautogui.screenshot()
-    # UUID names make collisions exceptionally unlikely; the exclusive-create
-    # check also fails closed rather than replacing any existing screenshot.
-    if destination.exists():
-        raise FileExistsError("A screenshot with this generated name already exists.")
-    image.save(str(destination), format="PNG")
+    # O_EXCL is the actual no-overwrite guarantee. An exists()-then-save()
+    # sequence has a race in which another process can create the file between
+    # the check and the image write.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    file_descriptor = os.open(os.fspath(destination), flags, 0o600)
+    try:
+        with os.fdopen(file_descriptor, "wb") as screenshot_file:
+            image.save(screenshot_file, format="PNG")
+    except Exception:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Could not remove incomplete screenshot file.")
+        raise
     return {"saved_to": str(destination)}
 
 
@@ -361,7 +372,11 @@ def create_plan(
             raise AutomationError(f"Step {index + 1} reason must contain 1–240 characters.")
         if spec.name == "open_website":
             _validate_website_url(str(arguments.get("url", "")))
-        needs_confirmation = spec.risk_level != "read_only" or spec.confirmation_required
+        # Confirmation is explicit metadata owned by the registered application
+        # tool, not inferred solely from the broad risk label. The registry
+        # forces destructive tools to require approval; reversible tools may
+        # opt into immediate execution only when registered with that policy.
+        needs_confirmation = spec.confirmation_required
         steps.append({
             "step_id": uuid.uuid4().hex,
             "tool": spec.name,
