@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import math
 import os
 import time
 from typing import Any, Mapping
@@ -35,22 +36,39 @@ AGENT_TIMEOUT_MESSAGE = "That request took too long to complete. Please try a sm
 
 
 def _resolve_agent_deadline_seconds(value: float | None) -> float:
-    """Return a finite, bounded wall-clock budget for the full agent request."""
+    """Return a finite, bounded wall-clock budget for the full agent request.
+
+    A malformed environment override falls back to the safe default so one
+    mistyped deployment setting cannot make every assistant request fail.
+    Explicit programmatic overrides, in contrast, are rejected when invalid.
+    """
     if value is None:
         raw = os.getenv("GEMINI_REQUEST_DEADLINE_SECONDS", "").strip()
         try:
-            value = float(raw) if raw else DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+            configured = float(raw) if raw else DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
         except (TypeError, ValueError):
-            value = DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+            configured = DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+        if (
+            not math.isfinite(configured)
+            or configured < 5.0
+            or configured > MAX_AGENT_REQUEST_DEADLINE_SECONDS
+        ):
+            configured = DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+        return configured
+
     if isinstance(value, bool):
-        raise ValueError("Agent request deadline must be a positive number.")
+        raise ValueError("Agent request deadline must be a positive finite number.")
     try:
         budget = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError("Agent request deadline must be a positive number.") from exc
-    if not 0 < budget <= MAX_AGENT_REQUEST_DEADLINE_SECONDS:
+        raise ValueError("Agent request deadline must be a positive finite number.") from exc
+    if (
+        not math.isfinite(budget)
+        or budget <= 0
+        or budget > MAX_AGENT_REQUEST_DEADLINE_SECONDS
+    ):
         raise ValueError(
-            f"Agent request deadline must be greater than zero and no more than "
+            f"Agent request deadline must be positive and no more than "
             f"{MAX_AGENT_REQUEST_DEADLINE_SECONDS:g} seconds."
         )
     return budget
