@@ -59,9 +59,11 @@ def test_add_memory_redacts_note_and_personal_memory_commands(monkeypatch):
 
 
 def test_cursor_history_reads_redact_sensitive_legacy_rows(monkeypatch):
+    # The database query returns newest-first. Cursor-based AI context reverses
+    # that order; the dashboard reader intentionally preserves it.
     rows = [
-        ("remember that my door code is 1234", "Saved to personal memory."),
         ("What time is it?", "It is noon."),
+        ("remember that my door code is 1234", "Saved to personal memory."),
     ]
 
     def connection_factory():
@@ -75,8 +77,9 @@ def test_cursor_history_reads_redact_sensitive_legacy_rows(monkeypatch):
     assert after[1]["command"] == "What time is it?"
 
     all_after = history.get_all_recent_after(5, "alice", 0)
-    assert all_after[0]["command"] == history.PRIVATE_HISTORY_COMMAND
-    assert all_after[1]["command"] == "What time is it?"
+    assert all_after[0]["command"] == "What time is it?"
+    assert all_after[1]["command"] == history.PRIVATE_HISTORY_COMMAND
+    assert all_after[1]["response"] == history.PRIVATE_HISTORY_RESPONSE
 
 
 def test_history_page_redacts_legacy_sensitive_rows(monkeypatch):
