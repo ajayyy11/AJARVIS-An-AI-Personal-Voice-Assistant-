@@ -19,18 +19,44 @@ def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int
     return max(minimum, min(value, maximum))
 
 
-def build_gemini_http_options(*, types_module: Any = None) -> Any:
-    """Build SDK HTTP options with finite timeout and a small transient retry budget.
+def build_gemini_http_options(
+    *,
+    types_module: Any = None,
+    timeout_ms_override: int | None = None,
+    retry_attempts_override: int | None = None,
+) -> Any:
+    """Build bounded SDK HTTP options, optionally for one deadline-bound call.
 
-    The SDK timeout is expressed in milliseconds. The SDK retries only the
-    explicitly listed transient HTTP status codes; application errors such as
-    invalid credentials and invalid requests are not retried.
+    SDK timeout values are milliseconds. Request-level overrides are validated
+    separately so a caller can pass the remaining budget without being rounded
+    back up to the ordinary 15-second default. An attempts value of one means
+    one total attempt, with no SDK retry/backoff outside the caller's deadline.
     """
     if types_module is None:
         from google.genai import types as types_module
 
-    timeout_ms = _bounded_env_int("GEMINI_TIMEOUT_MS", DEFAULT_GEMINI_TIMEOUT_MS, 5_000, 15_000)
-    attempts = _bounded_env_int("GEMINI_RETRY_ATTEMPTS", DEFAULT_GEMINI_RETRY_ATTEMPTS, 1, 2)
+    timeout_ms = _bounded_env_int(
+        "GEMINI_TIMEOUT_MS",
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        5_000,
+        15_000,
+    )
+    if timeout_ms_override is not None:
+        if isinstance(timeout_ms_override, bool) or not isinstance(timeout_ms_override, int):
+            raise ValueError("Gemini timeout override must be an integer number of milliseconds.")
+        timeout_ms = max(100, min(timeout_ms_override, 180_000))
+
+    attempts = _bounded_env_int(
+        "GEMINI_RETRY_ATTEMPTS",
+        DEFAULT_GEMINI_RETRY_ATTEMPTS,
+        1,
+        2,
+    )
+    if retry_attempts_override is not None:
+        if isinstance(retry_attempts_override, bool) or not isinstance(retry_attempts_override, int):
+            raise ValueError("Gemini retry override must be an integer.")
+        attempts = max(1, min(retry_attempts_override, 5))
+
     retry_options = types_module.HttpRetryOptions(
         attempts=attempts,
         initial_delay=0.5,
