@@ -10,8 +10,8 @@
 
   
 
-  <link rel="stylesheet" href="{{ url_for('static', filename='local-dashboard.css', v={{ asset_version('local-dashboard.css') }}) }}">
-  <script src="{{ url_for('static', filename='local-dashboard.js', v={{ asset_version('local-dashboard.js') }}) }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='local-dashboard.css', v=asset_version('local-dashboard.css')) }}">
+  <script src="{{ url_for('static', filename='local-dashboard.js', v=asset_version('local-dashboard.js')) }}" defer></script>
 </head>
 <body data-user="{{ user|e }}" data-active="{{ 'true' if is_active else 'false' }}">
 
