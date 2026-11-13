@@ -266,7 +266,7 @@ def process_command(command, username):
         except Exception:
             logger.warning("Could not read personal memory", exc_info=True)
             reply = "Personal memory is unavailable. Apply the user-memory database migration and try again."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     if re.match(r"^(?:remember|save to memory)\b", command):
@@ -294,7 +294,7 @@ def process_command(command, username):
         except Exception:
             logger.warning("Could not save personal memory", exc_info=True)
             reply = "I couldn't save that memory. Check that the user-memory database migration has been applied."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     if re.match(r"^(?:forget|remove from memory)\b", command):
@@ -319,7 +319,7 @@ def process_command(command, username):
             except Exception:
                 logger.warning("Could not delete personal memory", exc_info=True)
                 reply = "Personal memory is unavailable. Check the database connection and try again."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     # Destructive power commands require a second, exact confirmation phrase.
@@ -505,7 +505,7 @@ def process_command(command, username):
                 reply = "Could not save your note. Check folder permissions and try again."
         else:
             reply = "What would you like me to note? Please repeat with the note content."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     if "read my notes" in command or "read notes" in command:
@@ -518,7 +518,7 @@ def process_command(command, username):
                 reply = "You have no saved notes."
         except OSError:
             reply = "Your personal notes are not available right now."
-        add_memory(command, reply, username)
+        add_memory(command, reply, username, private=True)
         return reply
 
     # ── WEATHER ──
