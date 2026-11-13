@@ -156,3 +156,32 @@ def test_invalid_schema_shapes_are_rejected_cleanly():
                 "additionalProperties": False,
             },
         )
+
+
+def test_public_metadata_reports_confirmation_for_every_mutating_risk_level():
+    registry = ToolRegistry()
+    registry.register(
+        "read_profile",
+        "Read a profile.",
+        lambda **_: None,
+        risk_level="read_only",
+    )
+    registry.register(
+        "open_website",
+        "Open a public website.",
+        lambda **_: None,
+        risk_level="reversible",
+        requires_confirmation=False,
+    )
+    registry.register(
+        "shutdown_system",
+        "Shut down the workstation.",
+        lambda **_: None,
+        risk_level="destructive",
+        requires_confirmation=False,
+    )
+
+    metadata = {item["name"]: item for item in registry.list_tools()}
+    assert metadata["read_profile"]["requires_confirmation"] is False
+    assert metadata["open_website"]["requires_confirmation"] is True
+    assert metadata["shutdown_system"]["requires_confirmation"] is True
