@@ -93,6 +93,18 @@ def test_health_endpoint_does_not_require_database(client):
     assert response.get_json()["status"] == "ok"
 
 
+@pytest.mark.parametrize("path", ["/healthz", "/readyz"])
+def test_platform_health_probes_bypass_public_host_allowlist(client, monkeypatch, path):
+    monkeypatch.setattr(cloud_app, "verify_cloud_schema", lambda: None)
+    response = client.get(path, headers={"Host": "render-internal-health-probe.invalid"})
+    assert response.status_code == 200
+
+
+def test_application_routes_still_reject_untrusted_host(client):
+    response = client.get("/login", headers={"Host": "attacker.invalid"})
+    assert response.status_code == 421
+
+
 def test_private_api_rejects_unauthenticated_requests(client):
     response = client.get("/api/tasks")
     assert response.status_code == 401
