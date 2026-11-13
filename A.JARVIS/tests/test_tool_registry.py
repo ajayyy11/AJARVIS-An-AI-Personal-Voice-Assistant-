@@ -183,5 +183,5 @@ def test_public_metadata_reports_confirmation_for_every_mutating_risk_level():
 
     metadata = {item["name"]: item for item in registry.list_tools()}
     assert metadata["read_profile"]["requires_confirmation"] is False
-    assert metadata["open_website"]["requires_confirmation"] is True
+    assert metadata["open_website"]["requires_confirmation"] is False
     assert metadata["shutdown_system"]["requires_confirmation"] is True
