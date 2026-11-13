@@ -943,26 +943,38 @@ def test_cloud_health_probe_is_accessible_with_provider_host(client, monkeypatch
     assert response.status_code == 200
 
 
-def test_cloud_proxyfix_uses_forwarded_client_address(client, monkeypatch):
+def test_cloud_client_ip_uses_trusted_cloudflare_header_not_forwarded_chain(client, monkeypatch):
     captured = {}
+    monkeypatch.setattr(cloud_app.Config, "TRUST_CF_CONNECTING_IP", True)
     monkeypatch.setattr(
         cloud_app,
         "_auth_rate_limited",
-        lambda _username=None: captured.setdefault("remote_addr", cloud_app.request.remote_addr) and False,
+        lambda _username=None: captured.setdefault("client_ip", cloud_app._client_ip()) and False,
     )
     response = client.post(
         "/api/auth/login",
         base_url="https://ajarvis-cloud.onrender.com",
         environ_overrides={
             "REMOTE_ADDR": "10.0.0.10",
-            "HTTP_X_FORWARDED_FOR": "198.51.100.25",
+            "HTTP_X_FORWARDED_FOR": "192.0.2.99, 198.51.100.25",
+            "HTTP_CF_CONNECTING_IP": "203.0.113.33",
             "HTTP_X_FORWARDED_PROTO": "https",
         },
         json={"username": None, "password": None},
     )
     assert response.status_code == 401
-    assert captured["remote_addr"] == "198.51.100.25"
+    assert captured["client_ip"] == "203.0.113.33"
     assert response.headers["Strict-Transport-Security"].startswith("max-age=")
+
+
+def test_cloud_client_ip_falls_back_to_socket_peer_when_header_is_invalid(client, monkeypatch):
+    monkeypatch.setattr(cloud_app.Config, "TRUST_CF_CONNECTING_IP", True)
+    with cloud_app.app.test_request_context(
+        "/api/auth/login",
+        environ_base={"REMOTE_ADDR": "10.0.0.10"},
+        headers={"CF-Connecting-IP": "not-an-ip", "X-Forwarded-For": "192.0.2.88"},
+    ):
+        assert cloud_app._client_ip() == "10.0.0.10"
 
 
 
