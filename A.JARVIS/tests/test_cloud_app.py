@@ -110,29 +110,30 @@ def test_assistant_route_limits_request_bursts_per_user(client, monkeypatch):
     login_session(client, username="voice_tester", csrf="test-token")
     monkeypatch.setattr(cloud_app, "process_cloud_command", lambda username, command: "test reply")
     monkeypatch.setattr(cloud_app, "_save_history", lambda *_args: None)
-    with cloud_app._assistant_lock:
-        cloud_app._assistant_requests.pop("voice_tester", None)
+    counts = {}
 
-    try:
-        for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
-            response = client.post(
-                "/api/assistant",
-                headers={"X-CSRF-Token": "test-token"},
-                json={"command": "Hello AJARVIS"},
-            )
-            assert response.status_code == 200
+    def count_limit(scope, identifier, limit, _window):
+        key = (scope, identifier)
+        counts[key] = counts.get(key, 0) + 1
+        return counts[key] > limit
 
-        limited = client.post(
+    monkeypatch.setattr(cloud_app, "_rate_limit_exceeded", count_limit)
+    for _ in range(cloud_app.MAX_ASSISTANT_REQUESTS):
+        response = client.post(
             "/api/assistant",
             headers={"X-CSRF-Token": "test-token"},
-            json={"command": "Hello again"},
+            json={"command": "Hello AJARVIS"},
         )
-        assert limited.status_code == 429
-        assert limited.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
-        assert "request limit" in limited.get_json()["error"].lower()
-    finally:
-        with cloud_app._assistant_lock:
-            cloud_app._assistant_requests.pop("voice_tester", None)
+        assert response.status_code == 200
+
+    limited = client.post(
+        "/api/assistant",
+        headers={"X-CSRF-Token": "test-token"},
+        json={"command": "Hello again"},
+    )
+    assert limited.status_code == 429
+    assert limited.headers["Retry-After"] == str(cloud_app.ASSISTANT_WINDOW_SECONDS)
+    assert "request limit" in limited.get_json()["error"].lower()
 
 
 def test_post_request_requires_csrf_token(client, monkeypatch):
