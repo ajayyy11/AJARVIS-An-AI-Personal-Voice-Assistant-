@@ -3,12 +3,22 @@ import logging
 import os
 import re
 import subprocess
+import threading
+import time
 
 import psutil
 import pyautogui
 import requests
 from google import genai
 
+from intelligence.automation import (
+    AutomationError,
+    advance_plan,
+    build_automation_registry,
+    cancel_plan,
+    create_plan,
+    respond_to_approval,
+)
 from intelligence.memory import add_memory, get_recent
 from intelligence.notes import notes_path, read_recent_notes
 from intelligence.web_research import generate_web_research_response, is_web_research_request
@@ -26,6 +36,111 @@ from system.stats import get_stats
 
 logger = logging.getLogger(__name__)
 client = None
+
+_PENDING_COMMAND_APPROVALS: dict[str, dict[str, str | float]] = {}
+_PENDING_COMMAND_APPROVALS_LOCK = threading.RLock()
+
+_DIRECT_ACTIONS = {
+    "open youtube": ("open_website", {"url": "https://www.youtube.com"}, "open youtube"),
+    "open google": ("open_website", {"url": "https://www.google.com"}, "open google"),
+    "open chrome": ("launch_application", {"application": "chrome"}, "open chrome"),
+    "open visual studio": ("launch_application", {"application": "vscode"}, "open visual studio code"),
+    "open vs code": ("launch_application", {"application": "vscode"}, "open visual studio code"),
+    "open visualstudio": ("launch_application", {"application": "vscode"}, "open visual studio code"),
+    "open file explorer": ("launch_application", {"application": "file_explorer"}, "open file explorer"),
+    "lock system": ("lock_workstation", {}, "lock system"),
+    "take screenshot": ("capture_screenshot", {}, "take screenshot"),
+}
+
+
+def _queue_direct_action(username: str, command: str, tool_name: str, arguments: dict, label: str) -> str:
+    """Create a tool-registry plan; no desktop-changing handler runs before approval."""
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        previous = _PENDING_COMMAND_APPROVALS.pop(username, None)
+    if previous:
+        try:
+            cancel_plan(str(previous["plan_id"]), username)
+        except AutomationError:
+            pass
+
+    registry = build_automation_registry()
+    plan = create_plan(
+        username,
+        "User-requested desktop action: " + label,
+        [{
+            "tool": tool_name,
+            "arguments": arguments,
+            "summary": "Request to " + label,
+            "reason": "Direct desktop actions require a separate confirmation before execution.",
+        }],
+        registry=registry,
+    )
+    waiting = advance_plan(plan["plan_id"], username, registry=registry)
+    approval = waiting.get("approval") or {}
+    approval_id = approval.get("approval_id")
+    if waiting.get("status") != "awaiting_approval" or not approval_id:
+        raise AutomationError("The action could not be placed into the approval queue.")
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        _PENDING_COMMAND_APPROVALS[username] = {
+            "plan_id": plan["plan_id"],
+            "approval_id": str(approval_id),
+            "label": label,
+            "expires_at": time.monotonic() + 60,
+        }
+    return (
+        f"{label.capitalize()} is waiting for your approval. Nothing has been executed. "
+        f"Say 'confirm {label}' to proceed, or 'cancel action' to cancel."
+    )
+
+
+def _handle_direct_action_confirmation(command: str, username: str):
+    with _PENDING_COMMAND_APPROVALS_LOCK:
+        pending = _PENDING_COMMAND_APPROVALS.get(username)
+        if pending and time.monotonic() >= float(pending["expires_at"]):
+            _PENDING_COMMAND_APPROVALS.pop(username, None)
+            expired = dict(pending)
+        else:
+            expired = None
+
+    if expired:
+        try:
+            cancel_plan(str(expired["plan_id"]), username)
+        except AutomationError:
+            pass
+        return "The pending desktop approval expired. Request the action again."
+
+    if command in {"cancel action", "cancel pending action"}:
+        if not pending:
+            return "There is no desktop action waiting for approval."
+        with _PENDING_COMMAND_APPROVALS_LOCK:
+            _PENDING_COMMAND_APPROVALS.pop(username, None)
+        try:
+            cancel_plan(str(pending["plan_id"]), username)
+        except AutomationError:
+            pass
+        return "Pending desktop action cancelled."
+
+    if command.startswith("confirm "):
+        if not pending:
+            return "There is no desktop action waiting for approval."
+        if command != "confirm " + str(pending["label"]):
+            return "That confirmation does not match the pending action. Say 'cancel action' or confirm the exact action."
+        with _PENDING_COMMAND_APPROVALS_LOCK:
+            _PENDING_COMMAND_APPROVALS.pop(username, None)
+        try:
+            result = respond_to_approval(
+                str(pending["approval_id"]), username, "approve",
+                registry=build_automation_registry(),
+            )
+        except AutomationError as exc:
+            return str(exc)
+        if result.get("status") == "completed":
+            return "Approved and completed: " + str(pending["label"]) + "."
+        return "The approved action did not complete. Check the Automation activity panel."
+
+    if pending and command in _DIRECT_ACTIONS:
+        return "A different desktop action is already awaiting approval. Confirm it or say 'cancel action' first."
+    return None
 
 
 def _get_genai_client():
@@ -101,6 +216,11 @@ def process_command(command, username):
     # ──────────────────────────────────────────────
     if not is_user_active(username):
         return "System is offline for this user. Say 'system activate' to begin."
+
+    pending_action_reply = _handle_direct_action_confirmation(command, username)
+    if pending_action_reply is not None:
+        add_memory(command, pending_action_reply, username)
+        return pending_action_reply
 
     # ── EXPLICIT PERSONAL MEMORY ──
     if re.match(r"^(?:what do you remember|show my memories|list my memories|read my preferences)\b", command):
@@ -234,50 +354,14 @@ def process_command(command, username):
         add_memory(command, reply, username)
         return reply
 
-    # ── OPEN APPS ──
-    if "open youtube" in command:
-        os.system("start https://youtube.com")
-        reply = "Opening YouTube."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open google" in command:
-        os.system("start https://google.com")
-        reply = "Opening Google."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open chrome" in command:
-        os.system("start chrome")
-        reply = "Opening Chrome."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open visual studio" in command or "open vs code" in command or "open visualstudio" in command:
-        os.system("start code")
-        reply = "Opening Visual Studio Code."
-        add_memory(command, reply, username)
-        return reply
-
-    if "open file explorer" in command:
-        os.system("start explorer")
-        reply = "Opening File Explorer."
-        add_memory(command, reply, username)
-        return reply
-
-    # ── SYSTEM CONTROLS ──
-    # Shutdown/restart are handled above with explicit confirmation.
-    if "lock system" in command:
-        os.system("rundll32.exe user32.dll,LockWorkStation")
-        reply = "System locked."
-        add_memory(command, reply, username)
-        return reply
-
-    # ── SCREENSHOT ──
-    if "take screenshot" in command:
-        screenshot = pyautogui.screenshot()
-        screenshot.save("screenshot.png")
-        reply = "Screenshot captured and saved."
+    # ── DESKTOP ACTIONS — REQUIRE TOOL-REGISTRY APPROVAL ──
+    direct_action = _DIRECT_ACTIONS.get(command)
+    if direct_action:
+        tool_name, arguments, label = direct_action
+        try:
+            reply = _queue_direct_action(username, command, tool_name, arguments, label)
+        except AutomationError as exc:
+            reply = str(exc)
         add_memory(command, reply, username)
         return reply
 
