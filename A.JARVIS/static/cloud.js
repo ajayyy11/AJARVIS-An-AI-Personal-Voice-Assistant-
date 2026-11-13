@@ -1115,8 +1115,25 @@
     }
     refreshHistory().catch(error => toast(error.message, true, "CHAT HISTORY"));
   }
-  loadSystemStatus();
-  claimReminders().catch(() => {});
-  window.setInterval(() => claimReminders().catch(() => {}), 60000);
-  window.setInterval(loadSystemStatus, 30000);
+  function pageIsVisible() {
+    return document.visibilityState !== "hidden";
+  }
+
+  function refreshVisibleBackgroundData() {
+    if (!pageIsVisible()) return;
+    loadSystemStatus();
+    claimReminders().catch(() => {});
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (pageIsVisible()) refreshVisibleBackgroundData();
+  });
+
+  refreshVisibleBackgroundData();
+  window.setInterval(() => {
+    if (pageIsVisible()) claimReminders().catch(() => {});
+  }, 60000);
+  window.setInterval(() => {
+    if (pageIsVisible()) loadSystemStatus();
+  }, 30000);
 })();
