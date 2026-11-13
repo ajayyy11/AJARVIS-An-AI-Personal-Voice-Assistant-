@@ -196,12 +196,12 @@ def _strip_wake_prefix(command):
 
 def _normalize_direct_action_command(command: str) -> str:
     """Normalize natural polite wrappers without changing the action itself."""
-    normalized = re.sub(r"\\s+", " ", str(command).strip().lower())
-    normalized = re.sub(r"[\\s,;:.!?]+$", "", normalized)
-    normalized = re.sub(r"^(?:(?:could|can|would|will) you\\s+)+", "", normalized)
-    normalized = re.sub(r"^(?:please\\s+)+", "", normalized)
-    normalized = re.sub(r"(?:\\s+(?:please|for me|now))+$", "", normalized)
-    normalized = re.sub(r"[\\s,;:.!?]+$", "", normalized)
+    normalized = re.sub(r"\s+", " ", str(command).strip().lower())
+    normalized = re.sub(r"[\s,;:.!?]+$", "", normalized)
+    normalized = re.sub(r"^(?:(?:could|can|would|will) you\s+)+", "", normalized)
+    normalized = re.sub(r"^(?:please\s+)+", "", normalized)
+    normalized = re.sub(r"(?:\s+(?:please|for me|now))+$", "", normalized)
+    normalized = re.sub(r"[\s,;:.!?]+$", "", normalized)
     return normalized
 
 
