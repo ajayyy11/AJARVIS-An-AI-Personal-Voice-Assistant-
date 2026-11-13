@@ -29,9 +29,9 @@ def test_gemini_http_options_have_finite_timeout_and_transient_retries(monkeypat
     monkeypatch.setenv("GEMINI_TIMEOUT_MS", "60000")
     monkeypatch.setenv("GEMINI_RETRY_ATTEMPTS", "3")
     options = build_gemini_http_options(types_module=FakeTypes)
-    assert options.values["timeout"] == 60000
+    assert options.values["timeout"] == 15000
     retry = options.values["retry_options"]
-    assert retry.values["attempts"] == 3
+    assert retry.values["attempts"] == 2
     assert retry.values["http_status_codes"] == [408, 429, 500, 502, 503, 504]
     assert retry.values["max_delay"] == 3.0
 
@@ -41,7 +41,7 @@ def test_gemini_http_options_bound_invalid_environment_values(monkeypatch):
     monkeypatch.setenv("GEMINI_RETRY_ATTEMPTS", "99")
     options = build_gemini_http_options(types_module=FakeTypes)
     assert options.values["timeout"] == DEFAULT_GEMINI_TIMEOUT_MS
-    assert options.values["retry_options"].values["attempts"] == 5
+    assert options.values["retry_options"].values["attempts"] == 2
 
 
 def test_gemini_client_is_lazy_and_requires_nonempty_api_key():
