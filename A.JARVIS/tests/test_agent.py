@@ -397,3 +397,18 @@ def test_agent_rejects_invalid_wall_clock_deadline(value):
             types_module=FakeTypes,
             request_timeout_seconds=value,
         )
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "999", "bad", "nan", "inf"])
+def test_agent_invalid_deadline_environment_falls_back_safely(monkeypatch, value):
+    from intelligence import agent
+
+    monkeypatch.setenv("GEMINI_REQUEST_DEADLINE_SECONDS", value)
+    assert agent._resolve_agent_deadline_seconds(None) == agent.DEFAULT_AGENT_REQUEST_DEADLINE_SECONDS
+
+
+def test_agent_valid_deadline_environment_is_respected(monkeypatch):
+    from intelligence import agent
+
+    monkeypatch.setenv("GEMINI_REQUEST_DEADLINE_SECONDS", "30")
+    assert agent._resolve_agent_deadline_seconds(None) == 30.0
