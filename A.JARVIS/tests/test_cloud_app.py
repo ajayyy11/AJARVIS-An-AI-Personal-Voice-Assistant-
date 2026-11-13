@@ -849,32 +849,26 @@ def test_history_api_rejects_ambiguous_cursor_parameters(client):
 
 
 
-def test_login_rate_limit_is_per_username_even_when_client_ip_is_shared(client, monkeypatch):
-    password_hash = generate_password_hash("not-the-password")
-    cursor = FakeCursor(fetchone_value=(password_hash, 0))
-    connection = FakeConnection(cursor)
-    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
-    username = "target_account"
-    cloud_app._auth_username_attempts.pop(username, None)
-    ip_address = "198.51.100.72"
-    cloud_app._auth_attempts.pop(ip_address, None)
-    try:
-        for _ in range(cloud_app.MAX_LOGIN_ATTEMPTS):
-            response = client.post(
-                "/api/auth/login",
-                environ_base={"REMOTE_ADDR": ip_address},
-                json={"username": username, "password": "wrong"},
-            )
-            assert response.status_code == 401
-        limited = client.post(
-            "/api/auth/login",
-            environ_base={"REMOTE_ADDR": ip_address},
-            json={"username": username, "password": "wrong"},
-        )
-        assert limited.status_code == 429
-    finally:
-        cloud_app._auth_username_attempts.pop(username, None)
-        cloud_app._auth_attempts.pop(ip_address, None)
+def test_login_rate_limit_separates_source_and_account_pair_scopes(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        cloud_app,
+        "_rate_limit_exceeded",
+        lambda scope, identifier, limit, window: calls.append(
+            (scope, identifier, limit, window)
+        ) or False,
+    )
+    with cloud_app.app.test_request_context(
+        "/api/auth/login", environ_base={"REMOTE_ADDR": "198.51.100.72"}
+    ):
+        assert cloud_app._auth_rate_limited("target_account") is False
+
+    assert [item[0] for item in calls] == ["login-ip", "login-account-ip"]
+    assert calls[0][1] == "198.51.100.72"
+    assert "target_account" in calls[1][1]
+    assert calls[0][2] == cloud_app.MAX_LOGIN_ATTEMPTS_PER_IP
+    assert calls[1][2] == cloud_app.MAX_LOGIN_ATTEMPTS_PER_ACCOUNT_IP
+
 
 
 def test_unknown_username_still_verifies_dummy_password_hash(client, monkeypatch):
@@ -957,7 +951,6 @@ def test_cloud_proxyfix_uses_forwarded_client_address(client, monkeypatch):
         "_auth_rate_limited",
         lambda _username=None: captured.setdefault("remote_addr", cloud_app.request.remote_addr) and False,
     )
-    monkeypatch.setattr(cloud_app, "_record_auth_failure", lambda *_args: None)
     response = client.post(
         "/api/auth/login",
         base_url="https://ajarvis-cloud.onrender.com",
@@ -973,37 +966,6 @@ def test_cloud_proxyfix_uses_forwarded_client_address(client, monkeypatch):
     assert response.headers["Strict-Transport-Security"].startswith("max-age=")
 
 
-def test_shared_proxy_failures_do_not_throttle_different_usernames(client, monkeypatch):
-    password_hash = generate_password_hash("not-the-password")
-    username = "target_account"
-    other_username = "other_account"
-    ip_address = "198.51.100.93"
-    cursor = FakeCursor(fetchone_value=(password_hash, 0))
-    connection = FakeConnection(cursor)
-    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
-    cloud_app._auth_username_attempts.pop(username, None)
-    cloud_app._auth_username_attempts.pop(other_username, None)
-    cloud_app._auth_attempts.pop(ip_address, None)
-    try:
-        for _ in range(cloud_app.MAX_LOGIN_ATTEMPTS):
-            response = client.post(
-                "/api/auth/login",
-                environ_base={"REMOTE_ADDR": ip_address},
-                json={"username": username, "password": "wrong"},
-            )
-            assert response.status_code == 401
-        other_user = client.post(
-            "/api/auth/login",
-            environ_base={"REMOTE_ADDR": ip_address},
-            json={"username": other_username, "password": "wrong"},
-        )
-        assert other_user.status_code == 401
-        assert other_user.get_json()["error"] == "Invalid username or password."
-    finally:
-        cloud_app._auth_username_attempts.pop(username, None)
-        cloud_app._auth_username_attempts.pop(other_username, None)
-        cloud_app._auth_attempts.pop(ip_address, None)
-
 
 def test_session_version_check_fails_when_database_version_changes(client, monkeypatch):
     login_session(client)
@@ -1013,40 +975,3 @@ def test_session_version_check_fails_when_database_version_changes(client, monke
     assert response.headers["Location"].endswith("/login")
     with client.session_transaction() as state:
         assert "user" not in state
-
-
-
-def test_named_login_rate_limit_is_not_shared_by_other_accounts(client, monkeypatch):
-    password_hash = generate_password_hash("not-the-password")
-    cursor = FakeCursor(fetchone_value=(password_hash, 0))
-    connection = FakeConnection(cursor)
-    monkeypatch.setattr(cloud_app, "_database", lambda: connection)
-    remote_addr = "198.51.100.148"
-    usernames = ("alice_shared_proxy", "bob_shared_proxy")
-    for username in usernames:
-        cloud_app._auth_username_attempts.pop(username, None)
-    cloud_app._auth_attempts.pop(remote_addr, None)
-    try:
-        for _ in range(cloud_app.MAX_LOGIN_ATTEMPTS):
-            limited_user = client.post(
-                "/api/auth/login",
-                environ_base={"REMOTE_ADDR": remote_addr},
-                json={"username": usernames[0], "password": "incorrect"},
-            )
-            assert limited_user.status_code == 401
-        blocked_user = client.post(
-            "/api/auth/login",
-            environ_base={"REMOTE_ADDR": remote_addr},
-            json={"username": usernames[0], "password": "incorrect"},
-        )
-        assert blocked_user.status_code == 429
-        other_user = client.post(
-            "/api/auth/login",
-            environ_base={"REMOTE_ADDR": remote_addr},
-            json={"username": usernames[1], "password": "incorrect"},
-        )
-        assert other_user.status_code == 401
-    finally:
-        for username in usernames:
-            cloud_app._auth_username_attempts.pop(username, None)
-        cloud_app._auth_attempts.pop(remote_addr, None)
