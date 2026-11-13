@@ -264,6 +264,22 @@ def _database():
     return get_connection()
 
 
+def _session_version_is_current(username: str, session_version: int) -> bool:
+    """Validate cookie revocation against the durable account version."""
+    conn = cursor = None
+    try:
+        conn = _database()
+        cursor = conn.cursor()
+        cursor.execute("SELECT session_version FROM cloud_users WHERE username = %s", (username,))
+        row = cursor.fetchone()
+        return bool(row is not None and int(row[0]) == session_version)
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
+
+
 def _is_authenticated() -> bool:
     username = session.get("user")
     login_time_value = session.get("login_time")
@@ -289,22 +305,12 @@ def _is_authenticated() -> bool:
 
     # Signed cookies are otherwise replayable after logout. Compare a server-side
     # version on every authenticated request so revoking a session invalidates copies.
-    conn = cursor = None
     try:
-        conn = _database()
-        cursor = conn.cursor()
-        cursor.execute("SELECT session_version FROM cloud_users WHERE username = %s", (username,))
-        row = cursor.fetchone()
-        current_version = int(row[0]) if row else None
+        current = _session_version_is_current(username, session_version)
     except Exception:
         logger.warning("Cloud session revocation check is unavailable.")
         return False
-    finally:
-        if cursor is not None:
-            cursor.close()
-        if conn is not None:
-            conn.close()
-    if current_version is None or current_version != session_version:
+    if not current:
         session.clear()
         return False
     return True
@@ -459,7 +465,7 @@ def add_security_headers(response):
         "Content-Security-Policy",
         "default-src 'self'; "
         "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; "
-        "script-src 'self' https://cdn.jsdelivr.net; "
+        "script-src 'self'; "
         "style-src 'self'; style-src-attr 'unsafe-inline'; "
         "img-src 'self' data: blob:; font-src 'self' data:; "
         "connect-src 'self' https://generativelanguage.googleapis.com; "
