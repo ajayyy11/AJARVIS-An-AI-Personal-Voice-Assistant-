@@ -9,7 +9,7 @@ from config import Config
 from security.camera import generate_frames
 from security.session_manager import is_authenticated, revoke_access, grant_access
 from security.face_auth import load_known_faces
-from intelligence.command_router import process_command, _get_genai_client
+from intelligence.command_router import process_command, _get_genai_client, clear_pending_direct_action
 from intelligence.automation import (
     AutomationError,
     advance_plan,
@@ -866,6 +866,7 @@ def logout():
         cancel_user_plans(session["user"])
     except AutomationError:
         app.logger.warning("Could not cancel pending automation plans during logout")
+    clear_pending_direct_action(session["user"])
     revoke_access()
     camera.resume_recognition()
     return redirect(url_for("home"))
