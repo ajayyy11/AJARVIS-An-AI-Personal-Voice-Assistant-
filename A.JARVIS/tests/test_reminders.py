@@ -172,3 +172,31 @@ def test_reminder_cannot_be_scheduled_more_than_one_year_ahead():
     too_far = (datetime.now(timezone.utc) + timedelta(days=366)).isoformat()
     with pytest.raises(reminders.ReminderError, match="one year"):
         reminders._parse_due_at(too_far)
+
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda: reminders.list_reminders("alice"),
+        lambda: reminders.get_notification_preferences("alice"),
+        lambda: reminders.list_unread_notifications("alice"),
+        lambda: reminders.mark_notification_read("alice", 1),
+        lambda: reminders.update_reminder_status("alice", 1, "completed"),
+    ],
+)
+def test_database_outages_raise_clear_unavailable_error(monkeypatch, operation):
+    monkeypatch.setattr(reminders, "get_connection", lambda: (_ for _ in ()).throw(RuntimeError("database down")))
+    with pytest.raises(reminders.ReminderUnavailable, match="temporarily unavailable"):
+        operation()
+
+
+def test_due_notification_database_failure_is_not_reported_as_empty(monkeypatch):
+    monkeypatch.setattr(
+        reminders,
+        "get_notification_preferences",
+        lambda _username: {"reminders_enabled": True, "browser_notifications_enabled": False},
+    )
+    monkeypatch.setattr(reminders, "get_connection", lambda: (_ for _ in ()).throw(RuntimeError("database down")))
+    with pytest.raises(reminders.ReminderUnavailable, match="temporarily unavailable"):
+        reminders.collect_due_notifications("alice")
